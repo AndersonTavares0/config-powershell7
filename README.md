@@ -26,7 +26,7 @@ Perfil de inicialização do PowerShell 7 focado em **latência mínima de boot*
 | Componente | Instalação | Obrigatório |
 |---|---|---|
 | **PowerShell 7+** | [Microsoft Store](https://aka.ms/PSWindows) ou `winget install Microsoft.PowerShell` | ✅ |
-| **Nerd Font** | [nerdfonts.com](https://www.nerdfonts.com/) — Recomendado: `JetBrainsMono NF` | ✅ (para ícones) |
+| **Nerd Font** | [nerdfonts.com](https://www.nerdfonts.com/) — Recomendado: `FiraCode Nerd Font` | ✅ (para ícones) |
 | **Git** | `winget install Git.Git` | ✅ |
 | **Oh My Posh** | `winget install JanDeLaaj.oh-my-posh` | Opcional |
 | **Zoxide** | `winget install ajeetdsouza.zoxide` | Opcional |
