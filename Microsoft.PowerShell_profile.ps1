@@ -1,6 +1,6 @@
 #Requires -Version 5.1
 # ============================================================
-# POWERSHELL PROFILE — Clean Code · Sub-200ms Boot
+# POWERSHELL PROFILE 
 # PS 5.1+ / PS Core 7+  |  Revisão: 2026-04
 # ============================================================
 
@@ -27,25 +27,37 @@ function _InitPlugin([string]$Label, [scriptblock]$Init) {
 }
 
 # ── 2. PLUGINS ────────────────────────────────────────────────
-# Terminal-Icons: ~100ms de import — lazy load, só carrega quando chamado
-function icons {
-    Import-Module Terminal-Icons -ErrorAction SilentlyContinue
-    Write-Host "Terminal-Icons carregado" -ForegroundColor Green
+$script:CachePath = "$HOME\.cache_pwsh_plugins.ps1"
+
+function icons { Import-Module Terminal-Icons -ErrorAction SilentlyContinue; Write-Host "Terminal-Icons carregado" -ForegroundColor Green }
+function Limpar-Cache { Remove-Item $script:CachePath -ErrorAction SilentlyContinue; Write-Host "Cache limpo. Reinicie o terminal." -ForegroundColor Green }
+
+if (-not (Test-Path $script:CachePath)) {
+    Write-Host "Criando cache de plugins pela primeira vez..." -ForegroundColor DarkGray
+    & {
+        $buf = [System.Text.StringBuilder]::new()
+        
+        if (Get-Command zoxide -ErrorAction SilentlyContinue) {
+            [void]$buf.AppendLine((zoxide init powershell | Out-String))
+            [void]$buf.AppendLine("`$script:StartupModules.Add('Zoxide')")
+        }
+        
+        if (Get-Command oh-my-posh -ErrorAction SilentlyContinue) {
+            $thm = "$HOME\.poshthemes\atomic.omp.json"
+            $lbl = if (Test-Path $thm) { 'OMP:atomic' } else { 'OMP:default' }
+            
+            if (Test-Path $thm) { [void]$buf.AppendLine((oh-my-posh init pwsh --config $thm | Out-String)) }
+            else                { [void]$buf.AppendLine((oh-my-posh init pwsh | Out-String)) }
+            
+            [void]$buf.AppendLine("`$script:StartupModules.Add('$lbl')")
+        }
+        
+        try   { Set-Content -Path $script:CachePath -Value $buf.ToString() -Encoding UTF8 -ErrorAction Stop }
+        catch { Write-Warning "Falha ao salvar cache: $_" }
+    }
 }
 
-if (Get-Command oh-my-posh -ErrorAction SilentlyContinue) {
-    $_ompTheme = "$HOME\.poshthemes\atomic.omp.json"
-    $_ompLabel = if (Test-Path $_ompTheme) { 'OMP:atomic' } else { 'OMP:default' }
-    # GetNewClosure() captura $_ompTheme do escopo atual no scriptblock
-    _InitPlugin $_ompLabel ({
-        if (Test-Path $_ompTheme) { oh-my-posh init pwsh --config $_ompTheme }
-        else                      { oh-my-posh init pwsh }
-    }.GetNewClosure())
-}
-
-if (Get-Command zoxide -ErrorAction SilentlyContinue) {
-    _InitPlugin 'Zoxide' { zoxide init powershell }
-}
+if (Test-Path $script:CachePath) { . $script:CachePath }
 
 # ── 3. PSREADLINE ─────────────────────────────────────────────
 # Get-Command: verifica apenas o PATH resolvido (~100ms mais rápido que Get-Module -ListAvailable)
