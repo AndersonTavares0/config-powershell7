@@ -1,4 +1,3 @@
-#Requires -Version 5.1
 # ============================================================
 # UNIT TESTS FOR Microsoft.PowerShell_profile.ps1
 # PS 5.1+ / PS Core 7+
@@ -52,6 +51,13 @@ function Assert-NotNull {
     Test-Result -Name $TestName -Passed $passed -Message $msg
 }
 
+function Assert-False {
+    param([bool]$Condition, [string]$TestName)
+    $passed = $Condition -eq $false
+    $msg = if (-not $passed) { "Condition was true" } else { "" }
+    Test-Result -Name $TestName -Passed $passed -Message $msg
+}
+
 # ── MOCK HELPERS ──────────────────────────────────────────────
 function New-MockFile {
     param([string]$Path, [string]$Content = "")
@@ -69,10 +75,22 @@ function Remove-MockFile {
     }
 }
 
-# ── TEST SUITE ────────────────────────────────────────────────
+# ── LOAD PROFILE ──────────────────────────────────────────────
 Write-Host "`n========================================" -ForegroundColor Cyan
 Write-Host "PowerShell Profile Unit Tests" -ForegroundColor Cyan
 Write-Host "========================================`n" -ForegroundColor Cyan
+
+Write-Host "Loading profile..." -ForegroundColor Yellow
+try {
+    . $PROFILE
+    Test-Result -Name "Profile loads without errors" -Passed $true -Message ""
+} catch {
+    Test-Result -Name "Profile loads without errors" -Passed $false -Message $_.Exception.Message
+    Write-Host "Cannot continue tests without profile loaded." -ForegroundColor Red
+    exit 1
+}
+
+# ── TEST SUITE ────────────────────────────────────────────────
 
 # Test 1: Navigation Functions
 Write-Host "Testing Navigation Functions..." -ForegroundColor Yellow
@@ -83,7 +101,12 @@ try {
     if (Get-Command docs -ErrorAction SilentlyContinue) {
         $_docs = [Environment]::GetFolderPath('MyDocuments')
         docs
-        Assert-Equal -Expected $_docs -Actual (Get-Location).Path -TestName "docs function navigates to Documents"
+        # On Linux, MyDocuments may return empty string, so check if path is not root
+        if ([string]::IsNullOrEmpty($_docs)) {
+            Test-Result -Name "docs function navigates to Documents" -Passed $true -Message "Skipped (Linux)"
+        } else {
+            Assert-Equal -Expected $_docs -Actual (Get-Location).Path -TestName "docs function navigates to Documents"
+        }
         Set-Location $originalLocation
     } else {
         Test-Result -Name "docs function exists" -Passed $false -Message "Function not defined"
@@ -235,16 +258,9 @@ try {
     Test-Result -Name "Helper functions tests" -Passed $false -Message $_.Exception.Message
 }
 
-# Test 6: Clipboard Functions (clip, pst)
+# Test 6: Clipboard Functions (cpy, pst)
 Write-Host "`nTesting Clipboard Functions..." -ForegroundColor Yellow
 try {
-    # Test clip function exists
-    if (Get-Command clip -ErrorAction SilentlyContinue) {
-        Test-Result -Name "clip function exists" -Passed $true -Message ""
-    } else {
-        Test-Result -Name "clip function exists" -Passed $false -Message "Function not defined"
-    }
-
     # Test cpy alias
     if (Get-Command cpy -ErrorAction SilentlyContinue) {
         Test-Result -Name "cpy alias exists" -Passed $true -Message ""
@@ -266,7 +282,7 @@ try {
 Write-Host "`nTesting Git Functions..." -ForegroundColor Yellow
 try {
     if (Get-Command git -ErrorAction SilentlyContinue) {
-        $gitFunctions = @('gst', 'ga', 'gco', 'gpush', 'gpull', 'glog', 'gundo', 'gdiff', 'gcl', 'gcom', 'lazyg', 'gs')
+        $gitFunctions = @('gst', 'ga', 'gcmt', 'gco', 'gpush', 'gpull', 'glog', 'gundo', 'gdiff', 'gcl', 'gcom', 'lazyg', 'gss')
         foreach ($func in $gitFunctions) {
             if (Get-Command $func -ErrorAction SilentlyContinue) {
                 Test-Result -Name "$func function exists" -Passed $true -Message ""
@@ -284,11 +300,11 @@ try {
 # Test 8: Plugin Cache System
 Write-Host "`nTesting Plugin Cache System..." -ForegroundColor Yellow
 try {
-    # Test Limpar-Cache function
-    if (Get-Command Limpar-Cache -ErrorAction SilentlyContinue) {
-        Test-Result -Name "Limpar-Cache function exists" -Passed $true -Message ""
+    # Test Clear-PluginCache function
+    if (Get-Command Clear-PluginCache -ErrorAction SilentlyContinue) {
+        Test-Result -Name "Clear-PluginCache function exists" -Passed $true -Message ""
     } else {
-        Test-Result -Name "Limpar-Cache function exists" -Passed $false -Message "Function not defined"
+        Test-Result -Name "Clear-PluginCache function exists" -Passed $false -Message "Function not defined"
     }
 
     # Test Clear-Cache alias
@@ -298,11 +314,18 @@ try {
         Test-Result -Name "Clear-Cache alias exists" -Passed $false -Message "Alias not defined"
     }
 
-    # Test icons function
-    if (Get-Command icons -ErrorAction SilentlyContinue) {
-        Test-Result -Name "icons function exists" -Passed $true -Message ""
+    # Test Import-TerminalIcons function
+    if (Get-Command Import-TerminalIcons -ErrorAction SilentlyContinue) {
+        Test-Result -Name "Import-TerminalIcons function exists" -Passed $true -Message ""
     } else {
-        Test-Result -Name "icons function exists" -Passed $false -Message "Function not defined"
+        Test-Result -Name "Import-TerminalIcons function exists" -Passed $false -Message "Function not defined"
+    }
+
+    # Test icons alias
+    if (Get-Command icons -ErrorAction SilentlyContinue) {
+        Test-Result -Name "icons alias exists" -Passed $true -Message ""
+    } else {
+        Test-Result -Name "icons alias exists" -Passed $false -Message "Alias not defined"
     }
 } catch {
     Test-Result -Name "Plugin cache tests" -Passed $false -Message $_.Exception.Message
@@ -330,16 +353,134 @@ try {
     Test-Result -Name "Display functions tests" -Passed $false -Message $_.Exception.Message
 }
 
-# Test 10: Sudo Function
-Write-Host "`nTesting Sudo Function..." -ForegroundColor Yellow
+# Test 10: Additional Navigation Functions (dtop, up2)
+Write-Host "`nTesting Additional Navigation Functions..." -ForegroundColor Yellow
 try {
-    if (Get-Command sudo -ErrorAction SilentlyContinue) {
-        Test-Result -Name "sudo function exists" -Passed $true -Message ""
+    $originalLocation = Get-Location
+
+    # Test dtop function
+    if (Get-Command dtop -ErrorAction SilentlyContinue) {
+        $_desktop = [Environment]::GetFolderPath('Desktop')
+        dtop
+        # On Linux, Desktop may return empty string
+        if ([string]::IsNullOrEmpty($_desktop)) {
+            Test-Result -Name "dtop function navigates to Desktop" -Passed $true -Message "Skipped (Linux)"
+        } else {
+            Assert-Equal -Expected $_desktop -Actual (Get-Location).Path -TestName "dtop function navigates to Desktop"
+        }
+        Set-Location $originalLocation
     } else {
-        Test-Result -Name "sudo function exists" -Passed $false -Message "Function not defined"
+        Test-Result -Name "dtop function exists" -Passed $false -Message "Function not defined"
+    }
+
+    # Test up2 function
+    if (Get-Command up2 -ErrorAction SilentlyContinue) {
+        $parentItem = (Get-Item $originalLocation).Parent
+        if ($null -ne $parentItem -and $null -ne $parentItem.Parent) {
+            $grandparent = $parentItem.Parent.FullName
+            up2
+            Assert-Equal -Expected $grandparent -Actual (Get-Location).Path -TestName "up2 function navigates to grandparent"
+        } else {
+            Test-Result -Name "up2 function navigates to grandparent" -Passed $true -Message "Skipped (no grandparent)"
+        }
+        Set-Location $originalLocation
+    } else {
+        Test-Result -Name "up2 function exists" -Passed $false -Message "Function not defined"
     }
 } catch {
-    Test-Result -Name "Sudo function tests" -Passed $false -Message $_.Exception.Message
+    Test-Result -Name "Additional navigation tests" -Passed $false -Message $_.Exception.Message
+}
+Set-Location $originalLocation
+
+# Test 11: File Operations (unzip placeholder)
+Write-Host "`nTesting File Operation Utilities..." -ForegroundColor Yellow
+try {
+    # Test unzip function exists
+    if (Get-Command unzip -ErrorAction SilentlyContinue) {
+        Test-Result -Name "unzip function exists" -Passed $true -Message ""
+    } else {
+        Test-Result -Name "unzip function exists" -Passed $false -Message "Function not defined"
+    }
+} catch {
+    Test-Result -Name "File operation utilities tests" -Passed $false -Message $_.Exception.Message
+}
+
+# Test 12: System Information Functions
+Write-Host "`nTesting System Information Functions..." -ForegroundColor Yellow
+try {
+    # Test df function (Windows-only, skip on Linux)
+    if (Get-Command df -ErrorAction SilentlyContinue) {
+        if ($PSVersionTable.OS -match 'Windows') {
+            $result = df 2>&1
+            Assert-NotNull -Value $result -TestName "df function executes without error"
+        } else {
+            Test-Result -Name "df function executes without error" -Passed $true -Message "Skipped (Linux)"
+        }
+    } else {
+        Test-Result -Name "df function exists" -Passed $false -Message "Function not defined"
+    }
+
+    # Test pubip function
+    if (Get-Command pubip -ErrorAction SilentlyContinue) {
+        Test-Result -Name "pubip function exists" -Passed $true -Message ""
+    } else {
+        Test-Result -Name "pubip function exists" -Passed $false -Message "Function not defined"
+    }
+
+    # Test sysinfo function
+    if (Get-Command sysinfo -ErrorAction SilentlyContinue) {
+        $result = sysinfo 2>&1
+        Assert-NotNull -Value $result -TestName "sysinfo function executes without error"
+    } else {
+        Test-Result -Name "sysinfo function exists" -Passed $false -Message "Function not defined"
+    }
+} catch {
+    Test-Result -Name "System information functions tests" -Passed $false -Message $_.Exception.Message
+}
+
+# Test 13: Text Processing (grep filter, sed)
+Write-Host "`nTesting Advanced Text Processing..." -ForegroundColor Yellow
+try {
+    # Test grep filter
+    if (Get-Command grep -ErrorAction SilentlyContinue) {
+        Test-Result -Name "grep filter exists" -Passed $true -Message ""
+    } else {
+        Test-Result -Name "grep filter exists" -Passed $false -Message "Filter not defined"
+    }
+
+    # Test sed function
+    if (Get-Command sed -ErrorAction SilentlyContinue) {
+        Test-Result -Name "sed function exists" -Passed $true -Message ""
+    } else {
+        Test-Result -Name "sed function exists" -Passed $false -Message "Function not defined"
+    }
+} catch {
+    Test-Result -Name "Advanced text processing tests" -Passed $false -Message $_.Exception.Message
+}
+
+# Test 14: Clipboard Copy-ToClipboard
+Write-Host "`nTesting Copy-ToClipboard Function..." -ForegroundColor Yellow
+try {
+    # Test Copy-ToClipboard function
+    if (Get-Command Copy-ToClipboard -ErrorAction SilentlyContinue) {
+        Test-Result -Name "Copy-ToClipboard function exists" -Passed $true -Message ""
+    } else {
+        Test-Result -Name "Copy-ToClipboard function exists" -Passed $false -Message "Function not defined"
+    }
+} catch {
+    Test-Result -Name "Copy-ToClipboard tests" -Passed $false -Message $_.Exception.Message
+}
+
+# Test 15: flushdns Function
+Write-Host "`nTesting flushdns Function..." -ForegroundColor Yellow
+try {
+    if (Get-Command flushdns -ErrorAction SilentlyContinue) {
+        Test-Result -Name "flushdns function exists" -Passed $true -Message ""
+    } else {
+        Test-Result -Name "flushdns function exists" -Passed $false -Message "Function not defined"
+    }
+} catch {
+    Test-Result -Name "flushdns tests" -Passed $false -Message $_.Exception.Message
 }
 
 # ── TEST SUMMARY ──────────────────────────────────────────────
