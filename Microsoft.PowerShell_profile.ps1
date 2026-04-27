@@ -1,8 +1,33 @@
 #Requires -Version 5.1
 
 # ============================================================
-# POWERSHELL PROFILE  —  Refatorado
-# PS 5.1+ / PS Core 7+ | Revisão: 2026-05
+# POWERSHELL PROFILE  
+# PS 5.1+ / PS Core 7+ | Revisão: 04/27/2026
+# ============================================================
+#
+# PRÉ-REQUISITOS E INSTALAÇÃO:
+# ----------------------------
+# 1. Módodos recomendados (instalar com):
+#    Install-Module -Name Terminal-Icons -Scope CurrentUser
+#    Install-Module -Name PSReadLine -Scope CurrentUser -Force
+#
+# 2. Ferramentas externas (opcionais, mas recomendadas):
+#    - oh-my-posh: https://ohmyposh.dev/docs/installation
+#      winget install JanDeDobbeleer.OhMyPosh
+#    - zoxide: https://github.com/ajeetdsouza/zoxide
+#      winget install ajeetdsouza.zoxide
+#
+# 3. Temas oh-my-posh:
+#    O tema padrão esperado está em: $HOME\.poshthemes\atomic.omp.json
+#    Para instalar temas: oh-my-posh init pwsh --print-configs
+#
+# 4. Git (opcional):
+#    As funções Git só serão carregadas se o comando 'git' estiver disponível
+#
+# 5. Cache de plugins:
+#    O perfil cria automaticamente um cache em: $HOME\.cache_pwsh_plugins.ps1
+#    Para limpar o cache: Clear-Cache ou Clear-PluginCache
+#
 # ============================================================
 
 # ── 1. INICIALIZAÇÃO ─────────────────────────────────────────
@@ -215,7 +240,8 @@ function sed {
     $tmp = $null
     try {
         $resolved   = (Resolve-Path $File -ErrorAction Stop).Path
-        $enc        = [System.Text.Encoding]::UTF8
+        # UTF8 com BOM para compatibilidade total com PowerShell 5.1 e ferramentas Windows
+        $enc        = New-Object System.Text.UTF8Encoding $true
         $newContent = ([System.IO.File]::ReadAllText($resolved, $enc)).Replace($Find, $Replace)
 
         $tmp = [System.IO.Path]::Combine(
@@ -242,7 +268,9 @@ Set-Alias k9 pkill
 
 function pgrep {
     param([Parameter(Mandatory)][string]$Name)
-    Get-Process -Name "*$Name*" -ErrorAction SilentlyContinue |
+    # Usa Where-Object para filtro correto (wildcard não funciona em -Name do Get-Process)
+    Get-Process -ErrorAction SilentlyContinue |
+        Where-Object { $_.ProcessName -like "*$Name*" } |
         Format-Table Id, ProcessName, CPU,
             @{ L='Mem(MB)'; E={ [math]::Round($_.WorkingSet64/1MB, 1) } } -AutoSize
 }
@@ -271,12 +299,19 @@ function pubip {
     $endpoints = 'https://api.ipify.org', 'https://icanhazip.com', 'https://ifconfig.me/ip'
     foreach ($url in $endpoints) {
         try {
-            $response = Invoke-RestMethod $url -TimeoutSec 5 -ErrorAction Stop
+            # Timeout reduzido e tratamento de exceções específicas para melhor resiliência
+            $response = Invoke-RestMethod -Uri $url -TimeoutSec 3 `
+                -ErrorAction Stop -UseBasicParsing
             if ($response) {
                 $script:CachedPublicIP = $response.Trim()
+                Write-Verbose "pubip: obtido de $url"
                 return $script:CachedPublicIP
             }
-        } catch { Write-Verbose "pubip: falha em $url — $_" }
+        } catch [System.Net.WebException] {
+            Write-Verbose "pubip: timeout ou falha de rede em $url"
+        } catch {
+            Write-Verbose "pubip: falha em $url — $_"
+        }
     }
     Write-Warning "pubip: nenhum endpoint respondeu."
 }
@@ -347,19 +382,33 @@ if (Get-Command git -ErrorAction SilentlyContinue) {
     }
 
     # lazyg verifica cada passo: commit falho não dispara push
+    # Compatível com Linux e Windows: usa ReadLine() em vez de ReadKey() para ambientes sem console interativo
     function lazyg {
         param(
             [Parameter(Mandatory)][string]$Message,
             [switch]$Force
         )
         git status --short
-        $isInteractive = [Environment]::UserInteractive -and -not $env:CI
+        $isInteractive = [Environment]::UserInteractive -and -not $env:CI -and -not $IsLinux -and -not $IsMacOS
+
         if (-not $Force -and $isInteractive) {
             Write-Host "Stage all, commit e push? [s/N]: " -NoNewline -ForegroundColor Yellow
-            $key = [Console]::ReadKey($true)
-            Write-Host $key.KeyChar
-            if ($key.KeyChar -notmatch '^[sS]$') { Write-Host "Abortado." -ForegroundColor Red; return }
+            try {
+                $input = [Console]::ReadLine()
+                if ($input -notmatch '^[sS]$') {
+                    Write-Host "Abortado." -ForegroundColor Red
+                    return
+                }
+            } catch {
+                Write-Verbose "lazyg: erro ao ler entrada do usuário — $_"
+                Write-Host "Abortado (erro de leitura)." -ForegroundColor Red
+                return
+            }
+        } elseif (-not $Force -and ($IsLinux -or $IsMacOS)) {
+            # Em Linux/Mac, ReadKey pode falhar; pula confirmação interativa
+            Write-Verbose "lazyg: modo não-interativo detectado (Linux/Mac ou CI)"
         }
+
         git add .
         if ($LASTEXITCODE -ne 0) { Write-Error "lazyg: git add falhou.";    return }
         git commit -m $Message
