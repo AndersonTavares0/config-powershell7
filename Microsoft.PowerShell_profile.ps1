@@ -31,6 +31,7 @@ $script:CachePath = "$HOME\.cache_pwsh_plugins.ps1"
 
 function icons { Import-Module Terminal-Icons -ErrorAction SilentlyContinue; Write-Host "Terminal-Icons carregado" -ForegroundColor Green }
 function Limpar-Cache { Remove-Item $script:CachePath -ErrorAction SilentlyContinue; Write-Host "Cache limpo. Reinicie o terminal." -ForegroundColor Green }
+Set-Alias Clear-Cache Limpar-Cache
 
 if (-not (Test-Path $script:CachePath)) {
     Write-Host "Criando cache de plugins pela primeira vez..." -ForegroundColor DarkGray
@@ -155,11 +156,16 @@ function pst { Get-Clipboard }
 # Parâmetro -Backup: cria cópia .bak antes da substituição (opcional, off por padrão).
 function sed {
     param(
-        [Parameter(Mandatory)][string]$File,
-        [Parameter(Mandatory)][string]$Find,
-        [Parameter(Mandatory)][string]$Replace,
+        [Parameter(Mandatory, Position=0)][string]$File,
+        [Parameter(Mandatory, Position=1)][string]$Find,
+        [Parameter(Mandatory, Position=2)][string]$Replace,
         [switch]$Backup
     )
+    # Validar se o arquivo existe
+    if (-not (Test-Path $File)) {
+        Write-Host "sed: arquivo '$File' não encontrado" -ForegroundColor Red
+        return
+    }
     $tmp = $null
     try {
         $resolved   = (Resolve-Path $File -ErrorAction Stop).Path
@@ -211,58 +217,97 @@ function pubip {
         Write-Verbose "IP (cache de sessão): $script:CachedPublicIP"
         return $script:CachedPublicIP
     }
-    $r = Invoke-RestMethod 'https://api.ipify.org' -TimeoutSec 5 -ErrorAction SilentlyContinue
-    if ($r) {
-        $script:CachedPublicIP = $r.Trim()
-        $script:CachedPublicIP
-    } else {
-        Write-Warning "Não foi possível obter o IP público (timeout ou sem rede)"
+    
+    $services = @('https://api.ipify.org', 'https://icanhazip.com', 'https://ifconfig.me/ip')
+    foreach ($url in $services) {
+        try {
+            $r = Invoke-RestMethod $url -TimeoutSec 5 -ErrorAction Stop
+            if ($r) {
+                $script:CachedPublicIP = $r.Trim()
+                return $script:CachedPublicIP
+            }
+        } catch {
+            Write-Verbose "Falha ao obter IP de $url : $_"
+        }
     }
+    Write-Warning "Não foi possível obter o IP público (todos os serviços falharam)"
 }
 
 function sysinfo {
-    $os = Get-CimInstance Win32_OperatingSystem
-    $cs = Get-CimInstance Win32_ComputerSystem
-    [PSCustomObject]@{
-        Computer = $cs.Name
-        User     = $env:USERNAME
-        OS       = $os.Caption
-        PS       = $PSVersionTable.PSVersion.ToString()
-        Uptime   = (Get-Date) - $os.LastBootUpTime
-        RAM_GB   = [math]::Round($cs.TotalPhysicalMemory/1GB, 1)
+    try {
+        $os = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
+        $cs = Get-CimInstance Win32_ComputerSystem -ErrorAction Stop
+        [PSCustomObject]@{
+            Computer = $cs.Name
+            User     = $env:USERNAME
+            OS       = $os.Caption
+            PS       = $PSVersionTable.PSVersion.ToString()
+            Uptime   = (Get-Date) - $os.LastBootUpTime
+            RAM_GB   = [math]::Round($cs.TotalPhysicalMemory/1GB, 1)
+        }
+    } catch {
+        # Fallback simplificado para ambientes com CIM bloqueado
+        [PSCustomObject]@{
+            Computer = $env:COMPUTERNAME
+            User     = $env:USERNAME
+            OS       = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion').ProductName
+            PS       = $PSVersionTable.PSVersion.ToString()
+            Uptime   = "N/A (CIM indisponível)"
+            RAM_GB   = [math]::Round([Environment]::WorkingSet/1GB, 1)
+        }
     }
 }
 
 # ── 7. GIT ────────────────────────────────────────────────────
-function gst              { git status -sb }
-function ga               { git add . }
-function gco([string]$m)  { git commit -m $m }
-function gpush            { git push }
-function gpull            { git pull }
-function glog             { git log --oneline --graph -15 }
-function gundo            { git reset --soft HEAD~1 }
-function gdiff            { git diff }
-function gcl([string]$URL){ git clone $URL }
-function gcom([string]$m) { git add .; git commit -m $m }
+# Verifica se o Git está instalado antes de carregar as funções
+if (Get-Command git -ErrorAction SilentlyContinue) {
+    function gst              { git status -sb }
+    function ga               { git add . }
+    function gco([string]$m)  { git commit -m $m }
+    function gpush            { git push }
+    function gpull            { git pull }
+    function glog             { git log --oneline --graph -15 }
+    function gundo            { git reset --soft HEAD~1 }
+    function gdiff            { git diff }
+    function gcl([string]$URL){ git clone $URL }
+    function gcom([string]$m) { git add .; git commit -m $m }
 
-# lazyg: o mais destrutivo (stage + commit + push em cadeia) — pede confirmação por padrão.
-# Use -Force para bypass em contextos não-interativos ou quando já visualizou o status.
-function lazyg {
-    param([Parameter(Mandatory)][string]$m, [switch]$Force)
-    git status --short
-    if (-not $Force) {
-        Write-Host "Stage all, commit e push? [s/N]: " -NoNewline -ForegroundColor Yellow
-        $key = [Console]::ReadKey($true)
-        Write-Host $key.KeyChar
-        if ($key.KeyChar -notmatch '^[sS]$') { Write-Host "Abortado." -ForegroundColor Red; return }
+    # lazyg: o mais destrutivo (stage + commit + push em cadeia) — pede confirmação por padrão.
+    # Use -Force para bypass em contextos não-interativos ou quando já visualizou o status.
+    function lazyg {
+        param([Parameter(Mandatory)][string]$m, [switch]$Force)
+        git status --short
+        
+        # Detecta se está em ambiente interativo
+        $isInteractive = [Environment]::UserInteractive -and -not $env:CI
+        if (-not $Force -and $isInteractive) {
+            Write-Host "Stage all, commit e push? [s/N]: " -NoNewline -ForegroundColor Yellow
+            $key = [Console]::ReadKey($true)
+            Write-Host $key.KeyChar
+            if ($key.KeyChar -notmatch '^[sS]$') { Write-Host "Abortado." -ForegroundColor Red; return }
+        }
+        git add .; git commit -m $m; git push
     }
-    git add .; git commit -m $m; git push
+    Set-Alias gs gst
+} else {
+    Write-Verbose "Git não encontrado — aliases Git não carregados"
 }
-Set-Alias gs gst
 
 # ── 8. SUDO ───────────────────────────────────────────────────
 function sudo {
     param([Parameter(ValueFromRemainingArguments)][string[]]$Command)
+    
+    # Suporte a `sudo !!` (último comando do histórico)
+    if ($Command -eq '!!') {
+        $last = (Get-History -Count 1).CommandLine
+        if ($last) {
+            $Command = @($last)
+        } else {
+            Write-Host "Nenhum comando no histórico" -ForegroundColor Yellow
+            return
+        }
+    }
+    
     $exe = if ($PSMajor -ge 7) { 'pwsh' } else { 'powershell' }
     if ($Command) { Start-Process $exe -Verb RunAs -ArgumentList '-NoExit','-Command',($Command -join ' ') }
     else          { Start-Process $exe -Verb RunAs }
@@ -276,6 +321,8 @@ $_ms      = [math]::Round($script:BootTimer.Elapsed.TotalMilliseconds, 0)
 $_color   = if ($_ms -lt 200) { 'Green' } elseif ($_ms -lt 400) { 'Yellow' } else { 'Red' }
 $_plugins = if ($script:StartupModules.Count) { " · $($script:StartupModules -join ', ')" } else { '' }
 $_admin   = if ($IsAdmin) { ' · ADMIN' } else { '' }
+$_icns    = if (Get-Module Terminal-Icons -ErrorAction SilentlyContinue) { ' · Ícones: ON' } else { ' · Ícones: OFF (use `icons`)' }
 
 Write-Host "PS $($PSVersionTable.PSVersion)$_plugins$_admin" -ForegroundColor Cyan -NoNewline
 Write-Host "  [${_ms}ms]" -ForegroundColor $_color
+Write-Host "Dica: Use `icons` para carregar ícones de arquivos" -ForegroundColor DarkGray
