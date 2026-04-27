@@ -16,10 +16,11 @@ Perfil de inicialização do PowerShell otimizado para **mínima latência de bo
    - [Git](#git)
    - [Sistema](#sistema)
    - [Administração](#administração)
-4. [Decisões Técnicas](#decisões-técnicas)
-5. [Notas de Estudo](#notas-de-estudo)
-6. [Estrutura do Repositório](#estrutura-do-repositório)
-7. [AI-Assisted Development](#ai-assisted-development)
+4. [Testes Unitários](#testes-unitários)
+5. [Decisões Técnicas](#decisões-técnicas)
+6. [Notas de Estudo](#notas-de-estudo)
+7. [Estrutura do Repositório](#estrutura-do-repositório)
+8. [AI-Assisted Development](#ai-assisted-development)
 
 ---
 
@@ -123,6 +124,66 @@ Utilizamos um arquivo temporário para garantir que, caso o processo seja interr
 
 ---
 
+## Testes Unitários
+
+O projeto inclui um arquivo de testes unitários (`Microsoft.PowerShell_profile.Tests_diff.ps1`) que valida todas as funções, aliases e comportamentos do perfil.
+
+### Executando os testes
+
+```powershell
+# Navegue até o diretório do projeto
+cd config-powershell7
+
+# Execute os testes
+.\Microsoft.PowerShell_profile.Tests_diff.ps1
+```
+
+### Opções de execução
+
+```powershell
+# Executar com saída detalhada
+.\Microsoft.PowerShell_profile.Tests_diff.ps1 -Verbose
+
+# Executar após recarregar o perfil
+$env:PROFILE_CURRENT = $PROFILE
+.\Microsoft.PowerShell_profile.Tests_diff.ps1
+```
+
+### O que é testado
+
+Os testes cobrem:
+
+| Categoria | Itens testados |
+|-----------|----------------|
+| **Navegação** | `docs`, `home`, `up`, `dtop`, `up2` |
+| **Arquivos** | `mkcd`, `nf`, `touch`, `unzip` |
+| **Texto** | `head`, `tail`, `bat`, `cat` |
+| **Sistema** | `pkill`, `k9`, `pgrep`, `which` |
+| **Git** | `gst`, `ga`, `gcmt`, `gco`, `gpush`, `gpull`, `glog`, `gundo`, `gdiff`, `gcl`, `gcom`, `lazyg`, `gss` |
+| **Clipboard** | `cpy`, `pst`, `Copy-ToClipboard` |
+| **Plugin Cache** | `Clear-PluginCache`, `Clear-Cache`, `Import-TerminalIcons`, `icons` |
+| **Display** | `la`, `ll` |
+| **Administração** | `flushdns` |
+
+### Interpretação dos resultados
+
+Ao final da execução, você verá um resumo:
+
+```
+========================================
+TEST SUMMARY
+========================================
+Total Tests: XX
+Passed:      XX
+Failed:      0
+========================================
+```
+
+- ✅ **Todos os testes passaram:** Seu perfil está funcionando corretamente.
+- ❌ **Algum teste falhou:** Verifique se todas as dependências estão instaladas e se o Execution Policy está configurado corretamente.
+
+---
+
 ## Notas de Estudo
 
 ### Execution Policy no Windows
@@ -137,10 +198,11 @@ Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
 
 ```
 config-powershell7/
-├── Microsoft.PowerShell_profile.ps1    # Código principal
-├── Microsoft.PowerShell_profile.Tests.ps1 # Testes unitários
-├── README.md                           # Documentação PT-BR
-└── .gitignore                          # Filtros do Git
+├── Microsoft.PowerShell_profile.ps1      # Código principal
+├── Microsoft.PowerShell_profile.Tests_diff.ps1 # Testes unitários
+├── README.md                             # Documentação PT-BR
+├── README.en.md                          # Documentação EN
+└── .gitignore                            # Filtros do Git
 ```
 
 ---
@@ -148,3 +210,7 @@ config-powershell7/
 ## AI-Assisted Development
 
 Este projeto utiliza ferramentas de **Inteligência Artificial** para otimização de código e documentação, garantindo a aplicação de boas práticas de engenharia de software e performance.
+
+---
+
+*Revisão: 2026-04 — Compatível com PS 5.1+ / PS Core 7+ / Windows 10+*
