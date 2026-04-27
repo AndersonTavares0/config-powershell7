@@ -55,6 +55,21 @@ $PROFILE
 
 ### 3. Aplicar o perfil
 
+**Importante: Desbloquear arquivos baixados**
+
+Se você baixou os arquivos do GitHub ou de outra fonte externa, o Windows pode bloquear a execução por segurança. Execute este comando **antes** de copiar ou linkar o perfil:
+
+```powershell
+# Desbloqueia todos os arquivos .ps1 no diretório atual
+Get-ChildItem *.ps1 | Unblock-File
+
+# Ou desbloqueie um arquivo específico:
+Unblock-File -Path .\Microsoft.PowerShell_profile.ps1
+Unblock-File -Path .\Microsoft.PowerShell_profile.Tests_diff.ps1
+```
+
+> ⚠️ **Erro comum:** Se você tentar executar e receber a mensagem *"The file is not digitally signed"*, execute o `Unblock-File` primeiro.
+
 **Opção A — Cópia direta:**
 ```powershell
 Copy-Item .\Microsoft.PowerShell_profile.ps1 $PROFILE -Force
