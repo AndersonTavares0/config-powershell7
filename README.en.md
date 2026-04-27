@@ -55,6 +55,21 @@ $PROFILE
 
 ### 3. Apply the profile
 
+**Important: Unblock downloaded files**
+
+If you downloaded the files from GitHub or another external source, Windows may block their execution for security reasons. Run this command **before** copying or linking the profile:
+
+```powershell
+# Unblock all .ps1 files in the current directory
+Get-ChildItem *.ps1 | Unblock-File
+
+# Or unblock specific files:
+Unblock-File -Path .\Microsoft.PowerShell_profile.ps1
+Unblock-File -Path .\Microsoft.PowerShell_profile.Tests_diff.ps1
+```
+
+> ⚠️ **Common error:** If you try to execute and receive the message *"The file is not digitally signed"*, run `Unblock-File` first.
+
 **Option A — Direct Copy:**
 ```powershell
 Copy-Item .\Microsoft.PowerShell_profile.ps1 $PROFILE -Force
