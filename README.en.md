@@ -75,42 +75,76 @@ New-Item -ItemType SymbolicLink -Path $PROFILE -Target "$PWD\Microsoft.PowerShel
 | Command | Action |
 |---------|------|
 | `docs` | Go to `~/Documents` |
+| `dtop` | Go to `$HOME/Desktop` |
 | `home` | Go to `$HOME` |
 | `up` | Go up one level (`cd ..`) |
-| `la` | List files in table format |
+| `up2` | Go up two levels (`cd ..\..`) |
+| `la` | List files in table format (excluding hidden) |
+| `ll` | List files in table format (including hidden) |
 | `mkcd <path>` | Create directory and enter it |
+| `nf <file>` | Create empty file |
 
 ### Files and Text
 
 | Command | Action |
 |---------|------|
 | `touch <file>` | Create file or update timestamp |
-| `grep <pat>` | Filter input via pipeline |
-| `clip` | Copy pipeline output to clipboard |
-| `sed` | Atomic replacement in files |
-
-### Git
-
-| Command | Git Equivalent |
-|---------|-----------------|
-| `gst` | `git status -sb` |
-| `gcom <m>` | `git add .` + `commit` |
-| `lazyg <m>` | `add` + `commit` + `push` |
+| `which <cmd>` | Show command path |
+| `unzip <file> [dest]` | Extract ZIP archive |
+| `head <file> [n]` | Show first n lines (default: 10) |
+| `tail <file> [n]` | Show last n lines (default: 10) |
+| `grep <pattern>` | Filter input via pipeline |
+| `cpy` / `Copy-ToClipboard` | Copy pipeline output to clipboard |
+| `pst` | Paste from clipboard |
+| `sed <file> <find> <replace> [-Backup]` | Atomic replacement in files |
 
 ### System
 
 | Command | Action |
 |---------|------|
-| `df` | Disk usage |
-| `pubip` | Display public IP (cached) |
+| `pkill <name>` / `k9` | Kill process by name |
+| `pgrep <name>` | List processes by name with details |
+| `flushdns` | Clear DNS cache (requires Admin) |
+| `df` | Disk usage by volume |
+| `pubip [-Force]` | Display public IP (cached) |
 | `sysinfo` | Hardware summary and uptime |
+
+### Git
+
+| Command | Git Equivalent |
+|---------|-----------------|
+| `gst` / `gss` | `git status -sb` |
+| `ga` | `git add .` |
+| `gcmt <msg>` | `git commit -m <msg>` |
+| `gco <branch>` | `git checkout <branch>` |
+| `gpush` | `git push` |
+| `gpull` | `git pull` |
+| `glog` | `git log --oneline --graph -15` |
+| `gundo` | `git reset --soft HEAD~1` |
+| `gdiff` | `git diff` |
+| `gcl <url>` | `git clone <url>` |
+| `gcom <msg>` | `git add .` + `git commit -m <msg>` (with error checking) |
+| `lazyg <msg> [-Force]` | `add` + `commit` + `push` (with interactive confirmation) |
 
 ### Administration
 
 ```powershell
 # Open new elevated PowerShell window
 sudo
+
+# Run specific command as Administrator
+sudo <command>
+
+# Re-run last command as Admin
+sudo !!
 ```
+
+### Cache and Plugin Utilities
+
+| Command | Action |
+|---------|------|
+| `Clear-PluginCache` / `Clear-Cache` | Remove plugin cache and restart terminal |
+| `Import-TerminalIcons` / `icons` | Load Terminal-Icons module |
 
 ---
 
@@ -155,15 +189,12 @@ Tests cover:
 
 | Category | Tested Items |
 |----------|--------------|
-| **Navigation** | `docs`, `home`, `up`, `dtop`, `up2` |
-| **Files** | `mkcd`, `nf`, `touch`, `unzip` |
-| **Text** | `head`, `tail`, `bat`, `cat` |
-| **System** | `pkill`, `k9`, `pgrep`, `which` |
-| **Git** | `gst`, `ga`, `gcmt`, `gco`, `gpush`, `gpull`, `glog`, `gundo`, `gdiff`, `gcl`, `gcom`, `lazyg`, `gss` |
-| **Clipboard** | `cpy`, `pst`, `Copy-ToClipboard` |
+| **Navigation** | `docs`, `dtop`, `home`, `up`, `up2`, `la`, `ll`, `mkcd`, `nf` |
+| **Files and Text** | `touch`, `which`, `unzip`, `head`, `tail`, `grep`, `cpy`, `pst`, `Copy-ToClipboard`, `sed` |
+| **System** | `pkill`, `k9`, `pgrep`, `flushdns`, `df`, `pubip`, `sysinfo` |
+| **Git** | `gst`, `gss`, `ga`, `gcmt`, `gco`, `gpush`, `gpull`, `glog`, `gundo`, `gdiff`, `gcl`, `gcom`, `lazyg` |
+| **Administration** | `sudo` |
 | **Plugin Cache** | `Clear-PluginCache`, `Clear-Cache`, `Import-TerminalIcons`, `icons` |
-| **Display** | `la`, `ll` |
-| **Administration** | `flushdns` |
 
 ### Interpreting results
 
@@ -213,4 +244,4 @@ This project utilizes **Artificial Intelligence** tools for code optimization an
 
 ---
 
-*Revision: 2026-04 — Compatible with PS 5.1+ / PS Core 7+ / Windows 10+*
+*Revision: 04/27/2026 — Compatible with PS 5.1+ / PS Core 7+ / Windows 10+*
