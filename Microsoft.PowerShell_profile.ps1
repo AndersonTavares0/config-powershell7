@@ -1,76 +1,109 @@
 #Requires -Version 5.1
+
 # ============================================================
-# POWERSHELL PROFILE 
-# PS 5.1+ / PS Core 7+  |  Revisão: 2026-04
+# POWERSHELL PROFILE  —  Refatorado
+# PS 5.1+ / PS Core 7+ | Revisão: 2026-05
 # ============================================================
 
-# ── 1. ESTADO GLOBAL ─────────────────────────────────────────
-# $script: torna o escopo explícito e evita colisão com variáveis do usuário
+# ── 1. INICIALIZAÇÃO ─────────────────────────────────────────
 $script:BootTimer      = [System.Diagnostics.Stopwatch]::StartNew()
 $script:StartupModules = [System.Collections.Generic.List[string]]::new()
-$script:CachedPublicIP = $null   # cache de sessão para pubip (evita nova requisição de rede)
+$script:CachedPublicIP = $null
 
-$PSMajor = $PSVersionTable.PSVersion.Major   # cache; PSVersionTable é um objeto pesado de acessar N vezes
-$IsAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()
-           ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+# Movidos para $script: — escopo explícito, evita ambiguidade em funções
+$script:PSMajor  = $PSVersionTable.PSVersion.Major
+$script:IsAdmin  = ([Security.Principal.WindowsPrincipal] `
+    [Security.Principal.WindowsIdentity]::GetCurrent()
+).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 
-# ── HELPER PRIVADO ────────────────────────────────────────────
-# Abstrai o padrão `... | Out-String | Invoke-Expression` com error handling e registro de módulo.
-# GetNewClosure() é chamado pelo CALLER para capturar variáveis do escopo externo no scriptblock.
-function _InitPlugin([string]$Label, [scriptblock]$Init) {
-    try {
-        (& $Init) | Out-String | Invoke-Expression
-        $script:StartupModules.Add($Label)
-    } catch {
-        Write-Warning "Plugin '$Label': falha na inicialização — $_"
+# ── 2. PLUGINS & CACHE ───────────────────────────────────────
+$script:CachePath  = "$HOME\.cache_pwsh_plugins.ps1"
+$script:ThemePath  = "$HOME\.poshthemes\atomic.omp.json"
+
+# Nomes em inglês + alias, convenção unificada
+function Clear-PluginCache {
+    Remove-Item $script:CachePath -ErrorAction SilentlyContinue
+    Write-Host "Cache removido. Reinicie o terminal." -ForegroundColor Green
+}
+Set-Alias Clear-Cache Clear-PluginCache
+
+# Verifica se já carregado antes de chamar Import-Module
+function Import-TerminalIcons {
+    if (Get-Module Terminal-Icons) {
+        Write-Host "Terminal-Icons já está carregado." -ForegroundColor Yellow
+        return
     }
+    Import-Module Terminal-Icons -ErrorAction SilentlyContinue
+    if (Get-Module Terminal-Icons) { Write-Host "Terminal-Icons carregado." -ForegroundColor Green }
+    else { Write-Warning "Terminal-Icons não encontrado. Execute: Install-Module Terminal-Icons" }
+}
+Set-Alias icons Import-TerminalIcons
+
+# MD5 encapsulado em try/finally: garante Dispose() mesmo em falha.
+# $script:ThemePath centralizado — um único ponto de referência para o tema.
+function script:Get-PluginFingerprint {
+    $parts = @(
+        (Get-Command zoxide     -ErrorAction SilentlyContinue)?.Source
+        (Get-Command oh-my-posh -ErrorAction SilentlyContinue)?.Source
+        $script:ThemePath
+        [int](Test-Path $script:ThemePath)
+    )
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($parts -join '|')
+    $md5   = [System.Security.Cryptography.MD5]::Create()
+    try    { [System.BitConverter]::ToString($md5.ComputeHash($bytes)) -replace '-', '' }
+    finally{ $md5.Dispose() }
 }
 
-# ── 2. PLUGINS ────────────────────────────────────────────────
-$script:CachePath = "$HOME\.cache_pwsh_plugins.ps1"
+# Lógica de rebuild extraída: testável, nomeada, sem bloco `& {}` anônimo
+function script:Update-PluginCache {
+    Write-Host "Atualizando cache de plugins..." -ForegroundColor DarkGray
+    $buf = [System.Text.StringBuilder]::new()
+    [void]$buf.AppendLine("# fp:$(script:Get-PluginFingerprint)")
 
-function icons { Import-Module Terminal-Icons -ErrorAction SilentlyContinue; Write-Host "Terminal-Icons carregado" -ForegroundColor Green }
-function Limpar-Cache { Remove-Item $script:CachePath -ErrorAction SilentlyContinue; Write-Host "Cache limpo. Reinicie o terminal." -ForegroundColor Green }
-Set-Alias Clear-Cache Limpar-Cache
-
-if (-not (Test-Path $script:CachePath)) {
-    Write-Host "Criando cache de plugins pela primeira vez..." -ForegroundColor DarkGray
-    & {
-        $buf = [System.Text.StringBuilder]::new()
-        
-        if (Get-Command zoxide -ErrorAction SilentlyContinue) {
-            [void]$buf.AppendLine((zoxide init powershell | Out-String))
-            [void]$buf.AppendLine("`$script:StartupModules.Add('Zoxide')")
-        }
-        
-        if (Get-Command oh-my-posh -ErrorAction SilentlyContinue) {
-            $thm = "$HOME\.poshthemes\atomic.omp.json"
-            $lbl = if (Test-Path $thm) { 'OMP:atomic' } else { 'OMP:default' }
-            
-            if (Test-Path $thm) { [void]$buf.AppendLine((oh-my-posh init pwsh --config $thm | Out-String)) }
-            else                { [void]$buf.AppendLine((oh-my-posh init pwsh | Out-String)) }
-            
-            [void]$buf.AppendLine("`$script:StartupModules.Add('$lbl')")
-        }
-        
-        try   { Set-Content -Path $script:CachePath -Value $buf.ToString() -Encoding UTF8 -ErrorAction Stop }
-        catch { Write-Warning "Falha ao salvar cache: $_" }
+    if (Get-Command zoxide -ErrorAction SilentlyContinue) {
+        [void]$buf.AppendLine((zoxide init powershell | Out-String))
+        [void]$buf.AppendLine("`$script:StartupModules.Add('Zoxide')")
     }
+
+    if (Get-Command oh-my-posh -ErrorAction SilentlyContinue) {
+        $themeExists = Test-Path $script:ThemePath
+        $label       = if ($themeExists) { 'OMP:atomic' } else { 'OMP:default' }
+        $initCmd     = if ($themeExists) { oh-my-posh init pwsh --config $script:ThemePath }
+                       else              { oh-my-posh init pwsh }
+        [void]$buf.AppendLine(($initCmd | Out-String))
+        [void]$buf.AppendLine("`$script:StartupModules.Add('$label')")
+    }
+
+    try   { Set-Content -Path $script:CachePath -Value $buf.ToString() -Encoding UTF8 -ErrorAction Stop }
+    catch { Write-Warning "Falha ao salvar cache: $_" }
 }
 
-if (Test-Path $script:CachePath) { . $script:CachePath }
+$script:CurrentFP = script:Get-PluginFingerprint
+$script:CachedFP  = ''
+
+if (Test-Path $script:CachePath) {
+    $firstLine = Get-Content $script:CachePath -TotalCount 1 -ErrorAction SilentlyContinue
+    if ($firstLine -match '^# fp:(.+)$') { $script:CachedFP = $Matches[1] }
+}
+
+if ($script:CachedFP -ne $script:CurrentFP) { script:Update-PluginCache }
+if (Test-Path $script:CachePath)             { . $script:CachePath }
 
 # ── 3. PSREADLINE ─────────────────────────────────────────────
-# Get-Command: verifica apenas o PATH resolvido (~100ms mais rápido que Get-Module -ListAvailable)
 if (Get-Command Set-PSReadLineOption -ErrorAction SilentlyContinue) {
-    Set-PSReadLineOption -EditMode Windows -HistoryNoDuplicates -HistorySearchCursorMovesToEnd `
-                         -BellStyle None -MaximumHistoryCount 5000
-    if ($PSMajor -ge 7) {
+    Set-PSReadLineOption -EditMode Windows `
+        -HistoryNoDuplicates `
+        -HistorySearchCursorMovesToEnd `
+        -BellStyle None `
+        -MaximumHistoryCount 5000
+
+    if ($script:PSMajor -ge 7) {
         Set-PSReadLineOption -PredictionSource History -PredictionViewStyle ListView
     }
-    Set-PSReadLineKeyHandler -Key UpArrow             -Function HistorySearchBackward
-    Set-PSReadLineKeyHandler -Key DownArrow           -Function HistorySearchForward
-    Set-PSReadLineKeyHandler -Key Tab                 -Function MenuComplete
+
+    Set-PSReadLineKeyHandler -Key UpArrow   -Function HistorySearchBackward
+    Set-PSReadLineKeyHandler -Key DownArrow -Function HistorySearchForward
+    Set-PSReadLineKeyHandler -Key Tab       -Function MenuComplete
     Set-PSReadLineKeyHandler -Chord 'Ctrl+d'          -Function DeleteChar
     Set-PSReadLineKeyHandler -Chord 'Ctrl+w'          -Function BackwardDeleteWord
     Set-PSReadLineKeyHandler -Chord 'Ctrl+LeftArrow'  -Function BackwardWord
@@ -78,34 +111,35 @@ if (Get-Command Set-PSReadLineOption -ErrorAction SilentlyContinue) {
 }
 
 # ── 4. NAVEGAÇÃO ──────────────────────────────────────────────
-$_docs    = [Environment]::GetFolderPath('MyDocuments')
-$_desktop = [Environment]::GetFolderPath('Desktop')
+# Nomes descritivos sem underscore (convenção PS, não Python)
+$script:DocsPath    = [Environment]::GetFolderPath('MyDocuments')
+$script:DesktopPath = [Environment]::GetFolderPath('Desktop')
 
-function docs  { Set-Location $_docs }
-function dtop  { Set-Location $_desktop }
-function home  { Set-Location $HOME }   # `~` foi renomeado: shadoweava operador nativo do PS
-function up    { Set-Location .. }      # `..` foi renomeado: shadoweava separador de caminho
-function up2   { Set-Location ..\.. }
-function la    { Get-ChildItem | Format-Table -AutoSize }
-function ll    { Get-ChildItem -Force | Format-Table -AutoSize }
+function docs { Set-Location $script:DocsPath    }
+function dtop { Set-Location $script:DesktopPath }
+function home { Set-Location $HOME               }
+function up   { Set-Location ..                  }
+function up2  { Set-Location ..\..               }
+function la   { Get-ChildItem        | Format-Table -AutoSize }
+function ll   { Get-ChildItem -Force | Format-Table -AutoSize }
 
-function mkcd([string]$Path) {
+# Parâmetro via param() formal — permite tab completion e -WhatIf futuro
+function mkcd {
+    param([Parameter(Mandatory)][string]$Path)
     try {
         New-Item -ItemType Directory -Force -Path $Path -ErrorAction Stop | Out-Null
         Set-Location $Path
     } catch {
-        Write-Host "mkcd: não foi possível criar '$Path' — $($_.Exception.Message)" -ForegroundColor Red
+        Write-Error "mkcd: não foi possível criar '$Path' — $($_.Exception.Message)"
     }
 }
 
-# ValueFromPipeline: permite `"dir1","dir2" | nf` além do uso normal
 function nf {
     param([Parameter(Mandatory, ValueFromPipeline)][string]$Name)
     process { New-Item -ItemType File -Path $Name -Force | Out-Null }
 }
 
 # ── 5. ARQUIVOS E TEXTO ───────────────────────────────────────
-# ValueFromPipeline: permite `"a.txt","b.txt" | touch`
 function touch {
     param([Parameter(Mandatory, ValueFromPipeline)][string]$File)
     process {
@@ -114,46 +148,57 @@ function touch {
     }
 }
 
-function which([string]$Cmd) {
-    $r = (Get-Command $Cmd -ErrorAction SilentlyContinue).Source
-    if ($r) { $r } else { Write-Host "$Cmd : not found" -ForegroundColor Yellow }
+function which {
+    param([Parameter(Mandatory)][string]$Cmd)
+    $result = (Get-Command $Cmd -ErrorAction SilentlyContinue).Source
+    if ($result) { $result }
+    else         { Write-Warning "'$Cmd' não encontrado no PATH." }
 }
 
-function unzip([string]$File, [string]$Dest = '.') {
-    try {
-        Expand-Archive -Path $File -DestinationPath $Dest -Force -ErrorAction Stop
-    } catch {
-        Write-Host "unzip: falha ao extrair '$File' — $($_.Exception.Message)" -ForegroundColor Red
-    }
+function unzip {
+    param(
+        [Parameter(Mandatory)][string]$File,
+        [string]$Dest = '.'
+    )
+    try   { Expand-Archive -Path $File -DestinationPath $Dest -Force -ErrorAction Stop }
+    catch { Write-Error "unzip: falha ao extrair '$File' — $($_.Exception.Message)" }
 }
 
-function head([string]$Path, [int]$Lines = 10) { Get-Content $Path -TotalCount $Lines }
-function tail([string]$Path, [int]$Lines = 10) { Get-Content $Path -Tail $Lines }
+function head {
+    param([Parameter(Mandatory)][string]$Path, [int]$Lines = 10)
+    Get-Content $Path -TotalCount $Lines
+}
 
-# filter: streaming real — processa cada objeto imediatamente sem alocar coleção em memória
-filter grep([string]$Pattern) { $_ | Select-String -Pattern $Pattern }
+function tail {
+    param([Parameter(Mandatory)][string]$Path, [int]$Lines = 10)
+    Get-Content $Path -Tail $Lines
+}
 
-# clip: begin/process/end acumula o pipeline inteiro e chama Set-Clipboard UMA vez.
-# (filter chamaria Set-Clipboard por item, sobrescrevendo o anterior a cada linha)
-# Write-Verbose: silencioso por padrão — use `... | clip -Verbose` para ver o feedback
-function clip {
+filter grep {
+    param([Parameter(Mandatory)][string]$Pattern)
+    $_ | Select-String -Pattern $Pattern
+}
+
+# $InputObject declarado explicitamente: elimina dependência implícita de $_ fora de pipeline.
+# Sem isso, chamar Copy-ToClipboard sem pipeline acumula $null silenciosamente.
+function Copy-ToClipboard {
     [CmdletBinding()]
-    param()
+    param([Parameter(ValueFromPipeline)][string]$InputObject)
     begin   { $buf = [System.Text.StringBuilder]::new() }
-    process { [void]$buf.AppendLine($_) }
-    end     {
+    process { if ($null -ne $InputObject) { [void]$buf.AppendLine($InputObject) } }
+    end {
         $text = $buf.ToString().TrimEnd()
         $text | Set-Clipboard
-        Write-Verbose "Copiado ($($text.Length) chars)"
+        Write-Verbose "Copiado: $($text.Length) caracteres."
     }
 }
-Set-Alias cpy clip
+Set-Alias cpy Copy-ToClipboard
+
 function pst { Get-Clipboard }
 
-# sed: escrita atômica via arquivo temporário.
-# Fluxo: lê → processa → grava no .tmp → Move-Item substitui o original atomicamente.
-# Se qualquer etapa falhar, o .tmp é removido e o original fica intacto.
-# Parâmetro -Backup: cria cópia .bak antes da substituição (opcional, off por padrão).
+# Leitura e escrita via [System.IO.File]: encoding uniforme entre PS 5.1 e PS 7.
+# Get-Content -Encoding UTF8 difere entre versões (BOM no 5.1, sem BOM no 7).
+# .tmp no mesmo diretório do alvo → Move-Item = rename de SO = atômico em qualquer volume.
 function sed {
     param(
         [Parameter(Mandatory, Position=0)][string]$File,
@@ -161,82 +206,85 @@ function sed {
         [Parameter(Mandatory, Position=2)][string]$Replace,
         [switch]$Backup
     )
-    # Validar se o arquivo existe
+
     if (-not (Test-Path $File)) {
-        Write-Host "sed: arquivo '$File' não encontrado" -ForegroundColor Red
+        Write-Error "sed: arquivo '$File' não encontrado."
         return
     }
+
     $tmp = $null
     try {
         $resolved   = (Resolve-Path $File -ErrorAction Stop).Path
-        $newContent = (Get-Content $resolved -Raw -Encoding UTF8).Replace($Find, $Replace)
+        $enc        = [System.Text.Encoding]::UTF8
+        $newContent = ([System.IO.File]::ReadAllText($resolved, $enc)).Replace($Find, $Replace)
 
-        $tmp = [System.IO.Path]::GetTempFileName()
-        [System.IO.File]::WriteAllText($tmp, $newContent, [System.Text.Encoding]::UTF8)
+        $tmp = [System.IO.Path]::Combine(
+            [System.IO.Path]::GetDirectoryName($resolved),
+            [System.IO.Path]::GetRandomFileName()
+        )
+        [System.IO.File]::WriteAllText($tmp, $newContent, $enc)
 
         if ($Backup) { Copy-Item $resolved "$resolved.bak" -Force }
-        Move-Item $tmp $resolved -Force   # substituição atômica no mesmo volume
-
+        Move-Item $tmp $resolved -Force
         Write-Verbose "Modificado: $resolved$(if ($Backup) { " (backup: $resolved.bak)" })"
     } catch {
         if ($tmp -and (Test-Path $tmp)) { Remove-Item $tmp -ErrorAction SilentlyContinue }
-        Write-Host "sed: falha em '$File' — $($_.Exception.Message)" -ForegroundColor Red
+        Write-Error "sed: falha em '$File' — $($_.Exception.Message)"
     }
 }
 
 # ── 6. SISTEMA ────────────────────────────────────────────────
-function pkill([string]$Name) {
+function pkill {
+    param([Parameter(Mandatory)][string]$Name)
     Get-Process -Name $Name -ErrorAction SilentlyContinue | Stop-Process -Force
 }
 Set-Alias k9 pkill
 
-function pgrep([string]$Name) {
+function pgrep {
+    param([Parameter(Mandatory)][string]$Name)
     Get-Process -Name "*$Name*" -ErrorAction SilentlyContinue |
         Format-Table Id, ProcessName, CPU,
-            @{ L='Mem(MB)'; E={ [math]::Round($_.WorkingSet64/1MB,1) } } -AutoSize
+            @{ L='Mem(MB)'; E={ [math]::Round($_.WorkingSet64/1MB, 1) } } -AutoSize
 }
 
 function flushdns {
-    if ($IsAdmin) { Clear-DnsClientCache; Write-Host "DNS Limpo" -ForegroundColor Green }
-    else          { Write-Warning "Requer privilégios de Administrador" }
+    if ($script:IsAdmin) { Clear-DnsClientCache; Write-Host "Cache DNS limpo." -ForegroundColor Green }
+    else                 { Write-Warning "flushdns requer privilégios de Administrador." }
 }
 
 function df {
-    Get-Volume | Where-Object { $_.DriveLetter -and $_.Size -gt 0 } | Sort-Object DriveLetter |
+    Get-Volume |
+        Where-Object { $_.DriveLetter -and $_.Size -gt 0 } |
+        Sort-Object DriveLetter |
         Format-Table DriveLetter, FileSystemLabel, FileSystem,
-            @{ L='Size(GB)'; E={ [math]::Round($_.Size/1GB,1) } },
-            @{ L='Free(GB)'; E={ [math]::Round($_.SizeRemaining/1GB,1) } },
-            @{ L='Free%';    E={ [math]::Round(($_.SizeRemaining/$_.Size)*100,0) } } -AutoSize
+            @{ L='Size(GB)'; E={ [math]::Round($_.Size/1GB, 1) } },
+            @{ L='Free(GB)'; E={ [math]::Round($_.SizeRemaining/1GB, 1) } },
+            @{ L='Free%';    E={ [math]::Round(($_.SizeRemaining/$_.Size)*100, 0) } } -AutoSize
 }
 
-# Cache de sessão: após a primeira chamada bem-sucedida, retorna o valor armazenado
-# sem nova requisição de rede. `pubip -Force` ignora o cache e busca novamente.
 function pubip {
     param([switch]$Force)
     if ($script:CachedPublicIP -and -not $Force) {
-        Write-Verbose "IP (cache de sessão): $script:CachedPublicIP"
+        Write-Verbose "IP (cache): $script:CachedPublicIP"
         return $script:CachedPublicIP
     }
-    
-    $services = @('https://api.ipify.org', 'https://icanhazip.com', 'https://ifconfig.me/ip')
-    foreach ($url in $services) {
+    $endpoints = 'https://api.ipify.org', 'https://icanhazip.com', 'https://ifconfig.me/ip'
+    foreach ($url in $endpoints) {
         try {
-            $r = Invoke-RestMethod $url -TimeoutSec 5 -ErrorAction Stop
-            if ($r) {
-                $script:CachedPublicIP = $r.Trim()
+            $response = Invoke-RestMethod $url -TimeoutSec 5 -ErrorAction Stop
+            if ($response) {
+                $script:CachedPublicIP = $response.Trim()
                 return $script:CachedPublicIP
             }
-        } catch {
-            Write-Verbose "Falha ao obter IP de $url : $_"
-        }
+        } catch { Write-Verbose "pubip: falha em $url — $_" }
     }
-    Write-Warning "Não foi possível obter o IP público (todos os serviços falharam)"
+    Write-Warning "pubip: nenhum endpoint respondeu."
 }
 
 function sysinfo {
     try {
         $os = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
-        $cs = Get-CimInstance Win32_ComputerSystem -ErrorAction Stop
+        $cs = Get-CimInstance Win32_ComputerSystem  -ErrorAction Stop
         [PSCustomObject]@{
             Computer = $cs.Name
             User     = $env:USERNAME
@@ -246,39 +294,65 @@ function sysinfo {
             RAM_GB   = [math]::Round($cs.TotalPhysicalMemory/1GB, 1)
         }
     } catch {
-        # Fallback simplificado para ambientes com CIM bloqueado
+        # Fallback com try/catch aninhado: acesso ao registry também pode falhar
+        $osName = try {
+            (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -ErrorAction Stop).ProductName
+        } catch { 'Windows (versão desconhecida)' }
+
         [PSCustomObject]@{
-            Computer = $env:COMPUTERNAME
-            User     = $env:USERNAME
-            OS       = (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion').ProductName
-            PS       = $PSVersionTable.PSVersion.ToString()
-            Uptime   = "N/A (CIM indisponível)"
-            RAM_GB   = [math]::Round([Environment]::WorkingSet/1GB, 1)
+            Computer  = $env:COMPUTERNAME
+            User      = $env:USERNAME
+            OS        = $osName
+            PS        = $PSVersionTable.PSVersion.ToString()
+            Uptime    = 'N/A (CIM indisponível)'
+            PS_Mem_MB = [math]::Round([Environment]::WorkingSet/1MB, 1)
         }
     }
 }
 
 # ── 7. GIT ────────────────────────────────────────────────────
-# Verifica se o Git está instalado antes de carregar as funções
 if (Get-Command git -ErrorAction SilentlyContinue) {
-    function gst              { git status -sb }
-    function ga               { git add . }
-    function gco([string]$m)  { git commit -m $m }
-    function gpush            { git push }
-    function gpull            { git pull }
-    function glog             { git log --oneline --graph -15 }
-    function gundo            { git reset --soft HEAD~1 }
-    function gdiff            { git diff }
-    function gcl([string]$URL){ git clone $URL }
-    function gcom([string]$m) { git add .; git commit -m $m }
+    function gst { git status -sb }
+    function ga  { git add . }
 
-    # lazyg: o mais destrutivo (stage + commit + push em cadeia) — pede confirmação por padrão.
-    # Use -Force para bypass em contextos não-interativos ou quando já visualizou o status.
+    # gcmt em vez de gcm: `gcm` é alias nativo do PS para Get-Command — colisão crítica
+    function gcmt {
+        param([Parameter(Mandatory)][string]$Message)
+        git commit -m $Message
+    }
+
+    # gco com [Parameter(Mandatory)]: git checkout sem branch imprime usage em vez de erro claro
+    function gco {
+        param([Parameter(Mandatory)][string]$Branch)
+        git checkout $Branch
+    }
+
+    function gpush { git push }
+    function gpull { git pull }
+    function glog  { git log --oneline --graph -15 }
+    function gundo { git reset --soft HEAD~1 }
+    function gdiff { git diff }
+
+    function gcl {
+        param([Parameter(Mandatory)][string]$URL)
+        git clone $URL
+    }
+
+    # gcom verifica $LASTEXITCODE: falha em git add não deve chegar ao commit
+    function gcom {
+        param([Parameter(Mandatory)][string]$Message)
+        git add .
+        if ($LASTEXITCODE -ne 0) { Write-Error "gcom: git add falhou."; return }
+        git commit -m $Message
+    }
+
+    # lazyg verifica cada passo: commit falho não dispara push
     function lazyg {
-        param([Parameter(Mandatory)][string]$m, [switch]$Force)
+        param(
+            [Parameter(Mandatory)][string]$Message,
+            [switch]$Force
+        )
         git status --short
-        
-        # Detecta se está em ambiente interativo
         $isInteractive = [Environment]::UserInteractive -and -not $env:CI
         if (-not $Force -and $isInteractive) {
             Write-Host "Stage all, commit e push? [s/N]: " -NoNewline -ForegroundColor Yellow
@@ -286,42 +360,56 @@ if (Get-Command git -ErrorAction SilentlyContinue) {
             Write-Host $key.KeyChar
             if ($key.KeyChar -notmatch '^[sS]$') { Write-Host "Abortado." -ForegroundColor Red; return }
         }
-        git add .; git commit -m $m; git push
+        git add .
+        if ($LASTEXITCODE -ne 0) { Write-Error "lazyg: git add falhou.";    return }
+        git commit -m $Message
+        if ($LASTEXITCODE -ne 0) { Write-Error "lazyg: git commit falhou."; return }
+        git push
     }
-    Set-Alias gs gst
+
+    # gss em vez de gs: `gs` pode colidir com Get-Service em alguns ambientes PS 5.1
+    Set-Alias gss gst
 } else {
-    Write-Verbose "Git não encontrado — aliases Git não carregados"
+    Write-Verbose "Git não encontrado — aliases Git não carregados."
 }
 
 # ── 8. SUDO ───────────────────────────────────────────────────
 function sudo {
     param([Parameter(ValueFromRemainingArguments)][string[]]$Command)
-    
-    # Suporte a `sudo !!` (último comando do histórico)
-    if ($Command -eq '!!') {
+
+    if ($Command.Count -eq 1 -and $Command[0] -eq '!!') {
         $last = (Get-History -Count 1).CommandLine
-        if ($last) {
-            $Command = @($last)
-        } else {
-            Write-Host "Nenhum comando no histórico" -ForegroundColor Yellow
-            return
-        }
+        if ($last) { $Command = @($last) }
+        else       { Write-Host "Nenhum comando no histórico." -ForegroundColor Yellow; return }
     }
-    
-    $exe = if ($PSMajor -ge 7) { 'pwsh' } else { 'powershell' }
-    if ($Command) { Start-Process $exe -Verb RunAs -ArgumentList '-NoExit','-Command',($Command -join ' ') }
-    else          { Start-Process $exe -Verb RunAs }
+
+    $exe = if ($script:PSMajor -ge 7) { 'pwsh' } else { 'powershell' }
+
+    if ($Command) {
+        # -EncodedCommand preserva aspas e caracteres especiais.
+        # -Command com string concatenada perde delimitadores em caminhos com espaços.
+        $encoded = [Convert]::ToBase64String(
+            [System.Text.Encoding]::Unicode.GetBytes($Command -join ' ')
+        )
+        Start-Process $exe -Verb RunAs -ArgumentList '-NoExit', '-EncodedCommand', $encoded
+    } else {
+        Start-Process $exe -Verb RunAs
+    }
 }
 
 # ── 9. BOOT SUMMARY ───────────────────────────────────────────
-$script:BootTimer.Stop()
-$Host.UI.RawUI.WindowTitle = "PowerShell $($PSVersionTable.PSVersion)$(if ($IsAdmin) { ' [ADMIN]' })"
+# Wrapped em scriptblock: $_ms, $_color etc. não vazam para a sessão do usuário
+& {
+    $script:BootTimer.Stop()
+    $Host.UI.RawUI.WindowTitle = "PowerShell $($PSVersionTable.PSVersion)$(
+        if ($script:IsAdmin) { ' [ADMIN]' }
+    )"
 
-$_ms      = [math]::Round($script:BootTimer.Elapsed.TotalMilliseconds, 0)
-$_color   = if ($_ms -lt 200) { 'Green' } elseif ($_ms -lt 400) { 'Yellow' } else { 'Red' }
-$_plugins = if ($script:StartupModules.Count) { " · $($script:StartupModules -join ', ')" } else { '' }
-$_admin   = if ($IsAdmin) { ' · ADMIN' } else { '' }
-$_icns    = if (Get-Module Terminal-Icons -ErrorAction SilentlyContinue) { ' · Ícones: ON' } else { ' · Ícones: OFF (use `icons`)' }
+    $ms      = [math]::Round($script:BootTimer.Elapsed.TotalMilliseconds, 0)
+    $color   = if ($ms -lt 200) { 'Green' } elseif ($ms -lt 400) { 'Yellow' } else { 'Red' }
+    $plugins = if ($script:StartupModules.Count) { " · $($script:StartupModules -join ', ')" } else { '' }
+    $admin   = if ($script:IsAdmin) { ' · ADMIN' } else { '' }
 
-Write-Host "PS $($PSVersionTable.PSVersion)$_plugins$_admin" -ForegroundColor Cyan -NoNewline
-Write-Host "  [${_ms}ms]" -ForegroundColor $_color
+    Write-Host "PS $($PSVersionTable.PSVersion)$plugins$admin" -ForegroundColor Cyan -NoNewline
+    Write-Host " [${ms}ms]" -ForegroundColor $color
+}
