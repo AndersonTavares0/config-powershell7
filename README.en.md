@@ -16,10 +16,11 @@ PowerShell startup profile optimized for **minimal boot latency**, **development
     - [Git](#git)
     - [System](#system)
     - [Administration](#administration)
-4. [Technical Decisions](#technical-decisions)
-5. [Study Notes](#study-notes)
-6. [Repository Structure](#repository-structure)
-7. [AI-Assisted Development](#ai-assisted-development)
+4. [Unit Tests](#unit-tests)
+5. [Technical Decisions](#technical-decisions)
+6. [Study Notes](#study-notes)
+7. [Repository Structure](#repository-structure)
+8. [AI-Assisted Development](#ai-assisted-development)
 
 ---
 
@@ -123,6 +124,66 @@ We use a temporary file to ensure that if the process is interrupted, the origin
 
 ---
 
+## Unit Tests
+
+The project includes a unit test file (`Microsoft.PowerShell_profile.Tests_diff.ps1`) that validates all functions, aliases, and behaviors of the profile.
+
+### Running the tests
+
+```powershell
+# Navigate to the project directory
+cd config-powershell7
+
+# Run the tests
+.\Microsoft.PowerShell_profile.Tests_diff.ps1
+```
+
+### Execution options
+
+```powershell
+# Run with verbose output
+.\Microsoft.PowerShell_profile.Tests_diff.ps1 -Verbose
+
+# Run after reloading the profile
+$env:PROFILE_CURRENT = $PROFILE
+.\Microsoft.PowerShell_profile.Tests_diff.ps1
+```
+
+### What is tested
+
+Tests cover:
+
+| Category | Tested Items |
+|----------|--------------|
+| **Navigation** | `docs`, `home`, `up`, `dtop`, `up2` |
+| **Files** | `mkcd`, `nf`, `touch`, `unzip` |
+| **Text** | `head`, `tail`, `bat`, `cat` |
+| **System** | `pkill`, `k9`, `pgrep`, `which` |
+| **Git** | `gst`, `ga`, `gcmt`, `gco`, `gpush`, `gpull`, `glog`, `gundo`, `gdiff`, `gcl`, `gcom`, `lazyg`, `gss` |
+| **Clipboard** | `cpy`, `pst`, `Copy-ToClipboard` |
+| **Plugin Cache** | `Clear-PluginCache`, `Clear-Cache`, `Import-TerminalIcons`, `icons` |
+| **Display** | `la`, `ll` |
+| **Administration** | `flushdns` |
+
+### Interpreting results
+
+At the end of execution, you will see a summary:
+
+```
+========================================
+TEST SUMMARY
+========================================
+Total Tests: XX
+Passed:      XX
+Failed:      0
+========================================
+```
+
+- ✅ **All tests passed:** Your profile is working correctly.
+- ❌ **Some tests failed:** Check if all dependencies are installed and if the Execution Policy is configured correctly.
+
+---
+
 ## Study Notes
 
 ### Execution Policy on Windows
@@ -138,7 +199,7 @@ Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
 ```
 config-powershell7/
 ├── Microsoft.PowerShell_profile.ps1     # Main profile code
-├── Microsoft.PowerShell_profile.Tests.ps1 # Unit tests
+├── Microsoft.PowerShell_profile.Tests_diff.ps1 # Unit tests
 ├── README.md                            # Documentation (PT-BR)
 ├── README.en.md                         # Documentation (EN)
 └── .gitignore                           # Git filters
