@@ -11,29 +11,27 @@ A PowerShell initialization profile focused on minimal boot latency, development
 1. [Requirements](#requirements)
 2. [Installation](#installation)
 3. [Command Reference](#command-reference)
-   - [Navigation](#navigation)
-   - [Files and Text](#files-and-text)
-   - [Git](#git)
-   - [System](#system)
-   - [Admin](#admin)
-4. [Technical Decisions](#technical-decisions)
-5. [Study Notes](#study-notes)
+4. [Unit Tests](#unit-tests)
+5. [Technical Decisions](#technical-decisions)
+6. [Study Notes](#study-notes)
+7. [Repository Structure](#repository-structure)
+8. [AI-Assisted Development](#ai-assisted-development)
 
 ---
 
 ## Requirements
 
 | Component | Installation | Required |
-|---|---|---|
-| PowerShell 5.1+ | Included in Windows 10+; PS 7: `winget install Microsoft.PowerShell` | ✅ |
-| Nerd Font | [nerdfonts.com](https://www.nerdfonts.com) — Recommended: `FiraCode Nerd Font` | ✅ (for icons) |
-| Git | `winget install Git.Git` | ✅ |
-| Oh My Posh | `winget install JanDeLaaj.oh-my-posh` | Optional |
-| Zoxide | `winget install ajeetdsouza.zoxide` | Optional |
-| PSReadLine | Included in PS 7; update via `Install-Module PSReadLine -Force` | ✅ |
-| Terminal-Icons | `Install-Module Terminal-Icons -Repository PSGallery` | Optional (lazy load) |
+|-----------|--------------|----------|
+| **PowerShell 5.1+** | Included in Windows 10+; PS 7: `winget install Microsoft.PowerShell` | ✅ |
+| **Nerd Font** | [nerdfonts.com](https://www.nerdfonts.com) — Recommended: `FiraCode Nerd Font` | ✅ (for icons) |
+| **Git** | `winget install Git.Git` | ✅ |
+| **Oh My Posh** | `winget install JanDeLaaj.oh-my-posh` | Optional |
+| **Zoxide** | `winget install ajeetdsouza.zoxide` | Optional |
+| **PSReadLine** | Included in PS 7; update via `Install-Module PSReadLine -Force` | ✅ |
+| **Terminal-Icons** | `Install-Module Terminal-Icons -Repository PSGallery` | Optional (lazy load) |
 
-> **Compatibility:** PS 5.1 (Windows PowerShell) and PS Core 7+. Features exclusive to PS 7 (e.g., `PredictionViewStyle`) are activated conditionally via `$PSMajor`.
+> **Compatibility:** Works on PS 5.1 (Windows PowerShell) and PS Core 7+. PS 7 exclusive features are activated conditionally.
 
 ---
 
@@ -43,15 +41,18 @@ A PowerShell initialization profile focused on minimal boot latency, development
 
 ```powershell
 git clone https://github.com/AndersonTavares0/config-powershell7.git
+cd config-powershell7
 ```
 
 ### 2. Locate your profile path
 
 ```powershell
 $PROFILE
-# PS 7  → C:\Users\<username>\Documents\PowerShell\Microsoft.PowerShell_profile.ps1
-# PS 5.1 → C:\Users\<username>\Documents\WindowsPowerShell\Microsoft.PowerShell_profile.ps1
 ```
+
+Expected output:
+- **PS 7:** `C:\Users\<username>\Documents\PowerShell\Microsoft.PowerShell_profile.ps1`
+- **PS 5.1:** `C:\Users\<username>\Documents\WindowsPowerShell\Microsoft.PowerShell_profile.ps1`
 
 ### 3. Apply the profile
 
@@ -61,10 +62,10 @@ $PROFILE
 Copy-Item .\Microsoft.PowerShell_profile.ps1 $PROFILE -Force
 ```
 
-**Option B — Symbolic link (keeps the repo synced with `git pull`):**
+**Option B — Symbolic link (keeps synced with `git pull`):**
 
 ```powershell
-# Requires terminal with Administrator privileges
+# Requires terminal as Administrator
 New-Item -ItemType SymbolicLink -Path $PROFILE -Target "$PWD\Microsoft.PowerShell_profile.ps1" -Force
 ```
 
@@ -77,8 +78,7 @@ Install-Module Terminal-Icons -Repository PSGallery  -Scope CurrentUser
 
 ### 5. Install the Oh My Posh theme
 
-The profile looks for the `atomic` theme at `~\.poshthemes\atomic.omp.json`.
-If the file doesn't exist, OMP will start with the default theme automatically.
+The profile looks for the `atomic` theme at `~\.poshthemes\atomic.omp.json`. If it doesn't exist, OMP starts with the default theme automatically.
 
 ```powershell
 New-Item -ItemType Directory -Force "$HOME\.poshthemes" | Out-Null
@@ -100,9 +100,9 @@ Clear-Cache
 When you open the terminal, the loading time is displayed automatically:
 
 ```
-PS 7.6.1 · OMP:atomic, Zoxide  [143ms]   ← within target (green)
-PS 7.6.1 · OMP:atomic, Zoxide  [287ms]   ← acceptable (yellow)
-PS 7.6.1 · OMP:atomic, Zoxide  [543ms]   ← investigate (red)
+PS 7.6.1 · OMP:atomic, Zoxide  [143ms]   ← within target
+PS 7.6.1 · OMP:atomic, Zoxide  [287ms]   ← acceptable
+PS 7.6.1 · OMP:atomic, Zoxide  [543ms]   ← investigate
 ```
 
 ---
@@ -112,7 +112,7 @@ PS 7.6.1 · OMP:atomic, Zoxide  [543ms]   ← investigate (red)
 ### Navigation
 
 | Command | Action |
-|---|---|
+|---------|--------|
 | `docs` | Go to `~/Documents` |
 | `dtop` | Go to `~/Desktop` |
 | `home` | Go to `$HOME` |
@@ -122,29 +122,29 @@ PS 7.6.1 · OMP:atomic, Zoxide  [543ms]   ← investigate (red)
 | `ll` | List all files including hidden |
 | `mkcd <path>` | Create directory and enter it |
 | `nf <name>` | Create empty file(s) |
+| `z <path>` | Smart navigation by frequency (Zoxide) |
 
-> **Note:** `home` and `up` replace the shortcuts `~` and `..` which in some contexts conflict with native PowerShell operators.
+> **Note:**** `home` and `up` replace shortcuts `~` and `..` to avoid conflicts with native PowerShell operators.
 
-> **Zoxide (`z`):** after a few visits, `z proj` automatically navigates to `~/Dev/projects/my-project` based on usage frequency.
+>**Zoxide:** After a few visits, `z proj` automatically navigates to `~/Dev/projects/my-project` based on usage frequency.
 
 ---
 
 ### Files and Text
 
 | Command | Action |
-|---|---|
+|---------|--------|
 | `touch <file>` | Create file or update timestamp |
 | `which <cmd>` | Show the path of an executable |
 | `unzip <file> [dest]` | Extract `.zip` (default: current folder) |
 | `head <file> [n]` | First N lines (default: 10) |
 | `tail <file> [n]` | Last N lines (default: 10) |
 | `grep <pattern>` | Filter input via pipeline |
-| `clip` | Copy entire pipeline to clipboard |
-| `cpy` | Alias for `clip` |
+| `clip` / `cpy` | Copy entire pipeline to clipboard |
 | `pst` | Paste from clipboard |
 | `sed <file> <find> <replace> [-Backup]` | Atomic file substitution (UTF-8 safe) |
 | `icons` | Load Terminal-Icons (lazy load) |
-| `Clear-Cache` | Remove plugin cache and request restart |
+| `Clear-Cache` | Remove plugin cache |
 
 **Examples:**
 
@@ -155,7 +155,7 @@ Get-Content app.log | grep "error"
 # Copy command output to clipboard
 git log --oneline -20 | clip
 
-# Safe substitution in UTF-8 file (with automatic backup)
+# Safe substitution in UTF-8 file (with backup)
 sed .\config.json "localhost" "192.168.1.10" -Backup
 
 # Create multiple files via pipeline
@@ -170,18 +170,18 @@ sed .\config.json "localhost" "192.168.1.10" -Backup
 ### Git
 
 | Command | Git Equivalent |
-|---|---|
+|---------|----------------|
 | `gst` / `gs` | `git status -sb` |
 | `ga` | `git add .` |
 | `gco <msg>` | `git commit -m "<msg>"` |
 | `gpush` | `git push` |
 | `gpull` | `git pull` |
 | `glog` | `git log --oneline --graph -15` |
-| `gundo` | `git reset --soft HEAD~1` (undo last commit, keep changes) |
+| `gundo` | `git reset --soft HEAD~1` |
 | `gdiff` | `git diff` |
 | `gcl <url>` | `git clone <url>` |
-| `gcom <msg>` | `git add .`; `git commit -m "<msg>"` |
-| `lazyg <msg>` | `git add .`; `git commit -m "<msg>"`; `git push` (asks for confirmation) |
+| `gcom <msg>` | `git add .` + `git commit -m "<msg>"` |
+| `lazyg <msg>` | `git add .` + `commit` + `push` (asks for confirmation) |
 
 **Quick workflow example:**
 
@@ -193,22 +193,22 @@ lazyg "fix: correct form validation"
 lazyg "chore: bump version" -Force
 ```
 
-> ⚠️ **`lazyg` is destructive** — stages *everything*, commits and pushes in sequence. Always review the displayed `git status` before confirming with `y`.
+> **Warning:**** `lazyg` is destructive — stages *everything*. Always review `git status` before confirming.
 
-> **Note:** Commands are chained with `;` (semicolon), not `&&`. The `&&` operator only exists in PowerShell 7+. Since this profile supports PS 5.1, `;` ensures universal compatibility.
+> **Note:**** Commands use `;` (semicolon) for compatibility with PS 5.1 and 7+.
 
 ---
 
 ### System
 
 | Command | Action |
-|---|---|
+|---------|--------|
 | `df` | Disk usage per volume (size, free, % free) |
-| `pgrep <name>` | Search processes by name (displays ID, CPU and RAM in MB) |
-| `pkill <name>` / `k9 <name>` | Kill process by name (`Stop-Process -Force`) |
-| `flushdns` | Flush DNS cache (requires Administrator privilege) |
-| `pubip [-Force]` | Display public IP (uses session cache; `-Force` ignores cache) |
-| `sysinfo` | System summary: host, user, OS, PS version, uptime, RAM |
+| `pgrep <name>` | Search processes by name (ID, CPU, RAM in MB) |
+| `pkill <name>` / `k9 <name>` | Kill process by name |
+| `flushdns` | Flush DNS cache (requires Administrator) |
+| `pubip [-Force]` | Display public IP (uses session cache) |
+| `sysinfo` | System summary: host, user, OS, uptime, RAM |
 
 ---
 
@@ -222,7 +222,39 @@ sudo
 sudo netsh interface reset
 ```
 
-> The `sudo` command automatically detects whether you're using PS 5.1 or PS 7 and opens the correct version with `-Verb RunAs`.
+> The `sudo` command automatically detects whether you're using PS 5.1 or PS 7 and opens the correct version.
+
+---
+
+## Unit Tests
+
+To ensure all functions and aliases are working correctly and that no changes have broken the system, the project includes an automated test suite.
+
+### How to run tests
+
+1. **Allow script execution** (required only once):
+   ```powershell
+   Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
+   ```
+
+2. **Load the current profile** (ensures functions are in memory):
+   ```powershell
+   . $PROFILE
+   ```
+
+3. **Run the test script**:
+   ```powershell
+   .\Microsoft.PowerShell_profile.Tests.ps1
+   ```
+
+### What is validated?
+
+The script runs **36 unit tests**, verifying:
+* **Navigation Integrity:** Whether `home`, `docs`, and `up` access the correct directories.
+* **File Operations:** Validation of directory creation with `mkcd` and file manipulation with `nf` and `touch`.
+* **Text Processing:** Verification of `head` and `tail` logic.
+* **Cache System:** Checking if plugin cache cleanup functions are registered.
+* **Command Availability:** Ensures all Git, System, and Administration (Sudo) aliases were loaded successfully.
 
 ---
 
@@ -297,7 +329,7 @@ icons
 
 ### Explicit UTF-8 encoding in `sed`
 
-PS 5.1 uses `Default` encoding (ANSI/Windows-1252) and PS 7 uses UTF-8 without BOM by default in some operations. Without explicit `-Encoding UTF8`, files with special characters can be corrupted:
+PS 5.1 uses `Default` encoding (ANSI/Windows-1252) and PS 7 uses UTF-8 without BOM by default in some operations. Without explicit `-Encoding UTF8`, files with special characters can be corrupted.
 
 ---
 
@@ -326,9 +358,9 @@ The `&&` operator (pipeline chain operator) was introduced in PowerShell 7.0. Si
 Everything in `Microsoft.PowerShell_profile.ps1` runs every time the terminal starts. If boot is slow, the culprit is almost always a heavy module being imported in a blocking way. Use the timer displayed at startup to identify the problem:
 
 ```
-PS 7.6.1 · OMP:atomic, Zoxide  [143ms]   ← within target  ✅
-PS 7.6.1 · OMP:atomic, Zoxide  [387ms]   ← acceptable     🟡
-PS 7.6.1 · OMP:atomic, Zoxide  [543ms]   ← investigate    🔴
+PS 7.6.1 · OMP:atomic, Zoxide  [143ms]   ← within target
+PS 7.6.1 · OMP:atomic, Zoxide  [387ms]   ← acceptable
+PS 7.6.1 · OMP:atomic, Zoxide  [543ms]   ← investigate
 ```
 
 ---
@@ -336,7 +368,7 @@ PS 7.6.1 · OMP:atomic, Zoxide  [543ms]   ← investigate    🔴
 ### Concepts covered in this profile
 
 | Concept | Where it appears in the profile |
-|---|---|
+|---------|---------------------------------|
 | Aliases | `gs`, `k9`, `cpy` — shortcuts for functions and cmdlets |
 | Custom functions | `lazyg`, `sysinfo`, `mkcd` — reusable code blocks |
 | Filter vs Function | `grep` uses `filter` for true streaming in the pipeline |
@@ -355,7 +387,7 @@ PS 7.6.1 · OMP:atomic, Zoxide  [543ms]   ← investigate    🔴
 
 ### Execution Policy on Windows
 
-Unlike Linux, Windows blocks unsigned scripts by default. To enable profile execution:
+Unlike Linux, Windows blocks unsigned scripts by default. To enable profile execution and run unit tests:
 
 ```powershell
 Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
@@ -367,11 +399,23 @@ Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
 
 ```
 config-powershell7/
-├── Microsoft.PowerShell_profile.ps1   # Main profile
-├── README.md                          # Portuguese documentation
-└── README.en.md                       # English documentation
+├── Microsoft.PowerShell_profile.ps1        # Main profile
+├── Microsoft.PowerShell_profile.Tests.ps1  # Unit test suite
+├── README.md                               # Portuguese documentation
+├── README.en.md                            # English documentation
+├── .gitignore                              # Git ignore rules
+├── LICENSE                                 # MIT License (EN)
+└── LICENÇA.pt-BR                           # MIT License (PT-BR)
 ```
 
 ---
 
 *Revision: 2026-04 — PS 5.1+ / PS Core 7+ / Windows 10+*
+
+---
+
+## AI-Assisted Development
+
+This project was refactored, reviewed, and documented with the assistance of **LLM/AI models** to improve code quality, documentation clarity, and best practices implementation.
+
+> **Note:** AI tools were used as support for refactoring, revision, and documentation, but all technical decisions and implementations were validated and approved by human developers.

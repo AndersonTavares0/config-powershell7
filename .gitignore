@@ -1,29 +1,18 @@
-# --- Caches e Arquivos de Performance ---
-# Ignora o cache gerado para acelerar o boot do terminal
-.cache_pwsh_plugins.ps1
-
-# --- Backups e Temporários ---
-# Ignora arquivos gerados por funções de edição (como o 'sed' que cria .bak)
-*.bak
-*.tmp
-*.temp
+```
+# Logs and temp files
 *.log
+*.tmp
+*.swp
 
-# --- Segurança e Credenciais ---
-# Não subir chaves de API, senhas ou tokens
+# Environment
 .env
-*secret*
-*credential*
-*.pfx
-*.key
+.env.local
+*.env.*
 
-# --- Configurações de Editores e OS ---
-# Pasta do VS Code e históricos de busca
+# Editors
 .vscode/
-.history/
-.DS_Store
-Thumbs.db
+.idea/
 
-# --- Temas e Plugins Locais ---
-# Não subir temas do Oh My Posh localmente na pasta do projeto
-.poshthemes/
+# Original rules preserved
+*.log
+```
