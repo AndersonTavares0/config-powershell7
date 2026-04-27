@@ -325,4 +325,3 @@ $_icns    = if (Get-Module Terminal-Icons -ErrorAction SilentlyContinue) { ' · 
 
 Write-Host "PS $($PSVersionTable.PSVersion)$_plugins$_admin" -ForegroundColor Cyan -NoNewline
 Write-Host "  [${_ms}ms]" -ForegroundColor $_color
-Write-Host "Dica: Use `icons` para carregar ícones de arquivos" -ForegroundColor DarkGray
