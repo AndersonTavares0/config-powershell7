@@ -259,4 +259,4 @@ Este projeto utiliza ferramentas de **Inteligência Artificial** para otimizaç�
 
 ---
 
-*Revisão: 04/27/2026 — Compatível com PS 5.1+ / PS Core 7+ / Windows 10+*
+*Revisão: 27/04/2026 — Compatível com PS 5.1+ / PS Core 7+ / Windows 10+*
