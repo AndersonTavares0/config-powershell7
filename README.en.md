@@ -16,6 +16,7 @@ PowerShell startup profile optimized for **minimal boot latency**, **development
     - [Git](#git)
     - [System](#system)
     - [Administration](#administration)
+    - [Cache and Plugin Utilities](#cache-and-plugin-utilities)
 4. [Unit Tests](#unit-tests)
 5. [Technical Decisions](#technical-decisions)
 6. [Study Notes](#study-notes)
@@ -246,8 +247,8 @@ Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
 config-powershell7/
 ├── Microsoft.PowerShell_profile.ps1     # Main profile code
 ├── Microsoft.PowerShell_profile.Tests_diff.ps1 # Unit tests
-├── README.md                            # Documentation (PT-BR)
-├── README.en.md                         # Documentation (EN)
+├── readme.md                            # Documentation (PT-BR)
+├── readme.en.md                         # Documentation (EN)
 └── .gitignore                           # Git filters
 ```
 
