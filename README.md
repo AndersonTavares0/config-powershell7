@@ -11,11 +11,12 @@ Perfil de inicialização do PowerShell otimizado para **mínima latência de bo
 1. [Requisitos](#requisitos)
 2. [Instalação](#instalação)
 3. [Comandos Disponíveis](#comandos-disponíveis)
-   - [Navegação](#navegação)
-   - [Arquivos e Texto](#arquivos-e-texto)
-   - [Git](#git)
-   - [Sistema](#sistema)
-   - [Administração](#administração)
+    - [Navegação](#navegação)
+    - [Arquivos e Texto](#arquivos e-texto)
+    - [Git](#git)
+    - [Sistema](#sistema)
+    - [Administração](#administração)
+    - [Utilitários de Cache e Plugins](#utilitários-de-cache-e-plugins)
 4. [Testes Unitários](#testes-unitários)
 5. [Decisões Técnicas](#decisões-técnicas)
 6. [Notas de Estudo](#notas-de-estudo)
@@ -246,8 +247,8 @@ Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
 config-powershell7/
 ├── Microsoft.PowerShell_profile.ps1      # Código principal
 ├── Microsoft.PowerShell_profile.Tests_diff.ps1 # Testes unitários
-├── README.md                             # Documentação PT-BR
-├── README.en.md                          # Documentação EN
+├── readme.md                             # Documentação PT-BR
+├── readme.en.md                          # Documentação EN
 └── .gitignore                            # Filtros do Git
 ```
 
