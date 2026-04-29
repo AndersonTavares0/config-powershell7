@@ -1,209 +1,378 @@
 # PowerShell Profile
 
-Perfil de inicialização do PowerShell otimizado para **mínima latência de boot**, **ergonomia no desenvolvimento** e **portabilidade**. Projetado para ser restaurado rapidamente após formatação ou migração de máquina.
+> Perfil de inicialização do PowerShell otimizado para **mínima latência de boot**, **ergonomia no desenvolvimento** e **portabilidade**.  
+> Projetado para ser restaurado rapidamente após formatação ou migração de máquina.
+
+![PowerShell](https://img.shields.io/badge/PowerShell-7%2B-blue?logo=powershell)
+![Windows](https://img.shields.io/badge/Windows-10%2B-blue?logo=windows)
+![License](https://img.shields.io/badge/License-MIT-green)
+![Status](https://img.shields.io/badge/Status-Active-brightgreen)
 
 > **Boot time alvo:** < 200ms em sessão limpa | < 400ms com Oh My Posh + Zoxide ativos
+
+[Ver documentação técnica → docs.md](docs.md)
 
 ---
 
 ## Índice
 
-1. [Requisitos](#requisitos)
-2. [Instalação](#instalação)
-3. [Comandos Disponíveis](#comandos-disponíveis)
-   - [Navegação](#navegação)
-   - [Arquivos e Texto](#arquivos-e-texto)
-   - [Git](#git)
-   - [Sistema](#sistema)
-   - [Administração](#administração)
-4. [Testes Unitários](#testes-unitários)
-5. [Decisões Técnicas](#decisões-técnicas)
-6. [Notas de Estudo](#notas-de-estudo)
-7. [Estrutura do Repositório](#estrutura-do-repositório)
-8. [AI-Assisted Development](#ai-assisted-development)
+1. [Descrição](#descrição)
+2. [Recursos](#recursos)
+3. [Compatibilidade](#compatibilidade)
+4. [Instalação](#instalação)
+5. [Uso](#uso)
+6. [Aliases](#aliases)
+7. [Funções](#funções)
+8. [Performance](#performance)
+9. [Troubleshooting](#troubleshooting)
+10. [Testes](#testes)
+11. [Estrutura do Repositório](#estrutura-do-repositório)
+12. [Uso de IA](#uso-de-ia)
 
 ---
 
-## Requisitos
+## Descrição
 
-| Componente | Instalação | Obrigatório |
-|------------|------------|-------------|
-| **PowerShell 5.1+** | Incluso no Windows 10+<br>PS 7: `winget install Microsoft.PowerShell` | ✅ |
-| **Nerd Font** | [nerdfonts.com](https://www.nerdfonts.com)<br>Recomendada: `FiraCode Nerd Font` | ✅ |
-| **Git** | `winget install Git.Git` | ✅ |
-| **Oh My Posh** | `winget install JanDeLaaj.oh-my-posh` | Opcional |
-| **Zoxide** | `winget install ajeetdsouza.zoxide` | Opcional |
-| **PSReadLine** | Incluso no PS 7<br>Atualizar: `Install-Module PSReadLine -Force` | ✅ |
-| **Terminal-Icons** | `Install-Module Terminal-Icons -Repository PSGallery` | Opcional |
+Este repositório contém um perfil PowerShell personalizado (`Microsoft.PowerShell_profile.ps1`) que é carregado automaticamente em cada sessão do terminal. O perfil define funções, aliases e configurações que aumentam a produtividade, padronizam o ambiente e reduzem o tempo de inicialização através de um sistema de cache de plugins.
+
+---
+
+## Recursos
+
+- **Sistema de cache de plugins** — evita recarregar Zoxide e Oh My Posh a cada sessão
+- **Navegação rápida** — aliases para diretórios e movimentação no sistema de arquivos
+- **Funções utilitárias** — equivalentes Unix (`touch`, `which`, `grep`, `head`, `tail`, `sed`)
+- **Git shortcuts** — fluxo completo de Git com funções e aliases
+- **Funções de sistema** — informações, processos, disco, DNS e IP público
+- **Clipboard** — copiar e colar via pipeline
+- **Elevação de privilégio** — `sudo` que abre sessão elevada ou executa um comando como Admin
+- **PSReadLine configurado** — histórico inteligente, navegação por teclas, autocompletar
+- **Boot summary** — exibe tempo de inicialização e módulos carregados a cada sessão
+
+---
+
+## Compatibilidade
+
+| Componente | Versão mínima |
+|---|---|
+| Windows | 10 ou superior |
+| PowerShell | 5.1+ (funcionalidades completas no PS 7+) |
+| Oh My Posh | Qualquer versão atual (opcional) |
+| Zoxide | Qualquer versão atual (opcional) |
+
+> O perfil detecta automaticamente a versão do PowerShell e ativa funcionalidades avançadas do PSReadLine apenas no PS 7+.
 
 ---
 
 ## Instalação
 
-### 1. Clonar o repositório
+### Pré-requisitos
+
+| Componente | Instalação | Obrigatório |
+|---|---|---|
+| **PowerShell 5.1+** | Incluso no Windows 10+<br>PS 7: `winget install Microsoft.PowerShell` | ✅ |
+| **Nerd Font** | [nerdfonts.com](https://www.nerdfonts.com)<br>Recomendada: `FiraCode Nerd Font` | ✅ |
+| **Git** | `winget install Git.Git` | ✅ |
+| **Oh My Posh** | `winget install JanDeDobbeleer.OhMyPosh` | Opcional |
+| **Zoxide** | `winget install ajeetdsouza.zoxide` | Opcional |
+| **PSReadLine** | Incluso no PS 7<br>Atualizar: `Install-Module PSReadLine -Force` | ✅ |
+| **Terminal-Icons** | `Install-Module Terminal-Icons -Repository PSGallery` | Opcional |
+
+### 1. Configurar a Execution Policy
+
+```powershell
+Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
+```
+
+### 2. Clonar o repositório
 
 ```powershell
 git clone https://github.com/AndersonTavares0/config-powershell7.git
 cd config-powershell7
 ```
 
-### 2. Localizar o caminho do perfil
+### 3. Desbloquear os arquivos
+
+Arquivos baixados do GitHub podem ser bloqueados pelo Windows. Execute antes de aplicar o perfil:
+
+```powershell
+Get-ChildItem *.ps1 | Unblock-File
+```
+
+> ⚠️ **Erro comum:** Se você receber *"The file is not digitally signed"*, execute `Unblock-File` primeiro.
+
+### 4. Localizar o caminho do perfil
 
 ```powershell
 $PROFILE
 ```
 
-### 3. Aplicar o perfil
-
-**Importante: Desbloquear arquivos baixados**
-
-Se você baixou os arquivos do GitHub ou de outra fonte externa, o Windows pode bloquear a execução por segurança. Execute este comando **antes** de copiar ou linkar o perfil:
-
-```powershell
-# Desbloqueia todos os arquivos .ps1 no diretório atual
-Get-ChildItem *.ps1 | Unblock-File
-
-# Ou desbloqueie um arquivo específico:
-Unblock-File -Path .\Microsoft.PowerShell_profile.ps1
-Unblock-File -Path .\Microsoft.PowerShell_profile.Tests_diff.ps1
-```
-
-> ⚠️ **Erro comum:** Se você tentar executar e receber a mensagem *"The file is not digitally signed"*, execute o `Unblock-File` primeiro.
+### 5. Aplicar o perfil
 
 **Opção A — Cópia direta:**
+
 ```powershell
 Copy-Item .\Microsoft.PowerShell_profile.ps1 $PROFILE -Force
 ```
 
-**Opção B — Link simbólico (Recomendado):**
+**Opção B — Link simbólico (Recomendado — requer Admin):**
+
 ```powershell
-# Requer Admin
 New-Item -ItemType SymbolicLink -Path $PROFILE -Target "$PWD\Microsoft.PowerShell_profile.ps1" -Force
+```
+
+### 6. Instalar o tema Oh My Posh (opcional)
+
+O perfil espera o tema em `$HOME\.poshthemes\atomic.omp.json`. Se o arquivo não existir, o tema padrão do Oh My Posh é usado automaticamente.
+
+```powershell
+# Criar diretório e baixar o tema
+New-Item -ItemType Directory -Force "$HOME\.poshthemes" | Out-Null
+oh-my-posh font install
 ```
 
 ---
 
-## Comandos Disponíveis
+## Uso
+
+Ao abrir uma nova sessão do PowerShell, o perfil é carregado automaticamente e exibe um resumo de boot:
+
+```
+PS 7.4.2 · OMP:atomic · Zoxide [85ms]
+```
+
+A linha exibe: versão do PS, módulos carregados, tempo de inicialização (verde < 200ms, amarelo < 400ms, vermelho > 400ms).
+
+---
+
+## Aliases
+
+Todos os aliases disponíveis no perfil:
+
+| Alias | Função/Comando | Descrição |
+|---|---|---|
+| `Clear-Cache` | `Clear-PluginCache` | Remove o cache de plugins |
+| `icons` | `Import-TerminalIcons` | Carrega o módulo Terminal-Icons |
+| `cpy` | `Copy-ToClipboard` | Copia pipeline para clipboard |
+| `k9` | `pkill` | Mata processo por nome |
+| `gss` | `gst` | `git status -sb` |
+
+---
+
+## Funções
 
 ### Navegação
 
-| Comando | Ação |
-|---------|------|
-| `docs` | Vai para `~/Documents` |
-| `dtop` | Vai para `$HOME/Desktop` |
-| `home` | Vai para `$HOME` |
-| `up` | Sobe um nível (`cd ..`) |
-| `up2` | Sobe dois níveis (`cd ..\..`) |
-| `la` | Lista arquivos em tabela (sem ocultos) |
-| `ll` | Lista arquivos em tabela (com ocultos) |
-| `mkcd <path>` | Cria diretório e entra nele |
-| `nf <file>` | Cria arquivo vazio |
+| Função | Descrição | Exemplo |
+|---|---|---|
+| `docs` | Navega para `~/Documents` | `docs` |
+| `dtop` | Navega para `~/Desktop` | `dtop` |
+| `home` | Navega para `$HOME` | `home` |
+| `up` | Sobe um nível (`cd ..`) | `up` |
+| `up2` | Sobe dois níveis (`cd ..\..`) | `up2` |
+| `la` | Lista arquivos (sem ocultos) em tabela | `la` |
+| `ll` | Lista arquivos (com ocultos) em tabela | `ll` |
+| `mkcd <path>` | Cria diretório e entra nele | `mkcd projetos\novo` |
+| `nf <file>` | Cria arquivo vazio | `nf config.json` |
 
 ### Arquivos e Texto
 
-| Comando | Ação |
-|---------|------|
-| `touch <file>` | Cria arquivo ou atualiza data |
-| `which <cmd>` | Mostra o caminho de um comando |
-| `unzip <file> [dest]` | Extrai arquivo ZIP |
-| `head <file> [n]` | Mostra primeiras n linhas (padrão: 10) |
-| `tail <file> [n]` | Mostra últimas n linhas (padrão: 10) |
-| `grep <pattern>` | Filtra entrada via pipeline |
-| `cpy` / `Copy-ToClipboard` | Copia pipeline para clipboard |
-| `pst` | Cola do clipboard |
-| `sed <file> <find> <replace> [-Backup]` | Substituição atômica em arquivos |
+| Função | Descrição | Exemplo |
+|---|---|---|
+| `touch <file>` | Cria arquivo ou atualiza timestamp | `touch notes.txt` |
+| `which <cmd>` | Mostra o caminho de um comando | `which git` |
+| `unzip <file> [dest]` | Extrai ZIP (destino padrão: `.`) | `unzip arquivo.zip .\saida` |
+| `head <file> [n]` | Mostra primeiras n linhas (padrão: 10) | `head log.txt -Lines 5` |
+| `tail <file> [n]` | Mostra últimas n linhas (padrão: 10) | `tail log.txt -Lines 20` |
+| `grep <pattern>` | Filtra entrada via pipeline | `Get-Content log.txt \| grep "error"` |
+| `Copy-ToClipboard` / `cpy` | Copia pipeline para clipboard | `cat file.txt \| cpy` |
+| `pst` | Cola conteúdo do clipboard | `pst` |
+| `sed <file> <find> <replace> [-Backup]` | Substituição de texto atômica em arquivo | `sed config.txt "old" "new" -Backup` |
 
 ### Sistema
 
-| Comando | Ação |
-|---------|------|
-| `pkill <name>` / `k9` | Mata processo por nome |
-| `pgrep <name>` | Lista processos por nome com detalhes |
-| `flushdns` | Limpa cache DNS (requer Admin) |
-| `df` | Uso de disco por volume |
-| `pubip [-Force]` | Exibe IP público (cacheado) |
-| `sysinfo` | Resumo de hardware e uptime |
+| Função | Descrição | Exemplo |
+|---|---|---|
+| `pkill <name>` / `k9` | Mata processo por nome | `pkill notepad` |
+| `pgrep <name>` | Lista processos pelo nome com detalhes | `pgrep chrome` |
+| `flushdns` | Limpa cache DNS (requer Admin) | `flushdns` |
+| `df` | Mostra uso de disco por volume | `df` |
+| `pubip [-Force]` | Exibe IP público (cacheado na sessão) | `pubip` / `pubip -Force` |
+| `sysinfo` | Resumo de hardware, SO e uptime | `sysinfo` |
 
 ### Git
 
-| Comando | Equivalente Git |
-|---------|-----------------|
-| `gst` / `gss` | `git status -sb` |
-| `ga` | `git add .` |
-| `gcmt <msg>` | `git commit -m <msg>` |
-| `gco <branch>` | `git checkout <branch>` |
-| `gpush` | `git push` |
-| `gpull` | `git pull` |
-| `glog` | `git log --oneline --graph -15` |
-| `gundo` | `git reset --soft HEAD~1` |
-| `gdiff` | `git diff` |
-| `gcl <url>` | `git clone <url>` |
-| `gcom <msg>` | `git add .` + `git commit -m <msg>` (com verificação de erro) |
-| `lazyg <msg> [-Force]` | `add` + `commit` + `push` (com confirmação interativa) |
+> As funções Git só são criadas se o comando `git` estiver disponível no PATH.
+
+| Função | Equivalente Git | Exemplo |
+|---|---|---|
+| `gst` / `gss` | `git status -sb` | `gst` |
+| `ga` | `git add .` | `ga` |
+| `gcmt <msg>` | `git commit -m <msg>` | `gcmt "fix: typo"` |
+| `gco <branch>` | `git checkout <branch>` | `gco main` |
+| `gpush` | `git push` | `gpush` |
+| `gpull` | `git pull` | `gpull` |
+| `glog` | `git log --oneline --graph -15` | `glog` |
+| `gundo` | `git reset --soft HEAD~1` | `gundo` |
+| `gdiff` | `git diff` | `gdiff` |
+| `gcl <url>` | `git clone <url>` | `gcl https://github.com/user/repo` |
+| `gcom <msg>` | `git add .` + `git commit -m` (com verificação de erro) | `gcom "feat: add filter"` |
+| `lazyg <msg> [-Force]` | `add` + `commit` + `push` (com confirmação interativa) | `lazyg "chore: update deps"` |
 
 ### Administração
 
 ```powershell
-# Abre nova janela como Administrador
+# Abre nova janela do PowerShell como Administrador
 sudo
 
-# Executa comando específico como Administrador
-sudo <comando>
+# Executa um comando específico como Administrador
+sudo Get-Service
 
-# Reexecuta último comando como Admin
+# Reexecuta o último comando do histórico como Admin
 sudo !!
 ```
 
-### Utilitários de Cache e Plugins
+### Cache e Plugins
 
-| Comando | Ação |
-|---------|------|
-| `Clear-PluginCache` / `Clear-Cache` | Remove cache de plugins e reinicia terminal |
-| `Import-TerminalIcons` / `icons` | Carrega módulo Terminal-Icons |
-
----
-
-## Decisões Técnicas
-
-### Sistema de cache de plugins
-O perfil gera um cache em `~\.cache_pwsh_plugins.ps1` para evitar carregar o Zoxide e o Oh My Posh do zero em cada aba, o que economiza cerca de 200ms de boot.
-
-### Escrita atômica no sed
-Utilizamos um arquivo temporário para garantir que, caso o processo seja interrompido, o arquivo original não seja corrompido.
+| Função | Alias | Descrição |
+|---|---|---|
+| `Clear-PluginCache` | `Clear-Cache` | Remove `~\.cache_pwsh_plugins.ps1` e instrui reiniciar o terminal |
+| `Import-TerminalIcons` | `icons` | Carrega o módulo Terminal-Icons (com verificação de duplo carregamento) |
 
 ---
 
-## Testes Unitários
+## Performance
 
-O projeto inclui um arquivo de testes unitários (`Microsoft.PowerShell_profile.Tests_diff.ps1`) que valida todas as funções, aliases e comportamentos do perfil.
+### Sistema de Cache de Plugins
 
-### Executando os testes
+O perfil evita recarregar Zoxide e Oh My Posh do zero em cada sessão usando um arquivo de cache em `~\.cache_pwsh_plugins.ps1`.
+
+**Como funciona:**
+
+1. Na inicialização, o perfil calcula um fingerprint MD5 baseado nos caminhos de `zoxide`, `oh-my-posh` e do tema atual.
+2. Compara o fingerprint com o registrado no cache.
+3. Se forem iguais, o cache é carregado diretamente (fast path).
+4. Se diferirem (ferramentas atualizadas, tema mudado), o cache é regenerado.
+
+**Economia estimada:** ~200ms por sessão quando o cache está válido.
+
+### PSReadLine
+
+Configurado com histórico inteligente (sem duplicatas, até 5.000 entradas), navegação por setas e autocompletar por menu (Tab). No PS 7+, ativa também predição de histórico com ListView.
+
+### Boot Summary
+
+Ao final do carregamento, o perfil exibe o tempo total de boot e os módulos carregados, com código de cor:
+
+- 🟢 Verde: < 200ms
+- 🟡 Amarelo: 200–400ms
+- 🔴 Vermelho: > 400ms
+
+---
+
+## Troubleshooting
+
+### Profile não carrega
+
+**Sintoma:** nenhum alias ou função disponível após abrir o terminal.
+
+**Solução:**
 
 ```powershell
-# Navegue até o diretório do projeto
+# Verificar se o perfil existe
+Test-Path $PROFILE
+
+# Verificar qual arquivo está sendo carregado
+$PROFILE
+
+# Recarregar manualmente
+. $PROFILE
+```
+
+### Erro de Execution Policy
+
+**Sintoma:** `"File cannot be loaded because running scripts is disabled on this system."`
+
+**Solução:**
+
+```powershell
+Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
+```
+
+### Arquivo bloqueado pelo Windows
+
+**Sintoma:** `"The file is not digitally signed."`
+
+**Solução:**
+
+```powershell
+Get-ChildItem *.ps1 | Unblock-File
+```
+
+### Comando não reconhecido após instalação
+
+**Sintoma:** `"The term 'gst' is not recognized..."`
+
+**Causa:** Git não está no PATH, ou o perfil não foi recarregado.
+
+**Solução:**
+
+```powershell
+# Verificar se git está disponível
+Get-Command git -ErrorAction SilentlyContinue
+
+# Recarregar o perfil
+. $PROFILE
+```
+
+### Módulos não encontrados
+
+**Sintoma:** Terminal-Icons ou PSReadLine não carregam.
+
+**Solução:**
+
+```powershell
+Install-Module -Name Terminal-Icons -Scope CurrentUser
+Install-Module -Name PSReadLine -Scope CurrentUser -Force
+```
+
+### Cache corrompido ou desatualizado
+
+**Sintoma:** Oh My Posh ou Zoxide não inicializam corretamente.
+
+**Solução:**
+
+```powershell
+Clear-Cache
+# Reinicie o terminal após executar
+```
+
+### flushdns não funciona
+
+**Sintoma:** `"flushdns requer privilégios de Administrador."`
+
+**Solução:** Execute o terminal como Administrador ou use `sudo flushdns`.
+
+---
+
+## Testes
+
+O projeto inclui testes unitários em `Microsoft.PowerShell_profile.Tests_diff.ps1`, implementados com framework próprio (sem dependências externas).
+
+### Executar
+
+```powershell
 cd config-powershell7
-
-# Execute os testes
 .\Microsoft.PowerShell_profile.Tests_diff.ps1
-```
 
-### Opções de execução
-
-```powershell
-# Executar com saída detalhada
+# Com saída detalhada
 .\Microsoft.PowerShell_profile.Tests_diff.ps1 -Verbose
-
-# Executar após recarregar o perfil
-$env:PROFILE_CURRENT = $PROFILE
-.\Microsoft.PowerShell_profile.Tests_diff.ps1
 ```
 
-### O que é testado
-
-Os testes cobrem:
+### Cobertura
 
 | Categoria | Itens testados |
-|-----------|----------------|
+|---|---|
 | **Navegação** | `docs`, `dtop`, `home`, `up`, `up2`, `la`, `ll`, `mkcd`, `nf` |
 | **Arquivos e Texto** | `touch`, `which`, `unzip`, `head`, `tail`, `grep`, `cpy`, `pst`, `Copy-ToClipboard`, `sed` |
 | **Sistema** | `pkill`, `k9`, `pgrep`, `flushdns`, `df`, `pubip`, `sysinfo` |
@@ -211,9 +380,7 @@ Os testes cobrem:
 | **Administração** | `sudo` |
 | **Plugin Cache** | `Clear-PluginCache`, `Clear-Cache`, `Import-TerminalIcons`, `icons` |
 
-### Interpretação dos resultados
-
-Ao final da execução, você verá um resumo:
+### Resultado esperado
 
 ```
 ========================================
@@ -225,18 +392,8 @@ Failed:      0
 ========================================
 ```
 
-- ✅ **Todos os testes passaram:** Seu perfil está funcionando corretamente.
-- ❌ **Algum teste falhou:** Verifique se todas as dependências estão instaladas e se o Execution Policy está configurado corretamente.
-
----
-
-## Notas de Estudo
-
-### Execution Policy no Windows
-Para rodar este perfil, é necessário permitir a execução de scripts locais:
-```powershell
-Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
-```
+- ✅ Todos passaram: perfil funcionando corretamente.
+- ❌ Algum falhou: verifique dependências e Execution Policy.
 
 ---
 
@@ -244,19 +401,23 @@ Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
 
 ```
 config-powershell7/
-├── Microsoft.PowerShell_profile.ps1      # Código principal
+├── Microsoft.PowerShell_profile.ps1           # Código principal do perfil
 ├── Microsoft.PowerShell_profile.Tests_diff.ps1 # Testes unitários
-├── README.md                             # Documentação PT-BR
-├── README.en.md                          # Documentação EN
-└── .gitignore                            # Filtros do Git
+├── readme.md                                   # Documentação PT-BR
+├── readme.en.md                                # Documentação EN
+├── docs.md                                     # Documentação técnica PT-BR
+├── docs.en.md                                  # Documentação técnica EN
+├── LICENSE                                     # Licença MIT (EN)
+├── LICENÇA.pt-BR                               # Licença MIT (PT-BR)
+└── .gitignore                                  # Filtros do Git
 ```
 
 ---
 
-## AI-Assisted Development
+## Uso de IA
 
-Este projeto utiliza ferramentas de **Inteligência Artificial** para otimização de código e documentação, garantindo a aplicação de boas práticas de engenharia de software e performance.
+Este projeto utilizou ferramentas de **Inteligência Artificial** para auxiliar na documentação, revisão de código e refatoração, garantindo boas práticas de engenharia de software, consistência e performance.
 
 ---
 
-*Revisão: 27/04/2026 — Compatível com PS 5.1+ / PS Core 7+ / Windows 10+*
+*Revisão: 29/04/2026 — Compatível com PS 5.1+ / PS Core 7+ / Windows 10+*
