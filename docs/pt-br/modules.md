@@ -184,7 +184,10 @@ O perfil agora é modular, dividindo as responsabilidades em arquivos separados 
 
 ```
 config-powershell7/
+├── .github/workflows/          # Automação de CI (GitHub Actions)
 ├── Microsoft.PowerShell_profile.ps1    # Loader principal
+├── install.ps1                 # Script de instalação automatizada
+├── tests/                      # Suite de testes unitários
 └── modules/
     ├── cache/
     │   └── cache.ps1                   # Zoxide, Oh-My-Posh, Terminal-Icons
@@ -233,9 +236,11 @@ Evitar o custo de inicialização de `zoxide init powershell` e `oh-my-posh init
 **Fingerprint (Get-PluginFingerprint):**
 
 ```powershell
+$zcmd = Get-Command zoxide -ErrorAction SilentlyContinue
+$ocmd = Get-Command oh-my-posh -ErrorAction SilentlyContinue
 $parts = @(
-    (Get-Command zoxide     -ErrorAction SilentlyContinue)?.Source
-    (Get-Command oh-my-posh -ErrorAction SilentlyContinue)?.Source
+    if ($zcmd) { $zcmd.Source } else { $null }
+    if ($ocmd) { $ocmd.Source } else { $null }
     $script:ThemePath
     [int](Test-Path $script:ThemePath)
 )
@@ -488,3 +493,26 @@ O profile requer `RemoteSigned` ou superior no escopo `CurrentUser`. Arquivos ba
 | `[System.IO.File]` para `sed` | Seção 5 | Encoding consistente entre PS 5.1 e 7 |
 
 ---
+---
+
+## Testes Automatizados e CI
+
+O projeto conta com uma suite de testes unitários para garantir que as funções e aliases funcionem conforme o esperado em diferentes versões do PowerShell.
+
+### Suite de Testes Local
+Os testes estão localizados em `tests/Microsoft.PowerShell_profile.Tests_diff.ps1`. Eles verificam:
+- Carregamento do perfil sem erros.
+- Funcionalidade de navegação (`up`, `home`, `mkcd`).
+- Operações de arquivo e texto (`touch`, `nf`, `head`, `tail`).
+- Existência de aliases críticos e funções de sistema.
+
+Para rodar os testes localmente:
+```powershell
+pwsh -c "./tests/Microsoft.PowerShell_profile.Tests_diff.ps1 -Verbose"
+```
+
+### GitHub Actions (CI)
+O repositório utiliza **GitHub Actions** para validar automaticamente cada *push* ou *pull request*.
+- **Ambiente:** Os testes rodam em instâncias de **Windows Server** (`windows-latest`).
+- **Validação:** Garante que mudanças no código não quebrem a inicialização ou as funções principais em ambientes limpos.
+- **Badge:** O status atual dos testes pode ser visualizado no topo do `README.md`.

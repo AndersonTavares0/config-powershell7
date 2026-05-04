@@ -5,6 +5,7 @@
 
 ![PowerShell](https://img.shields.io/badge/PowerShell-7%2B-blue?logo=powershell)
 ![Windows](https://img.shields.io/badge/Windows-10%2B-blue?logo=windows)
+![Tests](https://img.shields.io/badge/CI-Configured-blue?logo=github-actions&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Status](https://img.shields.io/badge/Status-Active-brightgreen)
 
@@ -30,17 +31,17 @@ The profile is structured into modular components for easier maintenance:
 
 ```text
 config-powershell7/
+├── .github/workflows/          # CI/CD (GitHub Actions)
 ├── Microsoft.PowerShell_profile.ps1
-├── modules/
-│   ├── README.template.md
+├── install.ps1                 # Automated Installer
+├── modules/                    # Modular Logic
 │   ├── cache/
 │   ├── git/
 │   ├── navigation/
 │   ├── system/
 │   └── text_utils/
-└── docs/
-    ├── en/
-    └── pt-br/
+├── tests/                      # Unit Tests
+└── docs/                       # Bilingual Documentation
 ```
 
 ---
@@ -48,14 +49,16 @@ config-powershell7/
 ## 🚀 Quick Start / Início Rápido
 
 ```powershell
+# Clone and run the automated installer (Run as Administrator)
 git clone https://github.com/AndersonTavares0/config-powershell7.git
-New-Item -ItemType SymbolicLink -Path $PROFILE -Target "$PWD/config-powershell7/Microsoft.PowerShell_profile.ps1" -Force
+cd config-powershell7
+.\install.ps1
 ```
 
 ---
 
 ## ⚙️ Requirements / Requisitos
 
-- **PowerShell 7.x** (Core)
+- **PowerShell 7.x** (Core) recommended (supports PS 5.1 Legacy)
 - **FiraCode Nerd Font** (for icons/ligatures)
-- **Alacritty** (recommended) or Windows Terminal
+- **Alacritty** (recommended) or Windows Terminal
