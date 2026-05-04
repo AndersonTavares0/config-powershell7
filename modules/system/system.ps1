@@ -7,7 +7,7 @@ Set-Alias k9 pkill
 
 function pgrep {
     param([Parameter(Mandatory)][string]$Name)
-    # Usa Where-Object para filtro correto (wildcard não funciona em -Name do Get-Process)
+    # Usa Where-Object para filtro correto (wildcard nao funciona em -Name do Get-Process)
     Get-Process -ErrorAction SilentlyContinue |
         Where-Object { $_.ProcessName -like "*$Name*" } |
         Format-Table Id, ProcessName, CPU,
@@ -16,7 +16,7 @@ function pgrep {
 
 function flushdns {
     if ($script:IsAdmin) { Clear-DnsClientCache; Write-Host "Cache DNS limpo." -ForegroundColor Green }
-    else                 { Write-Warning "flushdns requer privilégios de Administrador." }
+    else                 { Write-Warning "flushdns requer privilegios de Administrador." }
 }
 
 function df {
@@ -38,7 +38,7 @@ function pubip {
     $endpoints = 'https://api.ipify.org', 'https://icanhazip.com', 'https://ifconfig.me/ip'
     foreach ($url in $endpoints) {
         try {
-            # Timeout reduzido e tratamento de exceções específicas para melhor resiliência
+            # Timeout reduzido e tratamento de excecoes especificas para melhor resiliencia
             $response = Invoke-RestMethod -Uri $url -TimeoutSec 3 `
                 -ErrorAction Stop -UseBasicParsing
             if ($response) {
@@ -49,7 +49,7 @@ function pubip {
         } catch [System.Net.WebException] {
             Write-Verbose "pubip: timeout ou falha de rede em $url"
         } catch {
-            Write-Verbose "pubip: falha em $url — $_"
+            Write-Verbose "pubip: falha em $url - $_"
         }
     }
     Write-Warning "pubip: nenhum endpoint respondeu."
@@ -68,17 +68,17 @@ function sysinfo {
             RAM_GB   = [math]::Round($cs.TotalPhysicalMemory/1GB, 1)
         }
     } catch {
-        # Fallback com try/catch aninhado: acesso ao registry também pode falhar
+        # Fallback com try/catch aninhado: acesso ao registry tambem pode falhar
         $osName = try {
             (Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion' -ErrorAction Stop).ProductName
-        } catch { 'Windows (versão desconhecida)' }
+        } catch { 'Windows (versao desconhecida)' }
 
         [PSCustomObject]@{
             Computer  = $env:COMPUTERNAME
             User      = $env:USERNAME
             OS        = $osName
             PS        = $PSVersionTable.PSVersion.ToString()
-            Uptime    = 'N/A (CIM indisponível)'
+            Uptime    = 'N/A (CIM indisponivel)'
             PS_Mem_MB = [math]::Round([Environment]::WorkingSet/1MB, 1)
         }
     }
@@ -91,7 +91,7 @@ function sudo {
     if ($Command.Count -eq 1 -and $Command[0] -eq '!!') {
         $last = (Get-History -Count 1).CommandLine
         if ($last) { $Command = @($last) }
-        else       { Write-Host "Nenhum comando no histórico." -ForegroundColor Yellow; return }
+        else       { Write-Host "Nenhum comando no historico." -ForegroundColor Yellow; return }
     }
 
     $exe = if ($script:PSMajor -ge 7) { 'pwsh' } else { 'powershell' }

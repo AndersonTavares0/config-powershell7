@@ -9,24 +9,26 @@ function Clear-PluginCache {
 }
 Set-Alias Clear-Cache Clear-PluginCache
 
-# Verifica se já carregado antes de chamar Import-Module
+# Verifica se ja carregado antes de chamar Import-Module
 function Import-TerminalIcons {
     if (Get-Module Terminal-Icons) {
-        Write-Host "Terminal-Icons já está carregado." -ForegroundColor Yellow
+        Write-Host "Terminal-Icons ja esta carregado." -ForegroundColor Yellow
         return
     }
     Import-Module Terminal-Icons -ErrorAction SilentlyContinue
     if (Get-Module Terminal-Icons) { Write-Host "Terminal-Icons carregado." -ForegroundColor Green }
-    else { Write-Warning "Terminal-Icons não encontrado. Execute: Install-Module Terminal-Icons" }
+    else { Write-Warning "Terminal-Icons nao encontrado. Execute: Install-Module Terminal-Icons" }
 }
 Set-Alias icons Import-TerminalIcons
 
 # MD5 encapsulado em try/finally: garante Dispose() mesmo em falha.
-# $script:ThemePath centralizado — um único ponto de referência para o tema.
+# $script:ThemePath centralizado - um unico ponto de referencia para o tema.
 function script:Get-PluginFingerprint {
+    $zcmd = Get-Command zoxide -ErrorAction SilentlyContinue
+    $ocmd = Get-Command oh-my-posh -ErrorAction SilentlyContinue
     $parts = @(
-        (Get-Command zoxide     -ErrorAction SilentlyContinue)?.Source
-        (Get-Command oh-my-posh -ErrorAction SilentlyContinue)?.Source
+        if ($zcmd) { $zcmd.Source } else { $null }
+        if ($ocmd) { $ocmd.Source } else { $null }
         $script:ThemePath
         [int](Test-Path $script:ThemePath)
     )
@@ -36,7 +38,7 @@ function script:Get-PluginFingerprint {
     finally{ $md5.Dispose() }
 }
 
-# Lógica de rebuild extraída: testável, nomeada, sem bloco `& {}` anônimo
+# Logica de rebuild extraida: testavel, nomeada, sem bloco `& {}` anonimo
 function script:Update-PluginCache {
     Write-Host "Atualizando cache de plugins..." -ForegroundColor DarkGray
     $buf = [System.Text.StringBuilder]::new()
