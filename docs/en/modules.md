@@ -184,7 +184,10 @@ The profile is now modular, separating responsibilities into individual files th
 
 ```
 config-powershell7/
+├── .github/workflows/          # CI/CD Automation (GitHub Actions)
 ├── Microsoft.PowerShell_profile.ps1    # Main Loader
+├── install.ps1                 # Automated installation script
+├── tests/                      # Unit testing suite
 └── modules/
     ├── cache/
     │   └── cache.ps1                   # Zoxide, Oh-My-Posh, Terminal-Icons
@@ -233,9 +236,11 @@ Avoid the startup cost of `zoxide init powershell` and `oh-my-posh init pwsh` on
 **Fingerprint (Get-PluginFingerprint):**
 
 ```powershell
+$zcmd = Get-Command zoxide -ErrorAction SilentlyContinue
+$ocmd = Get-Command oh-my-posh -ErrorAction SilentlyContinue
 $parts = @(
-    (Get-Command zoxide     -ErrorAction SilentlyContinue)?.Source
-    (Get-Command oh-my-posh -ErrorAction SilentlyContinue)?.Source
+    if ($zcmd) { $zcmd.Source } else { $null }
+    if ($ocmd) { $ocmd.Source } else { $null }
     $script:ThemePath
     [int](Test-Path $script:ThemePath)
 )
@@ -488,3 +493,26 @@ The profile requires `RemoteSigned` or higher at `CurrentUser` scope. Downloaded
 | `[System.IO.File]` for `sed` | Section 5 | Consistent encoding between PS 5.1 and 7 |
 
 ---
+---
+
+## Automated Testing and CI
+
+The project includes a unit testing suite to ensure that functions and aliases work as expected across different PowerShell versions.
+
+### Local Testing Suite
+Tests are located in `tests/Microsoft.PowerShell_profile.Tests_diff.ps1`. They verify:
+- Profile loading without errors.
+- Navigation functionality (`up`, `home`, `mkcd`).
+- File and text operations (`touch`, `nf`, `head`, `tail`).
+- Existence of critical aliases and system functions.
+
+To run tests locally:
+```powershell
+pwsh -c "./tests/Microsoft.PowerShell_profile.Tests_diff.ps1 -Verbose"
+```
+
+### GitHub Actions (CI)
+The repository uses **GitHub Actions** to automatically validate every push or pull request.
+- **Environment:** Tests run on **Windows Server** instances (`windows-latest`).
+- **Validation:** Ensures that code changes do not break initialization or core functions in clean environments.
+- **Badge:** The current test status can be viewed at the top of the `README.md`.
