@@ -5,7 +5,6 @@
 
 ![PowerShell](https://img.shields.io/badge/PowerShell-7%2B-blue?logo=powershell)
 ![Windows](https://img.shields.io/badge/Windows-10%2B-blue?logo=windows)
-![Tests](https://img.shields.io/badge/CI-Configured-blue?logo=github-actions&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Status](https://img.shields.io/badge/Status-Active-brightgreen)
 
@@ -61,4 +60,4 @@ cd config-powershell7
 
 - **PowerShell 7.x** (Core) recommended (supports PS 5.1 Legacy)
 - **FiraCode Nerd Font** (for icons/ligatures)
-- **Alacritty** (recommended) or Windows Terminal
+- **Alacritty** (recommended) or Windows Terminal
