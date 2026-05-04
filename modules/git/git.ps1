@@ -3,7 +3,7 @@ if (Get-Command git -ErrorAction SilentlyContinue) {
     function gst { git status -sb }
     function ga  { git add . }
 
-    # gcmt em vez de gcm: `gcm` é alias nativo do PS para Get-Command — colisão crítica
+    # gcmt em vez de gcm: `gcm` e alias nativo do PS para Get-Command - colisao critica
     function gcmt {
         param([Parameter(Mandatory)][string]$Message)
         git commit -m $Message
@@ -34,8 +34,8 @@ if (Get-Command git -ErrorAction SilentlyContinue) {
         git commit -m $Message
     }
 
-    # lazyg verifica cada passo: commit falho não dispara push
-    # Compatível com Linux e Windows: usa ReadLine() em vez de ReadKey() para ambientes sem console interativo
+    # lazyg verifica cada passo: commit falho nao dispara push
+    # Compativel com Linux e Windows: usa ReadLine() em vez de ReadKey() para ambientes sem console interativo
     function lazyg {
         param(
             [Parameter(Mandatory)][string]$Message,
@@ -47,19 +47,19 @@ if (Get-Command git -ErrorAction SilentlyContinue) {
         if (-not $Force -and $isInteractive) {
             Write-Host "Stage all, commit e push? [s/N]: " -NoNewline -ForegroundColor Yellow
             try {
-                $input = [Console]::ReadLine()
-                if ($input -notmatch '^[sS]$') {
+                $userInput = [Console]::ReadLine()
+                if ($userInput -notmatch '^[sS]$') {
                     Write-Host "Abortado." -ForegroundColor Red
                     return
                 }
             } catch {
-                Write-Verbose "lazyg: erro ao ler entrada do usuário — $_"
+                Write-Verbose "lazyg: erro ao ler entrada do usuario - $_"
                 Write-Host "Abortado (erro de leitura)." -ForegroundColor Red
                 return
             }
         } elseif (-not $Force -and ($IsLinux -or $IsMacOS)) {
-            # Em Linux/Mac, ReadKey pode falhar; pula confirmação interativa
-            Write-Verbose "lazyg: modo não-interativo detectado (Linux/Mac ou CI)"
+            # Em Linux/Mac, ReadKey pode falhar; pula confirmacao interativa
+            Write-Verbose "lazyg: modo nao-interativo detectado (Linux/Mac ou CI)"
         }
 
         git add .
@@ -72,5 +72,5 @@ if (Get-Command git -ErrorAction SilentlyContinue) {
     # gss em vez de gs: `gs` pode colidir com Get-Service em alguns ambientes PS 5.1
     Set-Alias gss gst
 } else {
-    Write-Verbose "Git não encontrado — aliases Git não carregados."
+    Write-Verbose "Git nao encontrado - aliases Git nao carregados."
 }

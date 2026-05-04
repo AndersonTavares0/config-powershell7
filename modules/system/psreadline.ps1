@@ -7,7 +7,7 @@ if (Get-Command Set-PSReadLineOption -ErrorAction SilentlyContinue) {
         -MaximumHistoryCount 5000
 
     if ($script:PSMajor -ge 7) {
-        Set-PSReadLineOption -PredictionSource History -PredictionViewStyle ListView
+        try { Set-PSReadLineOption -PredictionSource History -PredictionViewStyle ListView -ErrorAction Stop } catch {}
     }
 
     Set-PSReadLineKeyHandler -Key UpArrow   -Function HistorySearchBackward
