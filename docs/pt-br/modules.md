@@ -1,29 +1,169 @@
-[← Voltar para readme.md](readme.md)
+# Módulos e Recursos
 
-# Documentação Técnica — PowerShell Profile
+## Descrição
 
-![PowerShell](https://img.shields.io/badge/PowerShell-7%2B-blue?logo=powershell)
-![Windows](https://img.shields.io/badge/Windows-10%2B-blue?logo=windows)
-![Testes](https://img.shields.io/badge/Testes-15%20suítes-brightgreen)
+Este repositório contém um perfil PowerShell personalizado (`Microsoft.PowerShell_profile.ps1`) que é carregado automaticamente em cada sessão do terminal. O perfil define funções, aliases e configurações que aumentam a produtividade, padronizam o ambiente e reduzem o tempo de inicialização através de um sistema de cache de plugins.
 
 ---
 
-## Índice
 
-1. [Visão Geral](#visão-geral)
-2. [Arquitetura do Profile](#arquitetura-do-profile)
-3. [Fluxo de Inicialização](#fluxo-de-inicialização)
-4. [Sistema de Cache de Plugins](#sistema-de-cache-de-plugins)
-5. [Gerenciamento de Módulos](#gerenciamento-de-módulos)
-6. [Aliases — Visão Técnica](#aliases--visão-técnica)
-7. [Funções — Detalhamento Técnico](#funções--detalhamento-técnico)
-8. [Segurança e Robustez](#segurança-e-robustez)
-9. [Compatibilidade](#compatibilidade)
-10. [Performance](#performance)
-11. [Integração com Testes](#integração-com-testes)
-12. [Pontos Técnicos Relevantes](#pontos-técnicos-relevantes)
+## Recursos
+
+- **Sistema de cache de plugins** — evita recarregar Zoxide e Oh My Posh a cada sessão
+- **Navegação rápida** — aliases para diretórios e movimentação no sistema de arquivos
+- **Funções utilitárias** — equivalentes Unix (`touch`, `which`, `grep`, `head`, `tail`, `sed`)
+- **Git shortcuts** — fluxo completo de Git com funções e aliases
+- **Funções de sistema** — informações, processos, disco, DNS e IP público
+- **Clipboard** — copiar e colar via pipeline
+- **Elevação de privilégio** — `sudo` que abre sessão elevada ou executa um comando como Admin
+- **PSReadLine configurado** — histórico inteligente, navegação por teclas, autocompletar
+- **Boot summary** — exibe tempo de inicialização e módulos carregados a cada sessão
 
 ---
+
+
+## Uso
+
+Ao abrir uma nova sessão do PowerShell, o perfil é carregado automaticamente e exibe um resumo de boot:
+
+```
+PS 7.4.2 · OMP:atomic · Zoxide [85ms]
+```
+
+A linha exibe: versão do PS, módulos carregados, tempo de inicialização (verde < 200ms, amarelo < 400ms, vermelho > 400ms).
+
+---
+
+
+## Aliases
+
+Todos os aliases disponíveis no perfil:
+
+| Alias | Função/Comando | Descrição |
+|---|---|---|
+| `Clear-Cache` | `Clear-PluginCache` | Remove o cache de plugins |
+| `icons` | `Import-TerminalIcons` | Carrega o módulo Terminal-Icons |
+| `cpy` | `Copy-ToClipboard` | Copia pipeline para clipboard |
+| `k9` | `pkill` | Mata processo por nome |
+| `gss` | `gst` | `git status -sb` |
+
+---
+
+
+## Funções
+
+### Navegação
+
+| Função | Descrição | Exemplo |
+|---|---|---|
+| `docs` | Navega para `~/Documents` | `docs` |
+| `dtop` | Navega para `~/Desktop` | `dtop` |
+| `home` | Navega para `$HOME` | `home` |
+| `up` | Sobe um nível (`cd ..`) | `up` |
+| `up2` | Sobe dois níveis (`cd ..\..`) | `up2` |
+| `la` | Lista arquivos (sem ocultos) em tabela | `la` |
+| `ll` | Lista arquivos (com ocultos) em tabela | `ll` |
+| `mkcd <path>` | Cria diretório e entra nele | `mkcd projetos\novo` |
+| `nf <file>` | Cria arquivo vazio | `nf config.json` |
+
+### Arquivos e Texto
+
+| Função | Descrição | Exemplo |
+|---|---|---|
+| `touch <file>` | Cria arquivo ou atualiza timestamp | `touch notes.txt` |
+| `which <cmd>` | Mostra o caminho de um comando | `which git` |
+| `unzip <file> [dest]` | Extrai ZIP (destino padrão: `.`) | `unzip arquivo.zip .\saida` |
+| `head <file> [n]` | Mostra primeiras n linhas (padrão: 10) | `head log.txt -Lines 5` |
+| `tail <file> [n]` | Mostra últimas n linhas (padrão: 10) | `tail log.txt -Lines 20` |
+| `grep <pattern>` | Filtra entrada via pipeline | `Get-Content log.txt \| grep "error"` |
+| `Copy-ToClipboard` / `cpy` | Copia pipeline para clipboard | `cat file.txt \| cpy` |
+| `pst` | Cola conteúdo do clipboard | `pst` |
+| `sed <file> <find> <replace> [-Backup]` | Substituição de texto atômica em arquivo | `sed config.txt "old" "new" -Backup` |
+
+### Sistema
+
+| Função | Descrição | Exemplo |
+|---|---|---|
+| `pkill <name>` / `k9` | Mata processo por nome | `pkill notepad` |
+| `pgrep <name>` | Lista processos pelo nome com detalhes | `pgrep chrome` |
+| `flushdns` | Limpa cache DNS (requer Admin) | `flushdns` |
+| `df` | Mostra uso de disco por volume | `df` |
+| `pubip [-Force]` | Exibe IP público (cacheado na sessão) | `pubip` / `pubip -Force` |
+| `sysinfo` | Resumo de hardware, SO e uptime | `sysinfo` |
+
+### Git
+
+> As funções Git só são criadas se o comando `git` estiver disponível no PATH.
+
+| Função | Equivalente Git | Exemplo |
+|---|---|---|
+| `gst` / `gss` | `git status -sb` | `gst` |
+| `ga` | `git add .` | `ga` |
+| `gcmt <msg>` | `git commit -m <msg>` | `gcmt "fix: typo"` |
+| `gco <branch>` | `git checkout <branch>` | `gco main` |
+| `gpush` | `git push` | `gpush` |
+| `gpull` | `git pull` | `gpull` |
+| `glog` | `git log --oneline --graph -15` | `glog` |
+| `gundo` | `git reset --soft HEAD~1` | `gundo` |
+| `gdiff` | `git diff` | `gdiff` |
+| `gcl <url>` | `git clone <url>` | `gcl https://github.com/user/repo` |
+| `gcom <msg>` | `git add .` + `git commit -m` (com verificação de erro) | `gcom "feat: add filter"` |
+| `lazyg <msg> [-Force]` | `add` + `commit` + `push` (com confirmação interativa) | `lazyg "chore: update deps"` |
+
+### Administração
+
+```powershell
+# Abre nova janela do PowerShell como Administrador
+sudo
+
+# Executa um comando específico como Administrador
+sudo Get-Service
+
+# Reexecuta o último comando do histórico como Admin
+sudo !!
+```
+
+### Cache e Plugins
+
+| Função | Alias | Descrição |
+|---|---|---|
+| `Clear-PluginCache` | `Clear-Cache` | Remove `~\.cache_pwsh_plugins.ps1` e instrui reiniciar o terminal |
+| `Import-TerminalIcons` | `icons` | Carrega o módulo Terminal-Icons (com verificação de duplo carregamento) |
+
+---
+
+
+## Performance
+
+### Sistema de Cache de Plugins
+
+O perfil evita recarregar Zoxide e Oh My Posh do zero em cada sessão usando um arquivo de cache em `~\.cache_pwsh_plugins.ps1`.
+
+**Como funciona:**
+
+1. Na inicialização, o perfil calcula um fingerprint MD5 baseado nos caminhos de `zoxide`, `oh-my-posh` e do tema atual.
+2. Compara o fingerprint com o registrado no cache.
+3. Se forem iguais, o cache é carregado diretamente (fast path).
+4. Se diferirem (ferramentas atualizadas, tema mudado), o cache é regenerado.
+
+**Economia estimada:** ~200ms por sessão quando o cache está válido.
+
+### PSReadLine
+
+Configurado com histórico inteligente (sem duplicatas, até 5.000 entradas), navegação por setas e autocompletar por menu (Tab). No PS 7+, ativa também predição de histórico com ListView.
+
+### Boot Summary
+
+Ao final do carregamento, o perfil exibe o tempo total de boot e os módulos carregados, com código de cor:
+
+- 🟢 Verde: < 200ms
+- 🟡 Amarelo: 200–400ms
+- 🔴 Vermelho: > 400ms
+
+---
+
+
+# Referência Técnica
 
 ## Visão Geral
 
@@ -40,59 +180,23 @@ O arquivo é estruturado em 9 seções numeradas, claramente delimitadas por com
 
 ## Arquitetura do Profile
 
+O perfil agora é modular, dividindo as responsabilidades em arquivos separados que são importados pelo arquivo principal.
+
 ```
-Microsoft.PowerShell_profile.ps1
-│
-├── Seção 1: INICIALIZAÇÃO
-│   ├── Stopwatch de boot
-│   ├── Variáveis de escopo $script:
-│   ├── Detecção de versão PS
-│   └── Detecção de privilégio Admin
-│
-├── Seção 2: PLUGINS & CACHE
-│   ├── Caminhos centralizados (CachePath, ThemePath)
-│   ├── Clear-PluginCache / Clear-Cache
-│   ├── Import-TerminalIcons / icons
-│   ├── Get-PluginFingerprint (script-scoped)
-│   ├── Update-PluginCache (script-scoped)
-│   └── Lógica de carregamento/invalidação do cache
-│
-├── Seção 3: PSREADLINE
-│   ├── Configuração de modo e histórico
-│   ├── Key handlers (setas, Tab, Ctrl+*)
-│   └── Predição de histórico (PS 7+ apenas)
-│
-├── Seção 4: NAVEGAÇÃO
-│   ├── docs, dtop, home, up, up2
-│   ├── la, ll
-│   └── mkcd, nf
-│
-├── Seção 5: ARQUIVOS E TEXTO
-│   ├── touch, which, unzip
-│   ├── head, tail, grep
-│   ├── Copy-ToClipboard / cpy, pst
-│   └── sed
-│
-├── Seção 6: SISTEMA
-│   ├── pkill / k9, pgrep
-│   ├── flushdns, df
-│   ├── pubip
-│   └── sysinfo
-│
-├── Seção 7: GIT
-│   ├── Carregamento condicional (requer git no PATH)
-│   ├── gst/gss, ga, gcmt, gco
-│   ├── gpush, gpull, glog, gundo, gdiff
-│   ├── gcl, gcom, lazyg
-│   └── Alias gss → gst
-│
-├── Seção 8: SUDO
-│   └── sudo (suporte a !!, EncodedCommand, PS 5.1/7)
-│
-└── Seção 9: BOOT SUMMARY
-    ├── Parar stopwatch
-    ├── Definir título da janela (com [ADMIN] se elevado)
-    └── Exibir tempo e módulos carregados
+config-powershell7/
+├── Microsoft.PowerShell_profile.ps1    # Loader principal
+└── modules/
+    ├── cache/
+    │   └── cache.ps1                   # Zoxide, Oh-My-Posh, Terminal-Icons
+    ├── git/
+    │   └── git.ps1                     # Aliases e funções do Git
+    ├── navigation/
+    │   └── navigation.ps1              # Aliases de navegação (up, mkcd, la)
+    ├── system/
+    │   ├── psreadline.ps1              # Configuração do PSReadLine e teclas
+    │   └── system.ps1                  # Sudo, processos, DNS, IP
+    └── text_utils/
+        └── text_utils.ps1              # Touch, unzip, sed, grep, clipboard
 ```
 
 ---
@@ -102,19 +206,19 @@ Microsoft.PowerShell_profile.ps1
 A ordem de execução ao abrir uma nova sessão é:
 
 ```
-1. PowerShell carrega $PROFILE automaticamente
-2. Seção 1: Stopwatch inicia, variáveis $script: são definidas
-3. Seção 2: Cache de plugins é verificado/carregado
-   ├── fingerprint atual calculado (MD5)
-   ├── Se igual ao cache → . $CachePath (fast path)
-   └── Se diferente → Update-PluginCache + . $CachePath
-4. Seção 3: PSReadLine configurado (condicionalmente)
-5. Seções 4-8: Funções e aliases definidos
-6. Seção 7 (Git): Carregado apenas se git estiver no PATH
-7. Seção 9: Stopwatch parado, boot summary exibido
+1. PowerShell carrega $PROFILE automaticamente (Microsoft.PowerShell_profile.ps1).
+2. O Loader inicia o cronômetro de boot e define variáveis $script:.
+3. O Loader carrega todos os submódulos usando dot-sourcing (. "$moduleDir/..."):
+   ├── cache.ps1: Verifica/carrega o cache do Zoxide e Oh-My-Posh.
+   ├── psreadline.ps1: Configura o terminal e predição de histórico.
+   ├── navigation.ps1: Adiciona atalhos de diretório.
+   ├── text_utils.ps1: Adiciona funções de manipulação de arquivo.
+   ├── system.ps1: Funções do SO e Sudo.
+   └── git.ps1: Carrega funções Git (apenas se 'git' estiver no PATH).
+4. O Loader para o cronômetro e exibe o resumo de boot.
 ```
 
-> As seções de definição de função (4–8) são praticamente instantâneas. O custo real de boot está na seção 2 (cache miss) e na execução do cache carregado.
+> As funções e aliases (passo 3) são carregados quase instantaneamente. O custo real de boot está no cache (cache.ps1).
 
 ---
 
@@ -384,99 +488,3 @@ O profile requer `RemoteSigned` ou superior no escopo `CurrentUser`. Arquivos ba
 | `[System.IO.File]` para `sed` | Seção 5 | Encoding consistente entre PS 5.1 e 7 |
 
 ---
-
-## Integração com Testes
-
-### Framework
-
-O arquivo `Microsoft.PowerShell_profile.Tests_diff.ps1` implementa um framework de testes próprio com:
-
-- `Test-Result` — registra resultado (nome, passou/falhou, mensagem)
-- `Assert-Equal` — comparação por igualdade
-- `Assert-True` / `Assert-False` — asserções booleanas
-- `Assert-NotNull` — verificação de nulidade
-- Helpers `New-MockFile` / `Remove-MockFile` — criação/limpeza de arquivos temporários
-
-### Estratégia
-
-O arquivo de testes carrega o profile real via `. $PROFILE` no início. Todos os testes subsequentes operam no ambiente real. Isso garante que o que é testado é exatamente o que é carregado pelo usuário.
-
-### Suítes de teste (15 suítes)
-
-| # | Suíte | Abordagem |
-|---|---|---|
-| 1 | Navigation Functions | Executa e verifica `Get-Location` |
-| 2 | File Operations (mkcd, nf, touch) | Cria arquivos/diretórios temporários e verifica existência |
-| 3 | Text Processing (head, tail) | Cria arquivo com 5 linhas, verifica contagem e conteúdo |
-| 4 | System Functions (pkill, pgrep) | Verifica existência das funções/aliases |
-| 5 | Helper Functions (which) | Executa e verifica ausência de erro |
-| 6 | Clipboard Functions (cpy, pst) | Verifica existência |
-| 7 | Git Functions | Verifica existência de todas as 13 funções/aliases (skip se git ausente) |
-| 8 | Plugin Cache System | Verifica existência de funções e aliases de cache |
-| 9 | Display Functions (la, ll) | Executa e verifica retorno não-nulo |
-| 10 | Additional Navigation (dtop, up2) | Executa e verifica `Get-Location` |
-| 11 | File Operation Utilities (unzip) | Verifica existência |
-| 12 | System Information (df, pubip, sysinfo) | Executa (skip df no Linux) e verifica retorno |
-| 13 | Advanced Text Processing (grep, sed) | Verifica existência |
-| 14 | Copy-ToClipboard | Verifica existência |
-| 15 | flushdns | Verifica existência |
-
-### Tratamento de plataforma nos testes
-
-- `docs` e `dtop`: verificam se `GetFolderPath()` retorna string vazia (Linux) e pulam o assert de localização
-- `df`: executado apenas se `$PSVersionTable.OS -match 'Windows'`
-- `up2`: verifica se há avô antes de executar
-
-### Saída de testes
-
-```
-========================================
-PowerShell Profile Unit Tests
-========================================
-  ✓ PASS: Profile loads without errors
-  ✓ PASS: docs function navigates to Documents
-  ...
-  ✓ PASS: flushdns function exists
-========================================
-TEST SUMMARY
-========================================
-Total Tests: XX
-Passed:      XX
-Failed:      0
-========================================
-```
-
-Exit code: `0` (sucesso) ou `1` (falha).
-
----
-
-## Pontos Técnicos Relevantes
-
-### Boas decisões
-
-- **Fingerprint MD5 com Dispose garantido** — trata corretamente recurso não gerenciado
-- **`filter` para `grep`** — processamento de pipeline correto e eficiente
-- **`sed` com escrita atômica** — arquivo temporário no mesmo volume garante rename de SO
-- **`$script:` explícito** — evita problemas de escopo silenciosos
-- **`lazyg` com detecção de CI** — comportamento correto em ambientes automatizados
-- **`gcmt` ao invés de `gcm`** — evita colisão com `Get-Command`
-- **`gss` ao invés de `gs`** — evita colisão com `Get-Service`
-- **`sudo !!`** — QoL feature implementada de forma robusta com histórico do PS
-
-### Observações
-
-- **`sudo` usa `-NoExit`** — a janela elevada não fecha após executar o comando, o que pode ser inesperado para usuários que esperam comportamento de `sudo` Unix (fechar ao terminar)
-- **`pubip` sem timeout configurável** — o timeout está fixo em 3 segundos; em redes lentas pode haver delay perceptível na primeira chamada
-- **Cache não tem TTL por tempo** — o cache é invalidado apenas por mudança de fingerprint, não por decurso de tempo. Se uma ferramenta for atualizada sem alterar o caminho do binário, o cache não será regenerado automaticamente
-- **`sed` faz substituição simples** — não suporta regex; usa `String.Replace()` literal, diferente do `sed` Unix
-
-### Melhorias possíveis (sem alterar comportamento atual)
-
-- Adicionar suporte a TTL no cache de plugins (ex: expirar após N dias)
-- Expor `-TimeoutSec` como parâmetro em `pubip`
-- Suporte a regex em `sed` via parâmetro `-Regex`
-- Adicionar `-WhatIf` em `sed` para visualizar mudanças antes de aplicar
-
----
-
-*Revisão: 29/04/2026 — Compatível com PS 5.1+ / PS Core 7+ / Windows 10+*
