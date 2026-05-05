@@ -515,4 +515,3 @@ pwsh -c "./tests/Microsoft.PowerShell_profile.Tests_diff.ps1 -Verbose"
 The repository uses **GitHub Actions** to automatically validate every push or pull request.
 - **Environment:** Tests run on **Windows Server** instances (`windows-latest`).
 - **Validation:** Ensures that code changes do not break initialization or core functions in clean environments.
-- **Badge:** The current test status can be viewed at the top of the `README.md`.
