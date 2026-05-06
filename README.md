@@ -6,15 +6,14 @@
 ![PowerShell](https://img.shields.io/badge/PowerShell-7%2B-blue?logo=powershell)
 ![Windows](https://img.shields.io/badge/Windows-10%2B-blue?logo=windows)
 ![Performance](https://img.shields.io/badge/Boot-Sub_300ms-brightgreen)
-![Status](https://img.shields.io/badge/Status-Industrial_Stable-brightgreen)
 
 ## ⚡ Key Technical Features / Principais Recursos Técnicos
 
-*   **Extreme Performance (Sub 300ms)**: Heavily optimized boot sequence with conditional lazy loading. Non-critical modules (like `Terminal-Icons`) are loaded on-demand via aliases (e.g., `icons`), slicing boot times by over 50%.
-*   **TTL Cache System**: Third-party plugins (`oh-my-posh`, `zoxide`) are cached intelligently with a 30-minute Time-To-Live. The custom MD5 hashing completely skips hash evaluation during the hot path, achieving near-zero overhead (`~5ms`).
-*   **Zero-Elevation Installer**: Migrated away from symbolic links. The installer dynamically dot-sources the profile (`$global:__ProfileRepoRoot`), ensuring 100% path resolution accuracy without ever triggering UAC Administrator prompts.
-*   **Strict-Mode Compliant**: The entire codebase passes `Set-StrictMode -Version Latest`, ensuring absolutely zero uninitialized variables or hidden scoping bugs.
-*   **Dynamic Visual Boot Summary**: Displays a clean, highlighted boot report with dynamic colors based on performance (🟢 Green < 300ms, 🟡 Yellow < 600ms, 🔴 Red > 600ms).
+- **Extreme Performance (Sub 300ms)**: Heavily optimized boot sequence with conditional lazy loading. Non-critical modules (like `Terminal-Icons`) are loaded on-demand via aliases (e.g., `icons`), slicing boot times by over 50%.
+- **TTL Cache System**: Third-party plugins (`oh-my-posh`, `zoxide`) are cached intelligently with a 30-minute Time-To-Live. The custom MD5 hashing completely skips hash evaluation during the hot path, achieving near-zero overhead (`~5ms`).
+- **Zero-Elevation Installer**: Migrated away from symbolic links. The installer dynamically dot-sources the profile (`$global:__ProfileRepoRoot`), ensuring 100% path resolution accuracy without ever triggering UAC Administrator prompts.
+- **Strict-Mode Compliant**: The entire codebase passes `Set-StrictMode -Version Latest`, ensuring absolutely zero uninitialized variables or hidden scoping bugs.
+- **Dynamic Visual Boot Summary**: Displays a clean, highlighted boot report with dynamic colors based on performance (🟢 Green < 300ms, 🟡 Yellow < 600ms, 🔴 Red > 600ms).
 
 ## 📖 Documentation / Documentação
 
@@ -56,9 +55,11 @@ config-powershell7/
 ## 🚀 Quick Start / Início Rápido
 
 **Option A — Double-click (Windows):**
+
 > Clone the repo and double-click `install.cmd`.
 
 **Option B — Terminal:**
+
 ```powershell
 git clone https://github.com/AndersonTavares0/config-powershell7.git
 cd config-powershell7
@@ -66,6 +67,7 @@ cd config-powershell7
 ```
 
 **Uninstall / Desinstalar:**
+
 > Double-click `uninstall.cmd` or run `.\uninstall.ps1`.
 
 ---
