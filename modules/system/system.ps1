@@ -1,44 +1,45 @@
 # ── 6. SISTEMA ────────────────────────────────────────────────
-
-# Detecção cross-platform de sistema operacional para este módulo
-# PowerShell 6+ fornece variáveis automáticas SOMENTE LEITURA: $IsWindows, $IsLinux, $IsMacOS
-if ($PSVersionTable.PSVersion.Major -ge 6) {
-    $script:_IsWindows = $IsWindows
-    $script:_IsLinux   = $IsLinux
-    $script:_IsMacOS   = $IsMacOS
-} else {
-    # PS 5.1 só roda no Windows
-    $script:_IsWindows = $true
-    $script:_IsLinux   = $false
-    $script:_IsMacOS   = $false
-}
+# Todas as funções consomem $script:Config (módulo centralizado).
+# Detecção de plataforma NÃO é duplicada aqui.
 
 # Cross-platform pkill: usa Get-Process (Windows) ou comando nativo (Linux/macOS)
 function pkill {
+    [CmdletBinding(SupportsShouldProcess)]
     param([Parameter(Mandatory)][string]$Name)
     try {
-        if ($script:_IsLinux -or $script:_IsMacOS) {
+        if ($script:Config.IsLinux -or $script:Config.IsMacOS) {
             # Fallback para comando nativo em Unix-like
-            if (Get-Command pkill -ErrorAction SilentlyContinue) {
-                pkill -f $Name 2>&1 | Out-Null
+            $nativePkill = Get-Command '/usr/bin/pkill' -ErrorAction SilentlyContinue
+            if ($nativePkill) {
+                if ($PSCmdlet.ShouldProcess($Name, 'Kill process (native pkill)')) {
+                    & '/usr/bin/pkill' -f $Name 2>&1 | Out-Null
+                }
                 return
             }
         }
         # Windows/PowerShell native
-        Get-Process -Name $Name -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+        $procs = Get-Process -Name $Name -ErrorAction SilentlyContinue
+        if ($procs -and $PSCmdlet.ShouldProcess($Name, 'Stop-Process -Force')) {
+            $procs | Stop-Process -Force -ErrorAction SilentlyContinue
+        }
     } catch {
-        Write-Verbose "pkill: falha ao matar processo '$Name' - $_"
+        $er = [System.Management.Automation.ErrorRecord]::new(
+            $_.Exception, 'PkillFailed', [System.Management.Automation.ErrorCategory]::InvalidOperation, $Name
+        )
+        $PSCmdlet.WriteError($er)
     }
 }
 Set-Alias k9 pkill
 
 # Cross-platform pgrep
 function pgrep {
+    [CmdletBinding()]
     param([Parameter(Mandatory)][string]$Name)
     try {
-        if ($script:_IsLinux -or $script:_IsMacOS) {
-            if (Get-Command pgrep -ErrorAction SilentlyContinue) {
-                $ids = pgrep -f $Name 2>&1
+        if ($script:Config.IsLinux -or $script:Config.IsMacOS) {
+            $nativePgrep = Get-Command '/usr/bin/pgrep' -ErrorAction SilentlyContinue
+            if ($nativePgrep) {
+                $ids = & '/usr/bin/pgrep' -f $Name 2>&1
                 if ($ids) {
                     foreach ($id in $ids) {
                         [PSCustomObject]@{
@@ -56,21 +57,26 @@ function pgrep {
             Format-Table Id, ProcessName, CPU,
                 @{ L='Mem(MB)'; E={ [math]::Round($_.WorkingSet64/1MB, 1) } } -AutoSize
     } catch {
-        Write-Verbose "pgrep: falha na busca por '$Name' - $_"
+        $er = [System.Management.Automation.ErrorRecord]::new(
+            $_.Exception, 'PgrepFailed', [System.Management.Automation.ErrorCategory]::ObjectNotFound, $Name
+        )
+        $PSCmdlet.WriteError($er)
     }
 }
 
 # Cross-platform flushdns: suporta Windows, Linux (systemd-resolve/nscd) e macOS
 function flushdns {
+    [CmdletBinding()]
+    param()
     try {
-        if ($script:_IsWindows) {
-            if ($script:IsAdmin) {
+        if ($script:Config.IsWindows) {
+            if ($script:Config.IsAdmin) {
                 Clear-DnsClientCache -ErrorAction Stop
                 Write-Verbose "Cache DNS limpo (Windows)."
             } else {
                 Write-Warning "flushdns requer privilégios de Administrador no Windows."
             }
-        } elseif ($script:_IsLinux) {
+        } elseif ($script:Config.IsLinux) {
             # Tenta systemd-resolve primeiro, depois nscd
             if (Get-Command systemd-resolve -ErrorAction SilentlyContinue) {
                 systemd-resolve --flush-caches 2>&1 | Out-Null
@@ -81,7 +87,7 @@ function flushdns {
             } else {
                 Write-Warning "flushdns: nenhum serviço de cache DNS detectado no Linux."
             }
-        } elseif ($script:_IsMacOS) {
+        } elseif ($script:Config.IsMacOS) {
             # macOS: diferentes comandos por versão
             if (Get-Command dscacheutil -ErrorAction SilentlyContinue) {
                 dscacheutil -flushcache 2>&1 | Out-Null
@@ -90,14 +96,19 @@ function flushdns {
             }
         }
     } catch {
-        Write-Warning "flushdns: falha ao limpar cache DNS - $_"
+        $er = [System.Management.Automation.ErrorRecord]::new(
+            $_.Exception, 'FlushDnsFailed', [System.Management.Automation.ErrorCategory]::ResourceUnavailable, $null
+        )
+        $PSCmdlet.WriteError($er)
     }
 }
 
 # Cross-platform df: Get-Volume (Windows) ou df command (Linux/macOS)
 function df {
+    [CmdletBinding()]
+    param()
     try {
-        if ($script:_IsWindows) {
+        if ($script:Config.IsWindows) {
             Get-Volume -ErrorAction SilentlyContinue |
                 Where-Object { $_.DriveLetter -and $_.Size -gt 0 } |
                 Sort-Object DriveLetter |
@@ -105,26 +116,31 @@ function df {
                     @{ L='Size(GB)'; E={ [math]::Round($_.Size/1GB, 1) } },
                     @{ L='Free(GB)'; E={ [math]::Round($_.SizeRemaining/1GB, 1) } },
                     @{ L='Free%';    E={ [math]::Round(($_.SizeRemaining/$_.Size)*100, 0) } } -AutoSize
-        } elseif ($script:_IsLinux -or $script:_IsMacOS) {
-            if (Get-Command df -ErrorAction SilentlyContinue) {
-                df -h 2>&1 | ForEach-Object { $_ }
+        } elseif ($script:Config.IsLinux -or $script:Config.IsMacOS) {
+            $nativeDf = Get-Command '/usr/bin/df' -ErrorAction SilentlyContinue
+            if ($nativeDf) {
+                & '/usr/bin/df' -h 2>&1 | ForEach-Object { $_ }
             }
         }
     } catch {
-        Write-Warning "df: falha ao obter informações de disco - $_"
+        $er = [System.Management.Automation.ErrorRecord]::new(
+            $_.Exception, 'DfFailed', [System.Management.Automation.ErrorCategory]::ReadError, $null
+        )
+        $PSCmdlet.WriteError($er)
     }
 }
 
 function pubip {
+    [CmdletBinding()]
     param([switch]$Force)
     if ($script:CachedPublicIP -and -not $Force) {
         Write-Verbose "IP (cache): $script:CachedPublicIP"
         return $script:CachedPublicIP
     }
     $endpoints = 'https://api.ipify.org', 'https://icanhazip.com', 'https://ifconfig.me/ip'
+    $lastError = $null
     foreach ($url in $endpoints) {
         try {
-            # Timeout reduzido e tratamento de exceções específicas para melhor resiliência
             $response = Invoke-RestMethod -Uri $url -TimeoutSec 3 `
                 -ErrorAction Stop -UseBasicParsing
             if ($response) {
@@ -133,17 +149,28 @@ function pubip {
                 return $script:CachedPublicIP
             }
         } catch [System.Net.WebException] {
+            $lastError = $_
             Write-Verbose "pubip: timeout ou falha de rede em $url"
         } catch {
+            $lastError = $_
             Write-Verbose "pubip: falha em $url - $_"
         }
     }
-    Write-Warning "pubip: nenhum endpoint respondeu."
+    # Todas as tentativas falharam — ErrorRecord estruturado
+    $er = [System.Management.Automation.ErrorRecord]::new(
+        [System.Net.WebException]::new('Nenhum endpoint de IP público respondeu.'),
+        'PubIpAllEndpointsFailed',
+        [System.Management.Automation.ErrorCategory]::ConnectionError,
+        $endpoints
+    )
+    $PSCmdlet.WriteError($er)
 }
 
 function sysinfo {
+    [CmdletBinding()]
+    param()
     try {
-        if ($script:_IsWindows) {
+        if ($script:Config.IsWindows) {
             $os = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
             $cs = Get-CimInstance Win32_ComputerSystem  -ErrorAction Stop
             [PSCustomObject]@{
@@ -154,7 +181,7 @@ function sysinfo {
                 Uptime   = (Get-Date) - $os.LastBootUpTime
                 RAM_GB   = [math]::Round($cs.TotalPhysicalMemory/1GB, 1)
             }
-        } elseif ($script:_IsLinux) {
+        } elseif ($script:Config.IsLinux) {
             # Linux: lê /etc/os-release e /proc/meminfo
             $osName = 'Linux'
             if (Test-Path /etc/os-release) {
@@ -178,7 +205,7 @@ function sysinfo {
                 PS       = $PSVersionTable.PSVersion.ToString()
                 RAM_GB   = [math]::Round($memTotal, 1)
             }
-        } elseif ($script:_IsMacOS) {
+        } elseif ($script:Config.IsMacOS) {
             $osName = 'macOS'
             $memGb = 0
             try {
@@ -208,7 +235,9 @@ function sysinfo {
 
 # ── 8. SUDO ───────────────────────────────────────────────────
 # Cross-platform sudo: Windows (elevated PowerShell), Linux/macOS (sudo nativo)
+# Hardening: sanitiza null bytes e caracteres de controle no EncodedCommand
 function sudo {
+    [CmdletBinding(SupportsShouldProcess)]
     param([Parameter(ValueFromRemainingArguments)][string[]]$Command)
 
     if ($Command.Count -eq 1 -and $Command[0] -eq '!!') {
@@ -218,10 +247,13 @@ function sudo {
     }
 
     # Linux/macOS: usa sudo nativo se disponível
-    if ($script:_IsLinux -or $script:_IsMacOS) {
-        if (Get-Command sudo -ErrorAction SilentlyContinue) {
+    if ($script:Config.IsLinux -or $script:Config.IsMacOS) {
+        $nativeSudo = Get-Command '/usr/bin/sudo' -ErrorAction SilentlyContinue
+        if ($nativeSudo) {
             if ($Command) {
-                & sudo $Command
+                if ($PSCmdlet.ShouldProcess(($Command -join ' '), 'Executar com sudo')) {
+                    & '/usr/bin/sudo' @Command
+                }
             } else {
                 Write-Warning "sudo: uso: sudo <comando> ou sudo !! para reexecutar último comando"
             }
@@ -230,21 +262,38 @@ function sudo {
     }
 
     # Windows: elevação via Start-Process -Verb RunAs
-    $exe = if ($script:PSMajor -ge 7) { 'pwsh' } else { 'powershell' }
+    $exe = if ($script:Config.PSMajor -ge 7) { 'pwsh' } else { 'powershell' }
 
     if ($Command) {
-        # -EncodedCommand preserva aspas e caracteres especiais.
-        # Sanitização extra: remove null bytes e garante encoding Unicode válido
         $cmdText = $Command -join ' '
         try {
-            $encoded = [Convert]::ToBase64String(
-                [System.Text.Encoding]::Unicode.GetBytes($cmdText)
-            )
-            Start-Process $exe -Verb RunAs -ArgumentList '-NoExit', '-EncodedCommand', $encoded
+            # Sanitização: remove null bytes e caracteres de controle (U+0000–U+001F exceto tab/newline)
+            $cmdText = $cmdText -replace '[\x00-\x08\x0B\x0C\x0E-\x1F]', ''
+
+            if ([string]::IsNullOrWhiteSpace($cmdText)) {
+                $er = [System.Management.Automation.ErrorRecord]::new(
+                    [System.ArgumentException]::new('Comando ficou vazio após sanitização.'),
+                    'SudoEmptyCommand', [System.Management.Automation.ErrorCategory]::InvalidArgument, $cmdText
+                )
+                $PSCmdlet.WriteError($er)
+                return
+            }
+
+            if ($PSCmdlet.ShouldProcess($cmdText, 'Elevar como Administrador')) {
+                $encoded = [Convert]::ToBase64String(
+                    [System.Text.Encoding]::Unicode.GetBytes($cmdText)
+                )
+                Start-Process $exe -Verb RunAs -ArgumentList '-NoExit', '-EncodedCommand', $encoded
+            }
         } catch {
-            Write-Error "sudo: falha ao elevar comando - $_"
+            $er = [System.Management.Automation.ErrorRecord]::new(
+                $_.Exception, 'SudoElevationFailed', [System.Management.Automation.ErrorCategory]::SecurityError, $cmdText
+            )
+            $PSCmdlet.WriteError($er)
         }
     } else {
-        Start-Process $exe -Verb RunAs
+        if ($PSCmdlet.ShouldProcess($exe, 'Abrir sessão elevada')) {
+            Start-Process $exe -Verb RunAs
+        }
     }
 }

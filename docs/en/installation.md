@@ -54,14 +54,14 @@ git clone https://github.com/AndersonTavares0/config-powershell7.git
 cd config-powershell7
 ```
 
-### Step 3: Automated Installation (Recommended)
-The repository includes a script that automates the creation of the symbolic link and unblocking files.
+### Step 3: Automated Installation (Zero-UAC)
+The repository includes an intelligent script that automates the link creation without requiring Administrator privileges.
 
-**Run as Administrator:**
+**Run in normal terminal:**
 ```powershell
 .\install.ps1
 ```
-*This script will create a symbolic link in your `$PROFILE` pointing to the repository folder and backup the old profile if it exists.*
+*This script will safely dot-source your new profile in `$PROFILE` by explicitly injecting the repository path, backing up any old profile if it exists. It runs entirely in user-space without UAC prompts.*
 
 ---
 
@@ -73,9 +73,11 @@ If you prefer not to use the script, follow these steps:
    ```powershell
    Get-ChildItem -Recurse *.ps1 | Unblock-File
    ```
-2. **Create Symbolic Link (Admin):**
+2. **Link via Dot-Source:**
+   Add the following line to your `$PROFILE`:
    ```powershell
-   New-Item -ItemType SymbolicLink -Path $PROFILE -Target "$PWD\Microsoft.PowerShell_profile.ps1" -Force
+   $global:__ProfileRepoRoot = "C:\Path\To\Your\config-powershell7"
+   . "C:\Path\To\Your\config-powershell7\Microsoft.PowerShell_profile.ps1"
    ```
 
 ---

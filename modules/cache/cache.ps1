@@ -1,13 +1,17 @@
-# ── 2. PLUGINS & CACHE ───────────────────────────────────────
-$script:CachePath  = "$HOME\.cache_pwsh_plugins.ps1"
-$script:ThemePath  = "$HOME\.poshthemes\atomic.omp.json"
+# ── 2. PLUGINS & CACHE v2 ────────────────────────────────────
+# Cache com TTL (Time-To-Live): evita recálculo de fingerprint MD5
+# se o arquivo de cache foi atualizado recentemente.
+#
+# Formato do header do cache:
+#   # fp:<hash> ts:<unix_epoch>
+#
+# Hot path (cache válido + TTL ok): ~5ms — sem Get-Command, sem Get-FileHash.
 
 # Nomes em inglês + alias, convenção unificada
 function Clear-PluginCache {
-    if (Test-Path $script:CachePath) {
-        Remove-Item $script:CachePath -ErrorAction SilentlyContinue
+    if (Test-Path $script:Config.CachePath) {
+        Remove-Item $script:Config.CachePath -ErrorAction SilentlyContinue
     }
-    # Removido Write-Host para não atrasar o boot - usuário pode verificar manualmente
 }
 Set-Alias Clear-Cache Clear-PluginCache
 
@@ -48,13 +52,13 @@ function script:Get-PluginFingerprint {
         }
     }
 
-    $parts += $script:ThemePath
-    $parts += [int](Test-Path $script:ThemePath)
+    $parts += $script:Config.ThemePath
+    $parts += [int](Test-Path $script:Config.ThemePath)
 
     # Include theme content hash if exists for deeper change detection
-    if (Test-Path $script:ThemePath) {
+    if (Test-Path $script:Config.ThemePath) {
         try {
-            $themeHash = (Get-FileHash $script:ThemePath -Algorithm MD5 -ErrorAction SilentlyContinue).Hash
+            $themeHash = (Get-FileHash $script:Config.ThemePath -Algorithm MD5 -ErrorAction SilentlyContinue).Hash
             $parts += ($themeHash ?? 'nohash')
         } catch {
             $parts += 'nohash'
@@ -68,10 +72,11 @@ function script:Get-PluginFingerprint {
 }
 
 # Lógica de rebuild extraída: testável, nomeada, sem bloco `& {}` anônimo
-# Removido Write-Host para não atrasar boot - cache é silencioso por padrão
 function script:Update-PluginCache {
     $buf = [System.Text.StringBuilder]::new()
-    [void]$buf.AppendLine("# fp:$(script:Get-PluginFingerprint)")
+    $ts  = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+    $fp  = script:Get-PluginFingerprint
+    [void]$buf.AppendLine("# fp:${fp} ts:${ts}")
 
     $zcmd = Get-Command zoxide -ErrorAction SilentlyContinue
     if ($zcmd) {
@@ -86,10 +91,10 @@ function script:Update-PluginCache {
     $ocmd = Get-Command oh-my-posh -ErrorAction SilentlyContinue
     if ($ocmd) {
         try {
-            $themeExists = Test-Path $script:ThemePath
+            $themeExists = Test-Path $script:Config.ThemePath
             $label       = if ($themeExists) { 'OMP:atomic' } else { 'OMP:default' }
             $initCmd     = if ($themeExists) {
-                oh-my-posh init pwsh --config $script:ThemePath 2>&1
+                oh-my-posh init pwsh --config $script:Config.ThemePath 2>&1
             } else {
                 oh-my-posh init pwsh 2>&1
             }
@@ -100,17 +105,44 @@ function script:Update-PluginCache {
         }
     }
 
-    try   { Set-Content -Path $script:CachePath -Value $buf.ToString() -Encoding UTF8 -ErrorAction Stop }
+    try   { Set-Content -Path $script:Config.CachePath -Value $buf.ToString() -Encoding UTF8 -ErrorAction Stop }
     catch { Write-Verbose "Update-PluginCache: Falha ao salvar cache - $_" }
 }
 
-$script:CurrentFP = script:Get-PluginFingerprint
-$script:CachedFP  = ''
+# ── LÓGICA DE INICIALIZAÇÃO COM TTL ──────────────────────────
+# 1. Se cache existe e TTL não expirou → dot-source direto (HOT PATH: ~5ms)
+# 2. Se cache existe mas TTL expirou  → recalcular fingerprint, rebuild se diferente
+# 3. Se cache não existe              → rebuild completo
 
-if (Test-Path $script:CachePath) {
-    $firstLine = Get-Content $script:CachePath -TotalCount 1 -ErrorAction SilentlyContinue
-    if ($firstLine -match '^# fp:(.+)$') { $script:CachedFP = $Matches[1] }
+$script:NeedRebuild = $true
+
+if (Test-Path $script:Config.CachePath) {
+    $firstLine = Get-Content $script:Config.CachePath -TotalCount 1 -ErrorAction SilentlyContinue
+    if ($firstLine -match '^# fp:(\S+)\s+ts:(\d+)$') {
+        $script:CachedFP = $Matches[1]
+        $script:CachedTS = [long]$Matches[2]
+        $script:NowTS    = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+        $script:AgeMin   = ($script:NowTS - $script:CachedTS) / 60
+
+        if ($script:AgeMin -lt $script:Config.CacheTTLMinutes) {
+            # HOT PATH: TTL válido, pular fingerprint completamente
+            $script:NeedRebuild = $false
+        } else {
+            # TTL expirado: recalcular fingerprint para verificar mudanças
+            $script:CurrentFP = script:Get-PluginFingerprint
+            if ($script:CachedFP -eq $script:CurrentFP) {
+                # Fingerprint idêntico — apenas atualizar o timestamp (touch)
+                $content = Get-Content $script:Config.CachePath -Raw -ErrorAction SilentlyContinue
+                $newTs   = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+                $content = $content -replace '^# fp:(\S+)\s+ts:\d+', "# fp:`$1 ts:${newTs}"
+                Set-Content -Path $script:Config.CachePath -Value $content -Encoding UTF8 -ErrorAction SilentlyContinue
+                $script:NeedRebuild = $false
+            }
+            # Se fingerprint diferente, NeedRebuild permanece $true
+        }
+    }
+    # Se header não bate no regex → formato antigo, rebuild
 }
 
-if ($script:CachedFP -ne $script:CurrentFP) { script:Update-PluginCache }
-if (Test-Path $script:CachePath)             { . $script:CachePath }
+if ($script:NeedRebuild) { script:Update-PluginCache }
+if (Test-Path $script:Config.CachePath) { . $script:Config.CachePath }

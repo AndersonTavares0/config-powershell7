@@ -6,7 +6,7 @@ if (Get-Command Set-PSReadLineOption -ErrorAction SilentlyContinue) {
         -BellStyle None `
         -MaximumHistoryCount 5000
 
-    if ($script:PSMajor -ge 7) {
+    if ($script:Config.PSMajor -ge 7) {
         try { Set-PSReadLineOption -PredictionSource History -PredictionViewStyle ListView -ErrorAction Stop } catch {}
     }
 
