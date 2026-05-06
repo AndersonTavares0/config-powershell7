@@ -42,7 +42,7 @@ O perfil agora utiliza uma arquitetura modular para facilitar a manutenção e o
 
 ---
 
-### Passo 1: Configurar a Execution Policy
+### Passo 1: Configurar a Política de Execução
 Abra o PowerShell e execute:
 ```powershell
 Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
@@ -54,28 +54,30 @@ git clone https://github.com/AndersonTavares0/config-powershell7.git
 cd config-powershell7
 ```
 
-### Passo 3: Instalação Automatizada (Recomendado)
-O repositório inclui um script que automatiza a criação do link simbólico e o desbloqueio dos arquivos.
+### Passo 3: Instalação Automatizada (Zero-UAC)
+O repositório inclui um script inteligente que automatiza a criação do link sem requerer privilégios de Administrador.
 
-**Execute como Administrador:**
+**Execute em um terminal normal:**
 ```powershell
 .\install.ps1
 ```
-*Este script criará um link simbólico no seu `$PROFILE` apontando para a pasta do repositório e fará o backup do perfil antigo se ele existir.*
+*Este script vai carregar o seu novo perfil de forma segura via "dot-source" injetando o caminho do repositório no `$PROFILE`, e fará um backup caso você já tenha um perfil antigo. Ele roda inteiramente no espaço do usuário, sem pedir telas de Administrador (UAC).*
 
 ---
 
 ### Instalação Manual (Alternativa)
 
-Se preferir não usar o script, siga os passos:
+Se preferir não usar o script, siga estes passos:
 
-1. **Desbloquear arquivos:**
+1. **Desbloquear arquivos baixados:**
    ```powershell
    Get-ChildItem -Recurse *.ps1 | Unblock-File
    ```
-2. **Criar Link Simbólico (Admin):**
+2. **Linkar via Dot-Source:**
+   Adicione as seguintes linhas dentro do arquivo do seu `$PROFILE`:
    ```powershell
-   New-Item -ItemType SymbolicLink -Path $PROFILE -Target "$PWD\Microsoft.PowerShell_profile.ps1" -Force
+   $global:__ProfileRepoRoot = "C:\Caminho\Para\Seu\config-powershell7"
+   . "C:\Caminho\Para\Seu\config-powershell7\Microsoft.PowerShell_profile.ps1"
    ```
 
 ---

@@ -88,46 +88,48 @@ Clear-Cache
 
 ## Testes
 
-O projeto inclui testes unitários em `Microsoft.PowerShell_profile.Tests_diff.ps1`, implementados com framework próprio (sem dependências externas).
+O projeto inclui uma suíte de testes unitários avançada e compatível com **Strict-Mode** em `tests/Test-ProfileInstallation.ps1`.
 
 ### Executar
 
 ```powershell
 cd config-powershell7
-.\Microsoft.PowerShell_profile.Tests_diff.ps1
+.\tests\Test-ProfileInstallation.ps1
 
 # Com saída detalhada
-.\Microsoft.PowerShell_profile.Tests_diff.ps1 -Verbose
+.\tests\Test-ProfileInstallation.ps1 -Verbose
 ```
 
 ### Cobertura
 
-| Categoria | Itens testados |
+| Categoria | Itens Testados |
 |---|---|
-| **Navegação** | `docs`, `dtop`, `home`, `up`, `up2`, `la`, `ll`, `mkcd`, `nf` |
-| **Arquivos e Texto** | `touch`, `which`, `unzip`, `head`, `tail`, `grep`, `cpy`, `pst`, `Copy-ToClipboard`, `sed` |
-| **Sistema** | `pkill`, `k9`, `pgrep`, `flushdns`, `df`, `pubip`, `sysinfo` |
-| **Git** | `gst`, `gss`, `ga`, `gcmt`, `gco`, `gpush`, `gpull`, `glog`, `gundo`, `gdiff`, `gcl`, `gcom`, `lazyg` |
-| **Administração** | `sudo` |
-| **Plugin Cache** | `Clear-PluginCache`, `Clear-Cache`, `Import-TerminalIcons`, `icons` |
+| **Integridade do Perfil** | Garante a lógica correta de injeção dot-source |
+| **Sintaxe dos Módulos** | Faz o parser estrito de todos os scripts |
+| **Carregamento (Boot)** | Valida o tempo de performance extrema (< 200ms) |
+| **Funções e Aliases** | Verifica a existência das lógicas (Git, Sistema, Arquivos) |
+| **Sistema de Config** | Verifica a presença de objetos e variáveis |
+| **Sistema de Cache** | Valida os timestamps de Time-To-Live (TTL) |
 
-### Resultado esperado
+### Saída esperada
 
 ```
-========================================
-TEST SUMMARY
-========================================
-Total Tests: XX
-Passed:      XX
-Failed:      0
-========================================
+  ╔══════════════════════════════════════════════╗
+  ║   Profile Installation Health Check          ║
+  ╚══════════════════════════════════════════════╝
+
+  Profile Integrity
+  ✔ Profile/Type - Profile dot-sources the config
+  ...
+  ════════════════════════════════════════════
+  Results: 57 PASS, 0 FAIL, 0 WARN, 0 SKIP (57 total)
+  ════════════════════════════════════════════
 ```
 
-- ✅ Todos passaram: perfil funcionando corretamente.
-- ❌ Algum falhou: verifique dependências e Execution Policy.
+- 🟢 Todos passaram: o perfil está funcionando perfeitamente.
+- 🔴 Algum falhou: verifique as dependências e a Política de Execução.
 
 ---
-
 
 # Integração de Testes
 
@@ -135,17 +137,11 @@ Failed:      0
 
 ### Framework
 
-O arquivo `Microsoft.PowerShell_profile.Tests_diff.ps1` implementa um framework de testes próprio com:
-
-- `Test-Result` — registra resultado (nome, passou/falhou, mensagem)
-- `Assert-Equal` — comparação por igualdade
-- `Assert-True` / `Assert-False` — asserções booleanas
-- `Assert-NotNull` — verificação de nulidade
-- Helpers `New-MockFile` / `Remove-MockFile` — criação/limpeza de arquivos temporários
+O arquivo `tests/Test-ProfileInstallation.ps1` implementa um framework de testes customizado otimizado para ambientes de CI/CD.
 
 ### Estratégia
 
-O arquivo de testes carrega o profile real via `. $PROFILE` no início. Todos os testes subsequentes operam no ambiente real. Isso garante que o que é testado é exatamente o que é carregado pelo usuário.
+O arquivo de testes verifica dinamicamente `$global:ProfileLoaded` e avalia o perfil em isolamento para prevenir efeitos colaterais (side-effects), garantindo zero falsos-positivos mesmo sob a bandeira imperdoável de `Set-StrictMode -Version Latest`.
 
 ### Suítes de teste (15 suítes)
 

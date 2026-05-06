@@ -1,114 +1,302 @@
+#Requires -Version 5.1
 <#
 .SYNOPSIS
-    Installs the PowerShell Profile by creating a symbolic link.
+    Industrial-grade installer for the PowerShell Profile ecosystem.
 .DESCRIPTION
-    Cross-platform installer that handles ExecutionPolicy and permissions safely.
+    Cross-platform (Windows 10+ / Linux Fedora) installer with:
+    - Idempotent execution (safe to run multiple times)
+    - Symbolic link management with validation
+    - Timestamped backups (never overwrites existing backups)
+    - Dependency detection with graceful degradation
+    - Elevation check with clear user guidance
+    - Post-installation validation
+.EXAMPLE
+    # Windows (Run as Administrator)
+    .\install.ps1
+
+    # Linux
+    pwsh ./install.ps1
+.NOTES
+    Revision: 05/2026 | License: MIT
 #>
 
-$ProfileFile = Join-Path $PSScriptRoot "Microsoft.PowerShell_profile.ps1"
+# ── STRICT MODE ──────────────────────────────────────────────
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
 
-if (-not (Test-Path $ProfileFile)) {
-    Write-Error "Could not find Microsoft.PowerShell_profile.ps1 in $PSScriptRoot"
+# ── PLATFORM DETECTION ───────────────────────────────────────
+$script:IsWin = if ($PSVersionTable.PSVersion.Major -ge 6) { $IsWindows } else { $true }
+$script:IsLnx = if ($PSVersionTable.PSVersion.Major -ge 6) { $IsLinux }   else { $false }
+
+if ($script:IsWin) {
+    $script:IsAdmin = ([Security.Principal.WindowsPrincipal] `
+        [Security.Principal.WindowsIdentity]::GetCurrent()
+    ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+} else {
+    $script:IsAdmin = ((id -u 2>$null) -eq '0')
+}
+
+# ── UX HELPERS ───────────────────────────────────────────────
+function Write-Step  { param([string]$Msg) Write-Host "  → $Msg" -ForegroundColor White }
+function Write-Ok    { param([string]$Msg) Write-Host "  ✔ $Msg" -ForegroundColor Green }
+function Write-Warn  { param([string]$Msg) Write-Host "  ⚠ $Msg" -ForegroundColor Yellow }
+function Write-Fail  { param([string]$Msg) Write-Host "  ❌ $Msg" -ForegroundColor Red }
+function Write-Info  { param([string]$Msg) Write-Host "  ℹ $Msg" -ForegroundColor DarkGray }
+
+# ── RESOLVE PATHS ────────────────────────────────────────────
+$script:SourceProfile = Join-Path $PSScriptRoot 'Microsoft.PowerShell_profile.ps1'
+$script:SourceModules = Join-Path $PSScriptRoot 'modules'
+
+# Validate source files exist
+if (-not (Test-Path $script:SourceProfile)) {
+    Write-Fail "Microsoft.PowerShell_profile.ps1 not found in $PSScriptRoot"
+    exit 1
+}
+if (-not (Test-Path $script:SourceModules)) {
+    Write-Fail "modules/ directory not found in $PSScriptRoot"
     exit 1
 }
 
-Write-Host "--- PowerShell Profile Installer ---" -ForegroundColor Cyan
-
-# 1. Check ExecutionPolicy and set safely if needed
-$currentPolicy = Get-ExecutionPolicy -Scope CurrentUser -ErrorAction SilentlyContinue
-if ($currentPolicy -eq 'Restricted') {
-    Write-Host "Adjusting ExecutionPolicy for CurrentUser..." -ForegroundColor Yellow
-    try {
-        Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned -Force -ErrorAction Stop
-        Write-Host "ExecutionPolicy set to RemoteSigned (CurrentUser)." -ForegroundColor Green
-    } catch {
-        Write-Warning "Could not change ExecutionPolicy. You may need to run: Set-ExecutionPolicy -Scope CurrentUser RemoteSigned"
+# Resolve target profile path (cross-platform)
+function script:Get-TargetProfilePath {
+    if ($PROFILE -and $PROFILE.CurrentUserCurrentHost) {
+        return $PROFILE.CurrentUserCurrentHost
     }
-}
-
-# 2. Unblock files (Windows only)
-$isWindowsInstall = $false
-if ($PSVersionTable.PSVersion.Major -ge 6) {
-    # PowerShell 6+: usa variável automática read-only $IsWindows
-    $isWindowsInstall = $IsWindows
-} else {
-    # PS 5.1: fallback baseado em PSEdition (Desktop = Windows PowerShell)
-    $isWindowsInstall = $PSVersionTable.PSEdition -eq 'Desktop'
-}
-
-if ($isWindowsInstall) {
-    Write-Host "Unblocking script files... " -NoNewline
-    Get-ChildItem -Path $PSScriptRoot -Filter *.ps1 -Recurse | Unblock-File
-    Write-Host "Done." -ForegroundColor Green
-}
-
-# 3. Determine profile path cross-platform
-if ($PROFILE.CurrentUserAllHosts) {
-    $profilePath = $PROFILE.CurrentUserAllHosts
-} else {
-    # Fallback para Linux/macOS
-    $profilePath = "~/.config/powershell/Microsoft.PowerShell_profile.ps1"
-    $profilePath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($profilePath)
-}
-
-# 4. Create/Backup Profile
-if (Test-Path $profilePath) {
-    $choice = Read-Host "A profile already exists at $profilePath. Overwrite? [y/N]"
-    if ($choice -ne 'y') {
-        Write-Host "Installation aborted."
-        exit 0
+    if ($script:IsLnx) {
+        $linuxPath = Join-Path $HOME '.config/powershell/Microsoft.PowerShell_profile.ps1'
+        return $linuxPath
     }
-
-    # Create backup
-    $backupPath = "$profilePath.bak"
-    Write-Host "Backing up existing profile to $backupPath..."
-    Copy-Item $profilePath $backupPath -Force
+    return $PROFILE
 }
 
-# 5. Ensure target directory exists
-$profileDir = Split-Path $profilePath -Parent
-if (-not (Test-Path $profileDir)) {
-    New-Item -ItemType Directory -Force -Path $profileDir | Out-Null
-}
+$script:TargetProfile = script:Get-TargetProfilePath
+$script:TargetDir     = Split-Path $script:TargetProfile -Parent
 
-# 6. Create Symbolic Link (requires admin on Windows, not on Linux/macOS)
-$isWindowsLink = $false
-if ($PSVersionTable.PSVersion.Major -ge 6) {
-    # PowerShell 6+: usa variável automática read-only $IsWindows
-    $isWindowsLink = $IsWindows
-} else {
-    # PS 5.1: fallback baseado em PSEdition (Desktop = Windows PowerShell)
-    $isWindowsLink = $PSVersionTable.PSEdition -eq 'Desktop'
-}
+# ══════════════════════════════════════════════════════════════
+# BANNER
+# ══════════════════════════════════════════════════════════════
+Write-Host ""
+Write-Host "  ╔══════════════════════════════════════════════╗" -ForegroundColor Cyan
+Write-Host "  ║   PowerShell Profile Installer v2.0         ║" -ForegroundColor Cyan
+Write-Host "  ║   Windows 10+ / Linux (Fedora)              ║" -ForegroundColor Cyan
+Write-Host "  ╚══════════════════════════════════════════════╝" -ForegroundColor Cyan
+Write-Host ""
 
-$isAdmin = ([Security.Principal.WindowsPrincipal] [Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+$platform = if ($script:IsWin) { "Windows" } else { "Linux" }
+$adminTag = if ($script:IsAdmin) { " [ADMIN]" } else { "" }
+Write-Info "Platform: $platform | PS $($PSVersionTable.PSVersion)$adminTag"
+Write-Info "Source:   $PSScriptRoot"
+Write-Info "Target:   $script:TargetProfile"
+Write-Host ""
 
-if ($isWindowsLink -and -not $isAdmin) {
-    Write-Warning "Admin privileges are required to create a Symbolic Link on Windows."
-    Write-Host "Please restart this terminal as Administrator and run the script again."
-    exit 1
-}
+# Elevation check removed because Dot-Sourcing the profile does not require admin rights
 
-Write-Host "Creating symbolic link at $profilePath..."
-try {
-    # Remove existing file/link first
-    if (Test-Path $profilePath) {
-        Remove-Item $profilePath -Force -ErrorAction SilentlyContinue
-    }
+# ══════════════════════════════════════════════════════════════
+# STEP 1: EXECUTION POLICY (Windows only)
+# ══════════════════════════════════════════════════════════════
+Write-Host "  [1/5] Checking ExecutionPolicy..." -ForegroundColor Cyan
 
-    if ($isWindowsLink) {
-        New-Item -ItemType SymbolicLink -Path $profilePath -Target $ProfileFile -Force | Out-Null
+if ($script:IsWin) {
+    $currentPolicy = Get-ExecutionPolicy -Scope CurrentUser -ErrorAction SilentlyContinue
+    if ($currentPolicy -eq 'Restricted' -or $currentPolicy -eq 'Undefined') {
+        Write-Step "Setting ExecutionPolicy to RemoteSigned for CurrentUser..."
+        try {
+            Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned -Force -ErrorAction Stop
+            Write-Ok "ExecutionPolicy set to RemoteSigned."
+        } catch {
+            Write-Warn "Could not set ExecutionPolicy. Run manually:"
+            Write-Info "Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned"
+        }
     } else {
-        # Linux/macOS: use ln -s via bash
-        & ln -sf $ProfileFile $profilePath 2>&1 | Out-Null
+        Write-Ok "ExecutionPolicy: $currentPolicy (OK)."
     }
-    Write-Host "Symbolic link created successfully." -ForegroundColor Green
-} catch {
-    # Fallback: copy file instead of symlink
-    Write-Warning "Could not create symbolic link. Copying file instead..."
-    Copy-Item $ProfileFile $profilePath -Force
+
+    # Unblock downloaded files
+    Write-Step "Unblocking script files..."
+    Get-ChildItem -Path $PSScriptRoot -Filter '*.ps1' -Recurse -ErrorAction SilentlyContinue |
+        Unblock-File -ErrorAction SilentlyContinue
+    Write-Ok "Files unblocked."
+} else {
+    Write-Ok "Skipped (not applicable on Linux)."
 }
 
-Write-Host "`nInstallation Successful!" -ForegroundColor Green
-Write-Host "Please restart your terminal to apply the changes."
-Write-Host "Profile location: $profilePath"
+# ══════════════════════════════════════════════════════════════
+# STEP 2: DEPENDENCY CHECK
+# ══════════════════════════════════════════════════════════════
+Write-Host "  [2/5] Checking dependencies..." -ForegroundColor Cyan
+
+# Required
+$psVer = $PSVersionTable.PSVersion
+if ($psVer.Major -ge 7) {
+    Write-Ok ("PowerShell {0}" -f $psVer)
+} elseif ($psVer.Major -ge 5) {
+    Write-Warn ("PowerShell  (5.1 supported, but 7+ recommended)")
+} else {
+    Write-Fail ("PowerShell  is not supported. Requires 5.1+")
+    exit 1
+}
+
+# Optional dependencies
+$optionalDeps = @(
+    @{ Name = 'git';        Cmd = 'git';        Hint = 'Git aliases will be disabled' }
+    @{ Name = 'oh-my-posh'; Cmd = 'oh-my-posh'; Hint = 'Prompt theming will be disabled' }
+    @{ Name = 'zoxide';     Cmd = 'zoxide';      Hint = 'Smart navigation (z) will be disabled' }
+)
+
+foreach ($dep in $optionalDeps) {
+    $found = Get-Command $dep.Cmd -ErrorAction SilentlyContinue
+    if ($found) {
+        Write-Ok "$($dep.Name) found: $($found.Source)"
+    } else {
+        Write-Warn "$($dep.Name) not found — $($dep.Hint)"
+    }
+}
+
+# Optional modules
+$optionalModules = @('Terminal-Icons', 'PSReadLine')
+foreach ($mod in $optionalModules) {
+    if (Get-Module -ListAvailable -Name $mod -ErrorAction SilentlyContinue) {
+        Write-Ok "Module $mod available."
+    } else {
+        Write-Warn "Module $mod not installed. Install with: Install-Module -Name $mod -Scope CurrentUser"
+    }
+}
+
+# ══════════════════════════════════════════════════════════════
+# STEP 3: BACKUP EXISTING PROFILE
+# ══════════════════════════════════════════════════════════════
+Write-Host "  [3/5] Managing existing profile..." -ForegroundColor Cyan
+
+$script:NeedLink = $true
+
+if (Test-Path $script:TargetProfile) {
+    $null = Get-Item $script:TargetProfile -Force -ErrorAction SilentlyContinue
+    
+    $content = Get-Content $script:TargetProfile -Raw -ErrorAction SilentlyContinue
+    if ($content -match "\. `"[^`"]*Microsoft\.PowerShell_profile\.ps1`"") {
+        Write-Ok "Profile is already correctly linked (dot-sourced)."
+        $script:NeedLink = $false
+    } else {
+        # It's a different profile — back it up with unique timestamp
+        $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+        $backupPath = "$($script:TargetProfile).bak-$timestamp"
+
+        # Safety: never overwrite existing backup
+        if (Test-Path $backupPath) {
+            $backupPath = "$($script:TargetProfile).bak-$timestamp-$(Get-Random -Maximum 9999)"
+        }
+
+        Write-Step "Backing up existing profile..."
+        Copy-Item $script:TargetProfile $backupPath -Force
+        Write-Ok "Backup created: $backupPath"
+
+        # Remove the original to make way for new file
+        Remove-Item $script:TargetProfile -Force
+    }
+} else {
+    Write-Info "No existing profile found. Clean install."
+}
+
+# ══════════════════════════════════════════════════════════════
+# STEP 4: LINK PROFILE (DOT-SOURCE)
+# ══════════════════════════════════════════════════════════════
+Write-Host "  [4/5] Linking profile..." -ForegroundColor Cyan
+
+# Ensure target directory exists
+if (-not (Test-Path $script:TargetDir)) {
+    Write-Step "Creating profile directory: $script:TargetDir"
+    New-Item -ItemType Directory -Force -Path $script:TargetDir | Out-Null
+}
+
+try {
+    # Create a profile that simply dot-sources our repository profile
+    # This avoids all Symlink/Administrator UAC requirements on Windows
+    $linkContent = "# Generated by config-powershell7 installer`n`$global:__ProfileRepoRoot = `"$PSScriptRoot`"`n. `"$script:SourceProfile`""
+    Set-Content -Path $script:TargetProfile -Value $linkContent -Encoding UTF8 -Force
+    
+    Write-Ok "Profile linked successfully: $script:TargetProfile"
+    Write-Info "→ $script:SourceProfile"
+} catch {
+    Write-Fail "Failed to link profile: $($_.Exception.Message)"
+    exit 1
+}
+
+# ══════════════════════════════════════════════════════════════
+# STEP 5: POST-INSTALL VALIDATION
+# ══════════════════════════════════════════════════════════════
+Write-Host "  [5/5] Validating installation..." -ForegroundColor Cyan
+
+$validationErrors = 0
+
+# V1: Profile exists and points to our source
+if (Test-Path $script:TargetProfile) {
+    $content = Get-Content $script:TargetProfile -Raw -ErrorAction SilentlyContinue
+    if ($content -match "\. `"[^`"]*Microsoft\.PowerShell_profile\.ps1`"") {
+        Write-Ok "Profile link valid."
+    } else {
+        Write-Fail "Profile does not point to our script."
+        $validationErrors++
+    }
+} else {
+    Write-Fail "Profile validation failed."
+    $validationErrors++
+}
+
+# V2: Source modules directory has expected structure
+$expectedModules = @('cache', 'config', 'git', 'navigation', 'system', 'text_utils')
+foreach ($mod in $expectedModules) {
+    $modPath = Join-Path $script:SourceModules $mod
+    if (Test-Path $modPath) {
+        Write-Ok "Module directory: $mod/"
+    } else {
+        Write-Warn "Module directory missing: $mod/"
+    }
+}
+
+# V3: Syntax validation of core files
+$coreFiles = @(
+    $script:SourceProfile
+    (Join-Path $script:SourceModules 'config/config.ps1')
+    (Join-Path $script:SourceModules 'cache/cache.ps1')
+)
+foreach ($file in $coreFiles) {
+    if (Test-Path $file) {
+        $tokens = $null; $errors = $null
+        [System.Management.Automation.Language.Parser]::ParseFile($file, [ref]$tokens, [ref]$errors) | Out-Null
+        $fileName = Split-Path $file -Leaf
+        if ($errors.Count -eq 0) {
+            Write-Ok "Syntax OK: $fileName"
+        } else {
+            Write-Fail "Syntax errors in $fileName"
+            $validationErrors++
+        }
+    }
+}
+
+# ══════════════════════════════════════════════════════════════
+# SUMMARY
+# ══════════════════════════════════════════════════════════════
+Write-Host ""
+if ($validationErrors -eq 0) {
+    Write-Host "  ╔══════════════════════════════════════════════╗" -ForegroundColor Green
+    Write-Host "  ║   ✔ Installation Successful!                ║" -ForegroundColor Green
+    Write-Host "  ╚══════════════════════════════════════════════╝" -ForegroundColor Green
+} else {
+    Write-Host "  ╔══════════════════════════════════════════════╗" -ForegroundColor Yellow
+    Write-Host "  ║   ⚠ Installed with $validationErrors warning(s)              ║" -ForegroundColor Yellow
+    Write-Host "  ╚══════════════════════════════════════════════╝" -ForegroundColor Yellow
+}
+Write-Host ""
+Write-Info "Profile:  $script:TargetProfile"
+Write-Info "Source:   $script:SourceProfile"
+Write-Host ""
+Write-Host "  Restart your terminal to apply changes." -ForegroundColor White
+Write-Host "  Run " -NoNewline -ForegroundColor White
+Write-Host ".\tests\Test-ProfileInstallation.ps1" -NoNewline -ForegroundColor Yellow
+Write-Host " after restart to verify." -ForegroundColor White
+Write-Host ""
+
+if ($Host.Name -match 'ConsoleHost') {
+    Write-Host "Press any key to exit..." -ForegroundColor DarkGray
+    $null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
+}

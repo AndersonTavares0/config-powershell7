@@ -88,46 +88,48 @@ Clear-Cache
 
 ## Tests
 
-The project includes unit tests in `Microsoft.PowerShell_profile.Tests_diff.ps1`, implemented with a custom framework (no external dependencies).
+The project includes an advanced, Strict-Mode compliant unit testing suite in `tests/Test-ProfileInstallation.ps1`.
 
 ### Run
 
 ```powershell
 cd config-powershell7
-.\Microsoft.PowerShell_profile.Tests_diff.ps1
+.\tests\Test-ProfileInstallation.ps1
 
 # With verbose output
-.\Microsoft.PowerShell_profile.Tests_diff.ps1 -Verbose
+.\tests\Test-ProfileInstallation.ps1 -Verbose
 ```
 
 ### Coverage
 
 | Category | Tested Items |
 |---|---|
-| **Navigation** | `docs`, `dtop`, `home`, `up`, `up2`, `la`, `ll`, `mkcd`, `nf` |
-| **Files and Text** | `touch`, `which`, `unzip`, `head`, `tail`, `grep`, `cpy`, `pst`, `Copy-ToClipboard`, `sed` |
-| **System** | `pkill`, `k9`, `pgrep`, `flushdns`, `df`, `pubip`, `sysinfo` |
-| **Git** | `gst`, `gss`, `ga`, `gcmt`, `gco`, `gpush`, `gpull`, `glog`, `gundo`, `gdiff`, `gcl`, `gcom`, `lazyg` |
-| **Administration** | `sudo` |
-| **Plugin Cache** | `Clear-PluginCache`, `Clear-Cache`, `Import-TerminalIcons`, `icons` |
+| **Profile Integrity** | Ensures proper dot-sourcing logic |
+| **Module Syntax** | Parses all scripts against strict parser rules |
+| **Profile Loading** | Asserts extreme performance (< 200ms) |
+| **Functions & Aliases** | Verifies logic existence (Git, System, Files) |
+| **Config System** | Verifies object presence and variables |
+| **Cache System** | Validates Time-To-Live (TTL) timestamps |
 
 ### Expected output
 
 ```
-========================================
-TEST SUMMARY
-========================================
-Total Tests: XX
-Passed:      XX
-Failed:      0
-========================================
+  ╔══════════════════════════════════════════════╗
+  ║   Profile Installation Health Check          ║
+  ╚══════════════════════════════════════════════╝
+
+  Profile Integrity
+  ✔ Profile/Type - Profile dot-sources the config
+  ...
+  ════════════════════════════════════════════
+  Results: 57 PASS, 0 FAIL, 0 WARN, 0 SKIP (57 total)
+  ════════════════════════════════════════════
 ```
 
-- ✅ All passed: profile is working correctly.
-- ❌ Some failed: check dependencies and Execution Policy.
+- 🟢 All passed: profile is working correctly.
+- 🔴 Some failed: check dependencies and Execution Policy.
 
 ---
-
 
 # Test Integration
 
@@ -135,17 +137,11 @@ Failed:      0
 
 ### Framework
 
-The file `Microsoft.PowerShell_profile.Tests_diff.ps1` implements a custom test framework with:
-
-- `Test-Result` — records result (name, passed/failed, message)
-- `Assert-Equal` — equality comparison
-- `Assert-True` / `Assert-False` — boolean assertions
-- `Assert-NotNull` — null check
-- `New-MockFile` / `Remove-MockFile` helpers — create/cleanup temporary files
+The file `tests/Test-ProfileInstallation.ps1` implements a custom test framework optimized for CI/CD environments.
 
 ### Strategy
 
-The test file loads the real profile via `. $PROFILE` at the start. All subsequent tests operate in the real environment. This ensures that what is tested is exactly what the user loads.
+The test file dynamically verifies `$global:ProfileLoaded` and evaluates the profile in isolation to prevent side-effects, guaranteeing zero false-positives under `Set-StrictMode -Version Latest`.
 
 ### Test suites (15 suites)
 
