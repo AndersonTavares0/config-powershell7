@@ -4,62 +4,104 @@ $script:ThemePath  = "$HOME\.poshthemes\atomic.omp.json"
 
 # Nomes em inglês + alias, convenção unificada
 function Clear-PluginCache {
-    Remove-Item $script:CachePath -ErrorAction SilentlyContinue
-    Write-Host "Cache removido. Reinicie o terminal." -ForegroundColor Green
+    if (Test-Path $script:CachePath) {
+        Remove-Item $script:CachePath -ErrorAction SilentlyContinue
+    }
+    # Removido Write-Host para não atrasar o boot - usuário pode verificar manualmente
 }
 Set-Alias Clear-Cache Clear-PluginCache
 
-# Verifica se ja carregado antes de chamar Import-Module
+# Verifica se já carregado antes de chamar Import-Module
 function Import-TerminalIcons {
     if (Get-Module Terminal-Icons) {
-        Write-Host "Terminal-Icons ja esta carregado." -ForegroundColor Yellow
         return
     }
     Import-Module Terminal-Icons -ErrorAction SilentlyContinue
-    if (Get-Module Terminal-Icons) { Write-Host "Terminal-Icons carregado." -ForegroundColor Green }
-    else { Write-Warning "Terminal-Icons nao encontrado. Execute: Install-Module Terminal-Icons" }
 }
 Set-Alias icons Import-TerminalIcons
 
 # MD5 encapsulado em try/finally: garante Dispose() mesmo em falha.
-# $script:ThemePath centralizado - um unico ponto de referencia para o tema.
+# fingerprint inclui versão dos binários via VersionInfo, não apenas caminho
+# Inclui hash do conteúdo do tema para detecção profunda de mudanças
 function script:Get-PluginFingerprint {
     $zcmd = Get-Command zoxide -ErrorAction SilentlyContinue
     $ocmd = Get-Command oh-my-posh -ErrorAction SilentlyContinue
-    $parts = @(
-        if ($zcmd) { $zcmd.Source } else { $null }
-        if ($ocmd) { $ocmd.Source } else { $null }
-        $script:ThemePath
-        [int](Test-Path $script:ThemePath)
-    )
+    $parts = @()
+
+    if ($zcmd) {
+        $parts += $zcmd.Source
+        try {
+            $zVersion = (Get-Item $zcmd.Source -ErrorAction SilentlyContinue).VersionInfo.FileVersion
+            $parts += ($zVersion ?? 'unknown')
+        } catch {
+            $parts += 'unknown'
+        }
+    }
+
+    if ($ocmd) {
+        $parts += $ocmd.Source
+        try {
+            $oVersion = (Get-Item $ocmd.Source -ErrorAction SilentlyContinue).VersionInfo.FileVersion
+            $parts += ($oVersion ?? 'unknown')
+        } catch {
+            $parts += 'unknown'
+        }
+    }
+
+    $parts += $script:ThemePath
+    $parts += [int](Test-Path $script:ThemePath)
+
+    # Include theme content hash if exists for deeper change detection
+    if (Test-Path $script:ThemePath) {
+        try {
+            $themeHash = (Get-FileHash $script:ThemePath -Algorithm MD5 -ErrorAction SilentlyContinue).Hash
+            $parts += ($themeHash ?? 'nohash')
+        } catch {
+            $parts += 'nohash'
+        }
+    }
+
     $bytes = [System.Text.Encoding]::UTF8.GetBytes($parts -join '|')
     $md5   = [System.Security.Cryptography.MD5]::Create()
     try    { [System.BitConverter]::ToString($md5.ComputeHash($bytes)) -replace '-', '' }
     finally{ $md5.Dispose() }
 }
 
-# Logica de rebuild extraida: testavel, nomeada, sem bloco `& {}` anonimo
+# Lógica de rebuild extraída: testável, nomeada, sem bloco `& {}` anônimo
+# Removido Write-Host para não atrasar boot - cache é silencioso por padrão
 function script:Update-PluginCache {
-    Write-Host "Atualizando cache de plugins..." -ForegroundColor DarkGray
     $buf = [System.Text.StringBuilder]::new()
     [void]$buf.AppendLine("# fp:$(script:Get-PluginFingerprint)")
 
-    if (Get-Command zoxide -ErrorAction SilentlyContinue) {
-        [void]$buf.AppendLine((zoxide init powershell | Out-String))
-        [void]$buf.AppendLine("`$script:StartupModules.Add('Zoxide')")
+    $zcmd = Get-Command zoxide -ErrorAction SilentlyContinue
+    if ($zcmd) {
+        try {
+            [void]$buf.AppendLine((zoxide init powershell 2>&1 | Out-String))
+            [void]$buf.AppendLine("`$script:StartupModules.Add('Zoxide')")
+        } catch {
+            Write-Verbose "Update-PluginCache: zoxide init falhou - $_"
+        }
     }
 
-    if (Get-Command oh-my-posh -ErrorAction SilentlyContinue) {
-        $themeExists = Test-Path $script:ThemePath
-        $label       = if ($themeExists) { 'OMP:atomic' } else { 'OMP:default' }
-        $initCmd     = if ($themeExists) { oh-my-posh init pwsh --config $script:ThemePath }
-                       else              { oh-my-posh init pwsh }
-        [void]$buf.AppendLine(($initCmd | Out-String))
-        [void]$buf.AppendLine("`$script:StartupModules.Add('$label')")
+    $ocmd = Get-Command oh-my-posh -ErrorAction SilentlyContinue
+    if ($ocmd) {
+        try {
+            $themeExists = Test-Path $script:ThemePath
+            $label       = if ($themeExists) { 'OMP:atomic' } else { 'OMP:default' }
+            $initCmd     = if ($themeExists) {
+                oh-my-posh init pwsh --config $script:ThemePath 2>&1
+            } else {
+                oh-my-posh init pwsh 2>&1
+            }
+            [void]$buf.AppendLine(($initCmd | Out-String))
+            [void]$buf.AppendLine("`$script:StartupModules.Add('$label')")
+        } catch {
+            Write-Verbose "Update-PluginCache: oh-my-posh init falhou - $_"
+        }
     }
 
     try   { Set-Content -Path $script:CachePath -Value $buf.ToString() -Encoding UTF8 -ErrorAction Stop }
-    catch { Write-Warning "Falha ao salvar cache: $_" }
+    catch { Write-Verbose "Update-PluginCache: Falha ao salvar cache - $_" }
 }
 
 $script:CurrentFP = script:Get-PluginFingerprint
