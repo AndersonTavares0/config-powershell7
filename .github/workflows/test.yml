@@ -31,4 +31,5 @@ jobs:
       shell: pwsh
       run: |
         $ErrorActionPreference = 'Stop'
-        ./tests/Microsoft.PowerShell_profile.Tests_diff.ps1 -Verbose
+        ./tests/Test-ProfileInstallation.ps1 -Detailed
+        ./tests/Microsoft.PowerShell_profile.Tests.ps1 -Verbose
