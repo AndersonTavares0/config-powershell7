@@ -36,7 +36,7 @@ function script:Get-PluginFingerprint {
         $parts += $zcmd.Source
         try {
             $zVersion = (Get-Item $zcmd.Source -ErrorAction SilentlyContinue).VersionInfo.FileVersion
-            $parts += ($zVersion ?? 'unknown')
+            $parts += if ($zVersion) { $zVersion } else { 'unknown' }
         } catch {
             $parts += 'unknown'
         }
@@ -46,7 +46,7 @@ function script:Get-PluginFingerprint {
         $parts += $ocmd.Source
         try {
             $oVersion = (Get-Item $ocmd.Source -ErrorAction SilentlyContinue).VersionInfo.FileVersion
-            $parts += ($oVersion ?? 'unknown')
+            $parts += if ($oVersion) { $oVersion } else { 'unknown' }
         } catch {
             $parts += 'unknown'
         }
@@ -59,7 +59,7 @@ function script:Get-PluginFingerprint {
     if (Test-Path $script:Config.ThemePath) {
         try {
             $themeHash = (Get-FileHash $script:Config.ThemePath -Algorithm MD5 -ErrorAction SilentlyContinue).Hash
-            $parts += ($themeHash ?? 'nohash')
+            $parts += if ($themeHash) { $themeHash } else { 'nohash' }
         } catch {
             $parts += 'nohash'
         }
@@ -110,39 +110,44 @@ function script:Update-PluginCache {
 }
 
 # ── LÓGICA DE INICIALIZAÇÃO COM TTL ──────────────────────────
+# Encapsulada em função para evitar poluição do scope $script:
 # 1. Se cache existe e TTL não expirou → dot-source direto (HOT PATH: ~5ms)
 # 2. Se cache existe mas TTL expirou  → recalcular fingerprint, rebuild se diferente
 # 3. Se cache não existe              → rebuild completo
 
-$script:NeedRebuild = $true
+function script:Initialize-PluginCache {
+    $needRebuild = $true
 
-if (Test-Path $script:Config.CachePath) {
-    $firstLine = Get-Content $script:Config.CachePath -TotalCount 1 -ErrorAction SilentlyContinue
-    if ($firstLine -match '^# fp:(\S+)\s+ts:(\d+)$') {
-        $script:CachedFP = $Matches[1]
-        $script:CachedTS = [long]$Matches[2]
-        $script:NowTS    = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
-        $script:AgeMin   = ($script:NowTS - $script:CachedTS) / 60
+    if (Test-Path $script:Config.CachePath) {
+        $firstLine = Get-Content $script:Config.CachePath -TotalCount 1 -ErrorAction SilentlyContinue
+        if ($firstLine -match '^# fp:(\S+)\s+ts:(\d+)$') {
+            $cachedFP = $Matches[1]
+            $cachedTS = [long]$Matches[2]
+            $nowTS    = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+            $ageMin   = ($nowTS - $cachedTS) / 60
 
-        if ($script:AgeMin -lt $script:Config.CacheTTLMinutes) {
-            # HOT PATH: TTL válido, pular fingerprint completamente
-            $script:NeedRebuild = $false
-        } else {
-            # TTL expirado: recalcular fingerprint para verificar mudanças
-            $script:CurrentFP = script:Get-PluginFingerprint
-            if ($script:CachedFP -eq $script:CurrentFP) {
-                # Fingerprint idêntico — apenas atualizar o timestamp (touch)
-                $content = Get-Content $script:Config.CachePath -Raw -ErrorAction SilentlyContinue
-                $newTs   = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
-                $content = $content -replace '^# fp:(\S+)\s+ts:\d+', "# fp:`$1 ts:${newTs}"
-                Set-Content -Path $script:Config.CachePath -Value $content -Encoding UTF8 -ErrorAction SilentlyContinue
-                $script:NeedRebuild = $false
+            if ($ageMin -lt $script:Config.CacheTTLMinutes) {
+                # HOT PATH: TTL válido, pular fingerprint completamente
+                $needRebuild = $false
+            } else {
+                # TTL expirado: recalcular fingerprint para verificar mudanças
+                $currentFP = script:Get-PluginFingerprint
+                if ($cachedFP -eq $currentFP) {
+                    # Fingerprint idêntico — apenas atualizar o timestamp (touch)
+                    $content = Get-Content $script:Config.CachePath -Raw -ErrorAction SilentlyContinue
+                    $newTs   = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+                    $content = $content -replace '^# fp:(\S+)\s+ts:\d+', "# fp:`$1 ts:${newTs}"
+                    Set-Content -Path $script:Config.CachePath -Value $content -Encoding UTF8 -ErrorAction SilentlyContinue
+                    $needRebuild = $false
+                }
+                # Se fingerprint diferente, needRebuild permanece $true
             }
-            # Se fingerprint diferente, NeedRebuild permanece $true
         }
+        # Se header não bate no regex → formato antigo, rebuild
     }
-    # Se header não bate no regex → formato antigo, rebuild
+
+    if ($needRebuild) { script:Update-PluginCache }
+    if (Test-Path $script:Config.CachePath) { . $script:Config.CachePath }
 }
 
-if ($script:NeedRebuild) { script:Update-PluginCache }
-if (Test-Path $script:Config.CachePath) { . $script:Config.CachePath }
+script:Initialize-PluginCache

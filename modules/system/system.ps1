@@ -44,7 +44,8 @@ function pgrep {
                     foreach ($id in $ids) {
                         [PSCustomObject]@{
                             Id = $id.Trim()
-                            ProcessName = (Get-Process -Id $id.Trim() -ErrorAction SilentlyContinue).ProcessName ?? 'unknown'
+                            $pName = (Get-Process -Id $id.Trim() -ErrorAction SilentlyContinue).ProcessName
+                            ProcessName = if ($pName) { $pName } else { 'unknown' }
                         }
                     }
                 }
@@ -166,65 +167,71 @@ function pubip {
     $PSCmdlet.WriteError($er)
 }
 
+function script:Get-WindowsSystemInfo {
+    $os = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
+    $cs = Get-CimInstance Win32_ComputerSystem  -ErrorAction Stop
+    [PSCustomObject]@{
+        Computer = $cs.Name
+        User     = $env:USERNAME
+        OS       = $os.Caption
+        PS       = $PSVersionTable.PSVersion.ToString()
+        Uptime   = (Get-Date) - $os.LastBootUpTime
+        RAM_GB   = [math]::Round($cs.TotalPhysicalMemory/1GB, 1)
+    }
+}
+
+function script:Get-LinuxSystemInfo {
+    $osName = 'Linux'
+    if (Test-Path /etc/os-release) {
+        $osData = Get-Content /etc/os-release -ErrorAction SilentlyContinue
+        $pretty = $osData | Where-Object { $_ -match '^PRETTY_NAME=' }
+        if ($pretty) {
+            $osName = $pretty.Split('=')[1].Trim('"')
+        }
+    }
+    $memTotal = 0
+    if (Test-Path /proc/meminfo) {
+        $memLine = Get-Content /proc/meminfo | Where-Object { $_ -match '^MemTotal:' }
+        if ($memLine) {
+            $memTotal = [int]($memLine -replace '\D', '') / 1MB
+        }
+    }
+    [PSCustomObject]@{
+        Computer = if ($hostname) { $hostname } elseif ($env:HOSTNAME) { $env:HOSTNAME } else { 'unknown' }
+        User     = if ($env:USER) { $env:USER } elseif ($env:USERNAME) { $env:USERNAME } else { 'unknown' }
+        OS       = $osName
+        PS       = $PSVersionTable.PSVersion.ToString()
+        RAM_GB   = [math]::Round($memTotal, 1)
+    }
+}
+
+function script:Get-MacSystemInfo {
+    $memGb = 0
+    try {
+        $memBytes = sysctl -n hw.memsize 2>&1
+        if ($memBytes) { $memGb = [math]::Round($memBytes / 1GB, 1) }
+    } catch {}
+    [PSCustomObject]@{
+        Computer = if ($hostname) { $hostname } elseif ($env:HOSTNAME) { $env:HOSTNAME } else { 'unknown' }
+        User     = if ($env:USER) { $env:USER } elseif ($env:USERNAME) { $env:USERNAME } else { 'unknown' }
+        OS       = 'macOS'
+        PS       = $PSVersionTable.PSVersion.ToString()
+        RAM_GB   = $memGb
+    }
+}
+
 function sysinfo {
     [CmdletBinding()]
     param()
     try {
-        if ($script:Config.IsWindows) {
-            $os = Get-CimInstance Win32_OperatingSystem -ErrorAction Stop
-            $cs = Get-CimInstance Win32_ComputerSystem  -ErrorAction Stop
-            [PSCustomObject]@{
-                Computer = $cs.Name
-                User     = $env:USERNAME
-                OS       = $os.Caption
-                PS       = $PSVersionTable.PSVersion.ToString()
-                Uptime   = (Get-Date) - $os.LastBootUpTime
-                RAM_GB   = [math]::Round($cs.TotalPhysicalMemory/1GB, 1)
-            }
-        } elseif ($script:Config.IsLinux) {
-            # Linux: lê /etc/os-release e /proc/meminfo
-            $osName = 'Linux'
-            if (Test-Path /etc/os-release) {
-                $osData = Get-Content /etc/os-release -ErrorAction SilentlyContinue
-                $pretty = $osData | Where-Object { $_ -match '^PRETTY_NAME=' }
-                if ($pretty) {
-                    $osName = $pretty.Split('=')[1].Trim('"')
-                }
-            }
-            $memTotal = 0
-            if (Test-Path /proc/meminfo) {
-                $memLine = Get-Content /proc/meminfo | Where-Object { $_ -match '^MemTotal:' }
-                if ($memLine) {
-                    $memTotal = [int]($memLine -replace '\D', '') / 1MB
-                }
-            }
-            [PSCustomObject]@{
-                Computer = hostname 2>$null ?? $env:HOSTNAME
-                User     = $env:USER ?? $env:USERNAME
-                OS       = $osName
-                PS       = $PSVersionTable.PSVersion.ToString()
-                RAM_GB   = [math]::Round($memTotal, 1)
-            }
-        } elseif ($script:Config.IsMacOS) {
-            $osName = 'macOS'
-            $memGb = 0
-            try {
-                $memBytes = sysctl -n hw.memsize 2>&1
-                if ($memBytes) { $memGb = [math]::Round($memBytes / 1GB, 1) }
-            } catch {}
-            [PSCustomObject]@{
-                Computer = scutil --get ComputerName 2>&1 ?? $env:HOSTNAME
-                User     = $env:USER ?? $env:USERNAME
-                OS       = $osName
-                PS       = $PSVersionTable.PSVersion.ToString()
-                RAM_GB   = $memGb
-            }
-        }
+        if ($script:Config.IsWindows)     { script:Get-WindowsSystemInfo }
+        elseif ($script:Config.IsLinux)   { script:Get-LinuxSystemInfo }
+        elseif ($script:Config.IsMacOS)   { script:Get-MacSystemInfo }
     } catch {
         # Fallback genérico
         [PSCustomObject]@{
-            Computer  = $env:COMPUTERNAME ?? $env:HOSTNAME ?? 'unknown'
-            User      = $env:USERNAME ?? $env:USER ?? 'unknown'
+            Computer  = if ($env:COMPUTERNAME) { $env:COMPUTERNAME } elseif ($env:HOSTNAME) { $env:HOSTNAME } else { 'unknown' }
+            User      = if ($env:USERNAME) { $env:USERNAME } elseif ($env:USER) { $env:USER } else { 'unknown' }
             OS        = 'Unknown'
             PS        = $PSVersionTable.PSVersion.ToString()
             Uptime    = 'N/A'

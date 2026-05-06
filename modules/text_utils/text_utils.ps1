@@ -90,10 +90,11 @@ function sed {
 
         # Validação de tamanho para proteção contra DoS
         $fileSize = (Get-Item $resolved -ErrorAction Stop).Length
-        $maxBytes = ($script:Config.MaxFileSizeMB ?? 50) * 1MB
+        $limMB = if ($script:Config.MaxFileSizeMB) { $script:Config.MaxFileSizeMB } else { 50 }
+        $maxBytes = $limMB * 1MB
         if ($fileSize -gt $maxBytes) {
             $er = [System.Management.Automation.ErrorRecord]::new(
-                [System.IO.IOException]::new("Arquivo excede o limite de $($script:Config.MaxFileSizeMB ?? 50)MB."),
+                [System.IO.IOException]::new("Arquivo excede o limite de ${limMB}MB."),
                 'SedFileTooLarge', [System.Management.Automation.ErrorCategory]::LimitsExceeded, $resolved
             )
             $PSCmdlet.WriteError($er)
@@ -124,3 +125,4 @@ function sed {
         $PSCmdlet.WriteError($er)
     }
 }
+

@@ -1,4 +1,4 @@
-# ── 7. GIT ────────────────────────────────────────────────────
+﻿# ── 7. GIT ────────────────────────────────────────────────────
 # Verificação de existência do binário antes de carregar aliases
 $gitCmd = Get-Command git -ErrorAction SilentlyContinue
 
@@ -69,21 +69,23 @@ if ($gitCmd) {
         git commit -m $Message
     }
 
+    # Detecção cross-platform de sessão interativa
+    function script:Test-InteractiveSession {
+        if ($env:CI) { return $false }
+        if (-not [Environment]::UserInteractive) { return $false }
+        if ($PSVersionTable.PSVersion.Major -ge 6 -and ($IsLinux -or $IsMacOS)) { return $false }
+        return $true
+    }
+
     # lazyg verifica cada passo: commit falho não dispara push
-    # Compatível com Linux e Windows: usa ReadLine() em vez de ReadKey() para ambientes sem console interativo
     function lazyg {
         param(
             [Parameter(Mandatory)][string]$Message,
             [switch]$Force
         )
         git status --short
-        # Detecção cross-platform: usa variáveis automáticas do PS 6+ ou fallback
-        $isInteractive = [Environment]::UserInteractive -and -not $env:CI
-        if ($PSVersionTable.PSVersion.Major -ge 6) {
-            $isInteractive = $isInteractive -and -not $IsLinux -and -not $IsMacOS
-        }
 
-        if (-not $Force -and $isInteractive) {
+        if (-not $Force -and (script:Test-InteractiveSession)) {
             Write-Host "Stage all, commit e push? [s/N]: " -NoNewline -ForegroundColor Yellow
             try {
                 $userInput = [Console]::ReadLine()
@@ -97,7 +99,6 @@ if ($gitCmd) {
                 return
             }
         } elseif (-not $Force) {
-            # Em Linux/Mac, ReadKey pode falhar; pula confirmação interativa
             Write-Verbose "lazyg: modo não-interativo detectado (Linux/Mac ou CI)"
         }
 

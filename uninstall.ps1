@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     Safely uninstalls the PowerShell Profile ecosystem.
@@ -19,29 +19,15 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-# ── PLATFORM DETECTION ───────────────────────────────────────
-$script:IsWin = if ($PSVersionTable.PSVersion.Major -ge 6) { $IsWindows } else { $true }
-$script:IsLnx = if ($PSVersionTable.PSVersion.Major -ge 6) { $IsLinux }   else { $false }
-
-# ── UX HELPERS ───────────────────────────────────────────────
-function Write-Step  { param([string]$Msg) Write-Host "  → $Msg" -ForegroundColor White }
-function Write-Ok    { param([string]$Msg) Write-Host "  ✔ $Msg" -ForegroundColor Green }
-function Write-Warn  { param([string]$Msg) Write-Host "  ⚠ $Msg" -ForegroundColor Yellow }
-function Write-Fail  { param([string]$Msg) Write-Host "  ❌ $Msg" -ForegroundColor Red }
-function Write-Info  { param([string]$Msg) Write-Host "  ℹ $Msg" -ForegroundColor DarkGray }
+# ── SHARED LIBS ──────────────────────────────────────────────
+. (Join-Path $PSScriptRoot 'lib/platform.ps1')
+. (Join-Path $PSScriptRoot 'lib/ux-helpers.ps1')
+. (Join-Path $PSScriptRoot 'lib/profile-paths.ps1')
 
 # ── RESOLVE PATHS ────────────────────────────────────────────
 $script:SourceProfile = Join-Path $PSScriptRoot 'Microsoft.PowerShell_profile.ps1'
 
-function script:Get-TargetProfilePath {
-    if ($PROFILE -and $PROFILE.CurrentUserCurrentHost) {
-        return $PROFILE.CurrentUserCurrentHost
-    }
-    if ($script:IsLnx) {
-        return (Join-Path $HOME '.config/powershell/Microsoft.PowerShell_profile.ps1')
-    }
-    return $PROFILE
-}
+# Resolve target profile path (cross-platform) — loaded from lib/profile-paths.ps1
 
 $script:TargetProfile = script:Get-TargetProfilePath
 $script:TargetDir     = Split-Path $script:TargetProfile -Parent
@@ -113,7 +99,6 @@ if ($script:IsOurSymlink) {
 Write-Host "  [3/4] Checking for backups..." -ForegroundColor Cyan
 
 # Find all backups sorted by date (newest first)
-$backupPattern = "$($script:TargetProfile).bak*"
 $backups = @(Get-ChildItem -Path $script:TargetDir -Filter "Microsoft.PowerShell_profile.ps1.bak*" -ErrorAction SilentlyContinue |
     Sort-Object LastWriteTime -Descending)
 
@@ -241,3 +226,5 @@ if ($Host.Name -match 'ConsoleHost') {
     Write-Host "Press any key to exit..." -ForegroundColor DarkGray
     $null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
 }
+
+
