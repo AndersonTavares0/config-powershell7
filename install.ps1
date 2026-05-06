@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     Industrial-grade installer for the PowerShell Profile ecosystem.
@@ -24,24 +24,10 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-# ── PLATFORM DETECTION ───────────────────────────────────────
-$script:IsWin = if ($PSVersionTable.PSVersion.Major -ge 6) { $IsWindows } else { $true }
-$script:IsLnx = if ($PSVersionTable.PSVersion.Major -ge 6) { $IsLinux }   else { $false }
-
-if ($script:IsWin) {
-    $script:IsAdmin = ([Security.Principal.WindowsPrincipal] `
-        [Security.Principal.WindowsIdentity]::GetCurrent()
-    ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-} else {
-    $script:IsAdmin = ((id -u 2>$null) -eq '0')
-}
-
-# ── UX HELPERS ───────────────────────────────────────────────
-function Write-Step  { param([string]$Msg) Write-Host "  → $Msg" -ForegroundColor White }
-function Write-Ok    { param([string]$Msg) Write-Host "  ✔ $Msg" -ForegroundColor Green }
-function Write-Warn  { param([string]$Msg) Write-Host "  ⚠ $Msg" -ForegroundColor Yellow }
-function Write-Fail  { param([string]$Msg) Write-Host "  ❌ $Msg" -ForegroundColor Red }
-function Write-Info  { param([string]$Msg) Write-Host "  ℹ $Msg" -ForegroundColor DarkGray }
+# ── SHARED LIBS ──────────────────────────────────────────────
+. (Join-Path $PSScriptRoot 'lib/platform.ps1')
+. (Join-Path $PSScriptRoot 'lib/ux-helpers.ps1')
+. (Join-Path $PSScriptRoot 'lib/profile-paths.ps1')
 
 # ── RESOLVE PATHS ────────────────────────────────────────────
 $script:SourceProfile = Join-Path $PSScriptRoot 'Microsoft.PowerShell_profile.ps1'
@@ -57,17 +43,7 @@ if (-not (Test-Path $script:SourceModules)) {
     exit 1
 }
 
-# Resolve target profile path (cross-platform)
-function script:Get-TargetProfilePath {
-    if ($PROFILE -and $PROFILE.CurrentUserCurrentHost) {
-        return $PROFILE.CurrentUserCurrentHost
-    }
-    if ($script:IsLnx) {
-        $linuxPath = Join-Path $HOME '.config/powershell/Microsoft.PowerShell_profile.ps1'
-        return $linuxPath
-    }
-    return $PROFILE
-}
+# Resolve target profile path (cross-platform) — loaded from lib/profile-paths.ps1
 
 $script:TargetProfile = script:Get-TargetProfilePath
 $script:TargetDir     = Split-Path $script:TargetProfile -Parent
@@ -128,11 +104,14 @@ Write-Host "  [2/5] Checking dependencies..." -ForegroundColor Cyan
 # Required
 $psVer = $PSVersionTable.PSVersion
 if ($psVer.Major -ge 7) {
-    Write-Ok ("PowerShell {0}" -f $psVer)
+    $msgOk = "PowerShell $psVer"
+    Write-Ok $msgOk
 } elseif ($psVer.Major -ge 5) {
-    Write-Warn ("PowerShell  (5.1 supported, but 7+ recommended)")
+    $msgWarn = "PowerShell $psVer (5.1 supported, but 7+ recommended)"
+    Write-Warn $msgWarn
 } else {
-    Write-Fail ("PowerShell  is not supported. Requires 5.1+")
+    $msgFail = "PowerShell $psVer is not supported. Requires 5.1+"
+    Write-Fail $msgFail
     exit 1
 }
 
@@ -282,8 +261,10 @@ if ($validationErrors -eq 0) {
     Write-Host "  ║   ✔ Installation Successful!                ║" -ForegroundColor Green
     Write-Host "  ╚══════════════════════════════════════════════╝" -ForegroundColor Green
 } else {
+    $warnMsg = "⚠ Installed with $validationErrors warning(s)"
+    $padded  = $warnMsg.PadRight(44)
     Write-Host "  ╔══════════════════════════════════════════════╗" -ForegroundColor Yellow
-    Write-Host "  ║   ⚠ Installed with $validationErrors warning(s)              ║" -ForegroundColor Yellow
+    Write-Host "  ║   $padded║" -ForegroundColor Yellow
     Write-Host "  ╚══════════════════════════════════════════════╝" -ForegroundColor Yellow
 }
 Write-Host ""
@@ -300,3 +281,5 @@ if ($Host.Name -match 'ConsoleHost') {
     Write-Host "Press any key to exit..." -ForegroundColor DarkGray
     $null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown')
 }
+
+

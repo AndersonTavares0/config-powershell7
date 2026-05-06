@@ -41,8 +41,13 @@ config-powershell7/
 ├── Microsoft.PowerShell_profile.ps1 # Entrypoint Profile
 ├── install.ps1                 # Automated Installer (Zero-UAC)
 ├── install.cmd                 # Installer (double-click on Windows)
+├── lib/                        # Shared Utilities (DRY)
+│   ├── platform.ps1            # Cross-platform detection
+│   ├── ux-helpers.ps1          # Console output functions
+│   └── profile-paths.ps1       # Profile path resolution
 ├── modules/                    # Modular Logic
 │   ├── cache/                  # TTL Cache Engine & Lazy Loaders
+│   ├── config/                 # Centralized configuration
 │   ├── git/                    # Git shortcuts
 │   ├── navigation/             # Directory shortcuts
 │   ├── system/                 # System/Network shortcuts

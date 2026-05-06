@@ -1,4 +1,4 @@
-# ── 3. PSREADLINE ─────────────────────────────────────────────
+﻿# ── 3. PSREADLINE ─────────────────────────────────────────────
 if (Get-Command Set-PSReadLineOption -ErrorAction SilentlyContinue) {
     Set-PSReadLineOption -EditMode Windows `
         -HistoryNoDuplicates `
@@ -18,3 +18,4 @@ if (Get-Command Set-PSReadLineOption -ErrorAction SilentlyContinue) {
     Set-PSReadLineKeyHandler -Chord 'Ctrl+LeftArrow'  -Function BackwardWord
     Set-PSReadLineKeyHandler -Chord 'Ctrl+RightArrow' -Function ForwardWord
 }
+

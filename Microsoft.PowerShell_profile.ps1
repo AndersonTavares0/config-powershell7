@@ -17,7 +17,7 @@ $script:BootTimer = [System.Diagnostics.Stopwatch]::StartNew()
 # Quando dot-sourced via $PROFILE, $PSScriptRoot resolve para o
 # diretório do PROFILE e não do repositório. O instalador define
 # $global:__ProfileRepoRoot com o caminho correto antes do dot-source.
-$script:ProfileRoot = $global:__ProfileRepoRoot ?? $PSScriptRoot
+$script:ProfileRoot = if ($null -ne $global:__ProfileRepoRoot) { $global:__ProfileRepoRoot } else { $PSScriptRoot }
 
 # ── LISTA DE MÓDULOS CARREGADOS (consumida pelo cache) ───────
 $script:StartupModules = [System.Collections.Generic.List[string]]::new()
@@ -71,5 +71,6 @@ $moduleList = if ($script:StartupModules.Count -gt 0) {
 
 $color = if ($bootMs -lt 300) { 'Green' } elseif ($bootMs -lt 600) { 'Yellow' } else { 'Red' }
 
-Write-Host "⚡ PS $($PSVersionTable.PSVersion)${moduleList}${adminTag}" -ForegroundColor Cyan -NoNewline
+Write-Host "PS $($PSVersionTable.PSVersion)${moduleList}${adminTag}" -ForegroundColor Cyan -NoNewline
 Write-Host " [${bootMs}ms]" -ForegroundColor $color
+

@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     Post-installation validation for the PowerShell Profile ecosystem.
@@ -25,9 +25,15 @@ param(
     [switch]$Detailed
 )
 
-# ── PLATFORM DETECTION ───────────────────────────────────────
-$script:IsWin = if ($PSVersionTable.PSVersion.Major -ge 6) { $IsWindows } else { $true }
-$script:IsLnx = if ($PSVersionTable.PSVersion.Major -ge 6) { $IsLinux }   else { $false }
+# ── SHARED LIBS ──────────────────────────────────────────────
+$script:LibPath = Join-Path $PSScriptRoot '../lib/platform.ps1'
+if (Test-Path $script:LibPath) {
+    . $script:LibPath
+} else {
+    # Fallback inline para quando executado isoladamente
+    $script:IsWin = if ($PSVersionTable.PSVersion.Major -ge 6) { $IsWindows } else { $true }
+    $script:IsLnx = if ($PSVersionTable.PSVersion.Major -ge 6) { $IsLinux }   else { $false }
+}
 
 # ── TEST FRAMEWORK ───────────────────────────────────────────
 $script:Results = [System.Collections.Generic.List[PSCustomObject]]::new()
@@ -101,12 +107,17 @@ if (Test-Path $profilePath) {
 # ══════════════════════════════════════════════════════════════
 if (-not $Quiet) { Write-Host "  Module Syntax" -ForegroundColor Cyan }
 
-# Resolve module directory from symlink target or script root
+# Resolve module directory from profile content (dot-source path or symlink fallback)
 $moduleDir = $null
 if (Test-Path $profilePath) {
-    $profItem = Get-Item $profilePath -Force -ErrorAction SilentlyContinue
-    $realPath = if ($profItem.LinkType -eq 'SymbolicLink') { $profItem.Target } else { $profilePath }
-    $moduleDir = Join-Path (Split-Path $realPath) 'modules'
+    $profContent = Get-Content $profilePath -Raw -ErrorAction SilentlyContinue
+    # Try to extract __ProfileRepoRoot from the generated profile
+    if ($profContent -match '\$global:__ProfileRepoRoot\s*=\s*"([^"]+)"') {
+        $moduleDir = Join-Path $Matches[1] 'modules'
+    } else {
+        # Fallback: resolve from profile path itself
+        $moduleDir = Join-Path (Split-Path $profilePath) 'modules'
+    }
 }
 
 if ($moduleDir -and (Test-Path $moduleDir)) {
@@ -280,3 +291,4 @@ if ($Detailed) {
 }
 
 if ($failed -gt 0) { exit 1 } else { exit 0 }
+

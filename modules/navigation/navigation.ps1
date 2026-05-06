@@ -1,4 +1,4 @@
-# ── 4. NAVEGAÇÃO ──────────────────────────────────────────────
+﻿# ── 4. NAVEGAÇÃO ──────────────────────────────────────────────
 # Nomes descritivos sem underscore (convencao PS, nao Python)
 $script:DocsPath    = [Environment]::GetFolderPath('MyDocuments')
 $script:DesktopPath = [Environment]::GetFolderPath('Desktop')
@@ -26,3 +26,4 @@ function nf {
     param([Parameter(Mandatory, ValueFromPipeline)][string]$Name)
     process { New-Item -ItemType File -Path $Name -Force | Out-Null }
 }
+
