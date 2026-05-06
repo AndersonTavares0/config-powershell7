@@ -156,10 +156,9 @@ Configurado com histórico inteligente (sem duplicatas, até 5.000 entradas), na
 
 Ao final do carregamento, o perfil exibe o tempo total de boot e os módulos carregados, com código de cor:
 
-- 🟢 Verde: < 200ms
-- 🟡 Amarelo: 200–400ms
-- 🔴 Vermelho: > 400ms
-
+- 🟢 Verde: < 300ms
+- 🟡 Amarelo: <600
+- 🔴 Vermelho: > 600ms
 ---
 
 
