@@ -56,3 +56,7 @@ htmlcov/
 *.tar.bz2
 *.tar.xz
 *.tar.zst
+
+# Graphify temporary and output files
+.graphify_*
+graphify-out/
