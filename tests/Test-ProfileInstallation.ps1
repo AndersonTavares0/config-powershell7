@@ -1,4 +1,4 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 <#
 .SYNOPSIS
     Post-installation validation for the PowerShell Profile ecosystem.
@@ -32,7 +32,8 @@ $ErrorActionPreference = 'Stop'
 $script:LibPath = Join-Path $PSScriptRoot '../lib/platform.ps1'
 if (Test-Path $script:LibPath) {
     . $script:LibPath
-} else {
+}
+else {
     # Fallback inline para quando executado isoladamente
     $script:IsWin = if ($PSVersionTable.PSVersion.Major -ge 6) { $IsWindows } else { $true }
     $script:IsLnx = if ($PSVersionTable.PSVersion.Major -ge 6) { $IsLinux }   else { $false }
@@ -49,11 +50,11 @@ function script:Add-Check {
         [string]$Detail
     )
     $script:Results.Add([PSCustomObject]@{
-        Category = $Category
-        Name     = $Name
-        Status   = $Status
-        Detail   = $Detail
-    })
+            Category = $Category
+            Name     = $Name
+            Status   = $Status
+            Detail   = $Detail
+        })
 
     if (-not $Quiet) {
         $icon = switch ($Status) {
@@ -72,7 +73,8 @@ function script:Add-Check {
         Write-Host "$Category/$Name" -ForegroundColor White -NoNewline
         if ($Detail) {
             Write-Host " — $Detail" -ForegroundColor DarkGray
-        } else {
+        }
+        else {
             Write-Host ""
         }
     }
@@ -98,10 +100,12 @@ if (Test-Path $profilePath) {
 
     if ($content -match "\. `"[^`"]*Microsoft\.PowerShell_profile\.ps1`"") {
         script:Add-Check 'Profile' 'Type' 'PASS' 'Profile dot-sources the config'
-    } else {
+    }
+    else {
         script:Add-Check 'Profile' 'Type' 'WARN' 'Profile does not seem to dot-source the repository config'
     }
-} else {
+}
+else {
     script:Add-Check 'Profile' 'Exists' 'FAIL' "No profile at $profilePath"
 }
 
@@ -115,9 +119,10 @@ $moduleDir = $null
 if (Test-Path $profilePath) {
     $profContent = Get-Content $profilePath -Raw -ErrorAction SilentlyContinue
     # Try to extract __ProfileRepoRoot from the generated profile
-    if ($profContent -match '\$global:__ProfileRepoRoot\s*=\s*"([^"]+)"') {
+    if ($profContent -match '\$env:__PROFILE_REPO_ROOT\s*=\s*"([^"]+)"') {
         $moduleDir = Join-Path $Matches[1] 'modules'
-    } else {
+    }
+    else {
         # Fallback: resolve from profile path itself
         $moduleDir = Join-Path (Split-Path $profilePath) 'modules'
     }
@@ -130,12 +135,14 @@ if ($moduleDir -and (Test-Path $moduleDir)) {
         [System.Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$tokens, [ref]$errors) | Out-Null
         if ($errors.Count -eq 0) {
             script:Add-Check 'Syntax' $file.Name 'PASS' ''
-        } else {
+        }
+        else {
             $errMsg = ($errors | Select-Object -First 2 | ForEach-Object { "L$($_.Extent.StartLineNumber): $($_.Message)" }) -join '; '
             script:Add-Check 'Syntax' $file.Name 'FAIL' $errMsg
         }
     }
-} else {
+}
+else {
     script:Add-Check 'Syntax' 'ModuleDir' 'FAIL' "modules/ directory not found"
 }
 
@@ -147,7 +154,7 @@ if (-not $Quiet) { Write-Host "  Profile Loading" -ForegroundColor Cyan }
 $loadTimer = [System.Diagnostics.Stopwatch]::StartNew()
 $loadError = $null
 try {
-    $global:ProfileLoaded = $false
+    $env:__PROFILE_LOADED = $null
     . $profilePath 2>$null
     $loadTimer.Stop()
     $loadMs = [math]::Round($loadTimer.Elapsed.TotalMilliseconds, 0)
@@ -155,12 +162,15 @@ try {
 
     if ($loadMs -lt 200) {
         script:Add-Check 'Load' 'Performance' 'PASS' "${loadMs}ms < 200ms target"
-    } elseif ($loadMs -lt 400) {
+    }
+    elseif ($loadMs -lt 400) {
         script:Add-Check 'Load' 'Performance' 'WARN' "${loadMs}ms (target: < 200ms)"
-    } else {
+    }
+    else {
         script:Add-Check 'Load' 'Performance' 'FAIL' "${loadMs}ms exceeds 400ms threshold"
     }
-} catch {
+}
+catch {
     $loadTimer.Stop()
     $loadError = $_.Exception.Message
     script:Add-Check 'Load' 'ProfileSource' 'FAIL' $loadError
@@ -182,7 +192,8 @@ $coreFunctions = @(
 foreach ($fn in $coreFunctions) {
     if (Get-Command $fn -ErrorAction SilentlyContinue) {
         script:Add-Check 'Function' $fn 'PASS' ''
-    } else {
+    }
+    else {
         script:Add-Check 'Function' $fn 'FAIL' 'Not defined'
     }
 }
@@ -190,16 +201,17 @@ foreach ($fn in $coreFunctions) {
 # Core aliases
 $coreAliases = @(
     @{ Alias = 'Clear-Cache'; Target = 'Clear-PluginCache' }
-    @{ Alias = 'icons';       Target = 'Import-TerminalIcons' }
-    @{ Alias = 'cpy';         Target = 'Copy-ToClipboard' }
-    @{ Alias = 'k9';          Target = 'pkill' }
+    @{ Alias = 'icons'; Target = 'Import-TerminalIcons' }
+    @{ Alias = 'cpy'; Target = 'Copy-ToClipboard' }
+    @{ Alias = 'k9'; Target = 'pkill' }
 )
 
 foreach ($a in $coreAliases) {
     $cmd = Get-Command $a.Alias -ErrorAction SilentlyContinue
     if ($cmd) {
         script:Add-Check 'Alias' $a.Alias 'PASS' "→ $($a.Target)"
-    } else {
+    }
+    else {
         script:Add-Check 'Alias' $a.Alias 'FAIL' 'Not defined'
     }
 }
@@ -211,11 +223,13 @@ if ($gitAvailable) {
     foreach ($fn in $gitFunctions) {
         if (Get-Command $fn -ErrorAction SilentlyContinue) {
             script:Add-Check 'Git' $fn 'PASS' ''
-        } else {
+        }
+        else {
             script:Add-Check 'Git' $fn 'FAIL' 'Not defined'
         }
     }
-} else {
+}
+else {
     script:Add-Check 'Git' 'Available' 'SKIP' 'Git not installed — Git functions not expected'
 }
 
@@ -231,11 +245,13 @@ if (Get-Variable -Name 'Config' -Scope Script -ErrorAction SilentlyContinue) {
     foreach ($prop in $configProps) {
         if ($null -ne $script:Config.$prop) {
             script:Add-Check 'Config' $prop 'PASS' "$($script:Config.$prop)"
-        } else {
+        }
+        else {
             script:Add-Check 'Config' $prop 'FAIL' 'Property is null'
         }
     }
-} else {
+}
+else {
     script:Add-Check 'Config' 'Object' 'FAIL' '$script:Config not found — config module may have failed to load'
 }
 
@@ -253,12 +269,15 @@ if (Test-Path $cachePath) {
         $fp = $Matches[1]
         $ts = [DateTimeOffset]::FromUnixTimeSeconds([long]$Matches[2]).LocalDateTime
         script:Add-Check 'Cache' 'TTLHeader' 'PASS' "fp=$($fp.Substring(0,8))... ts=$($ts.ToString('yyyy-MM-dd HH:mm'))"
-    } elseif ($header -match '^# fp:') {
+    }
+    elseif ($header -match '^# fp:') {
         script:Add-Check 'Cache' 'TTLHeader' 'WARN' 'Old format without timestamp — will rebuild on next boot'
-    } else {
+    }
+    else {
         script:Add-Check 'Cache' 'TTLHeader' 'FAIL' 'Invalid cache header'
     }
-} else {
+}
+else {
     script:Add-Check 'Cache' 'FileExists' 'WARN' 'Cache not found — will be created on next boot'
 }
 
@@ -269,7 +288,7 @@ $passed = @($script:Results | Where-Object { $_.Status -eq 'PASS' }).Count
 $failed = @($script:Results | Where-Object { $_.Status -eq 'FAIL' }).Count
 $warned = @($script:Results | Where-Object { $_.Status -eq 'WARN' }).Count
 $skipped = @($script:Results | Where-Object { $_.Status -eq 'SKIP' }).Count
-$total  = $script:Results.Count
+$total = $script:Results.Count
 
 if (-not $Quiet) {
     Write-Host ""

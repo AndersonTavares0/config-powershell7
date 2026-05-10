@@ -1,8 +1,8 @@
-Set-StrictMode -Version Latest
+﻿Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 # ── 2. PLUGINS & CACHE v2 ────────────────────────────────────
-# Cache com TTL (Time-To-Live): evita recálculo de fingerprint MD5
+# Cache com TTL (Time-To-Live): evita recálculo de fingerprint SHA256
 # se o arquivo de cache foi atualizado recentemente.
 #
 # Formato do header do cache:
@@ -26,7 +26,7 @@ function Import-TerminalIcons {
 }
 Set-Alias icons Import-TerminalIcons
 
-# MD5 encapsulado em try/finally: garante Dispose() mesmo em falha.
+# SHA256 encapsulado em try/finally: garante Dispose() mesmo em falha.
 # fingerprint inclui versão dos binários via VersionInfo, não apenas caminho
 # Inclui hash do conteúdo do tema para detecção profunda de mudanças
 function script:Get-PluginFingerprint {
@@ -62,17 +62,17 @@ function script:Get-PluginFingerprint {
     # Include theme content hash if exists for deeper change detection
     if (Test-Path $script:Config.ThemePath) {
         try {
-            $themeHash = (Get-FileHash $script:Config.ThemePath -Algorithm MD5 -ErrorAction SilentlyContinue).Hash
+            $themeHash = (Get-FileHash $script:Config.ThemePath -Algorithm SHA256 -ErrorAction SilentlyContinue).Hash
             $parts += if ($themeHash) { $themeHash } else { 'nohash' }
         } catch {
             $parts += 'nohash'
         }
     }
 
-    $bytes = [System.Text.Encoding]::UTF8.GetBytes($parts -join '|')
-    $md5   = [System.Security.Cryptography.MD5]::Create()
-    try    { [System.BitConverter]::ToString($md5.ComputeHash($bytes)) -replace '-', '' }
-    finally{ $md5.Dispose() }
+    $bytes    = [System.Text.Encoding]::UTF8.GetBytes($parts -join '|')
+    $sha256   = [System.Security.Cryptography.SHA256]::Create()
+    try       { [System.BitConverter]::ToString($sha256.ComputeHash($bytes)) -replace '-', '' }
+    finally   { $sha256.Dispose() }
 }
 
 # Lógica de rebuild extraída: testável, nomeada, sem bloco `& {}` anônimo

@@ -1,4 +1,4 @@
-using namespace System.Management.Automation
+﻿using namespace System.Management.Automation
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -15,9 +15,12 @@ function touch {
 function which {
     [CmdletBinding()]
     param([Parameter(Mandatory)][string]$Cmd)
-    $result = (Get-Command $Cmd -ErrorAction SilentlyContinue).Source
-    if ($result) { $result }
-    else         { Write-Warning "'$Cmd' não encontrado no PATH." }
+    $cmdInfo = Get-Command $Cmd -ErrorAction SilentlyContinue
+    if ($cmdInfo -and $cmdInfo.Source) {
+        $cmdInfo.Source
+    } else {
+        Write-Warning "'$Cmd' não encontrado no PATH."
+    }
 }
 
 function unzip {

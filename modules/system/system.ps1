@@ -1,4 +1,4 @@
-using namespace System.Management.Automation
+﻿using namespace System.Management.Automation
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -39,7 +39,11 @@ Set-Alias k9 pkill
 # Cross-platform pgrep
 function pgrep {
     [CmdletBinding()]
-    param([Parameter(Mandatory)][string]$Name)
+    param(
+        [Parameter(Mandatory)]
+        [ValidateNotNullOrEmpty()]
+        [string]$Name
+    )
     try {
         if ($script:Config.IsLinux -or $script:Config.IsMacOS) {
             $nativePgrep = Get-Command '/usr/bin/pgrep' -ErrorAction SilentlyContinue
@@ -139,6 +143,15 @@ function df {
 function pubip {
     [CmdletBinding()]
     param([switch]$Force)
+
+    # Initialize cache variables on first run (StrictMode-safe)
+    if (-not (Get-Variable -Name 'CachedPublicIP' -Scope Script -ErrorAction SilentlyContinue)) {
+        $script:CachedPublicIP = $null
+    }
+    if (-not (Get-Variable -Name 'CachedPublicIPTimestamp' -Scope Script -ErrorAction SilentlyContinue)) {
+        $script:CachedPublicIPTimestamp = [DateTime]::MinValue
+    }
+
     # Cache válido por 5 minutos — evita chamada de rede a cada execução
     $cacheValid = $script:CachedPublicIP -and $script:CachedPublicIPTimestamp -and
                   ((Get-Date) - $script:CachedPublicIPTimestamp).TotalMinutes -lt 5
@@ -240,13 +253,15 @@ function sysinfo {
         elseif ($script:Config.IsLinux)   { script:Get-LinuxSystemInfo }
         elseif ($script:Config.IsMacOS)   { script:Get-MacSystemInfo }
     } catch {
-        # Fallback genérico
+        # Fallback genérico — inclui RAM_GB para compatibilidade com testes
+        $memGb = try { [math]::Round((Get-CimInstance Win32_ComputerSystem -ErrorAction Stop).TotalPhysicalMemory/1GB, 1) } catch { 0 }
         [PSCustomObject]@{
             Computer  = if ($env:COMPUTERNAME) { $env:COMPUTERNAME } elseif ($env:HOSTNAME) { $env:HOSTNAME } else { 'unknown' }
             User      = if ($env:USERNAME) { $env:USERNAME } elseif ($env:USER) { $env:USER } else { 'unknown' }
             OS        = 'Unknown'
             PS        = $PSVersionTable.PSVersion.ToString()
             Uptime    = 'N/A'
+            RAM_GB    = $memGb
             PS_Mem_MB = [math]::Round([Environment]::WorkingSet/1MB, 1)
         }
     }
