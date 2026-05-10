@@ -1,4 +1,4 @@
-﻿#Requires -Version 5.1
+#Requires -Version 5.1
 # ============================================================
 # UNIT TESTS FOR Microsoft.PowerShell_profile.ps1
 # PS 5.1+ / PS Core 7+ | Revisão: 05/2026
@@ -23,14 +23,15 @@ function Test-Result {
         [string]$Message
     )
     $script:TestResults.Add([PSCustomObject]@{
-        Name    = $Name
-        Passed  = $Passed
-        Message = $Message
-    })
+            Name    = $Name
+            Passed  = $Passed
+            Message = $Message
+        })
     if ($Passed) {
         $script:TestsPassed++
         Write-Host "  ✓ PASS: $Name" -ForegroundColor Green
-    } else {
+    }
+    else {
         $script:TestsFailed++
         Write-Host "  ✗ FAIL: $Name - $Message" -ForegroundColor Red
     }
@@ -95,12 +96,13 @@ Write-Host "========================================`n" -ForegroundColor Cyan
 Write-Host "Loading profile..." -ForegroundColor Yellow
 $profileTimer = [System.Diagnostics.Stopwatch]::StartNew()
 try {
-    $global:ProfileLoaded = $false
+    $env:__PROFILE_LOADED = $null
     . $PROFILE
     $profileTimer.Stop()
     $bootMs = [math]::Round($profileTimer.Elapsed.TotalMilliseconds, 0)
     Test-Result -Name "Profile loads without errors" -Passed $true -Message ""
-} catch {
+}
+catch {
     $profileTimer.Stop()
     $bootMs = [math]::Round($profileTimer.Elapsed.TotalMilliseconds, 0)
     Test-Result -Name "Profile loads without errors" -Passed $false -Message $_.Exception.Message
@@ -121,13 +123,15 @@ Test-Result -Name "Boot time < 400ms (measured: ${bootMs}ms)" `
 # Test P2: Second boot (cache hit) should be faster
 $secondTimer = [System.Diagnostics.Stopwatch]::StartNew()
 try {
+    $env:__PROFILE_LOADED = $null
     . $PROFILE
     $secondTimer.Stop()
     $secondMs = [math]::Round($secondTimer.Elapsed.TotalMilliseconds, 0)
     Test-Result -Name "Second boot (cache hit) < 400ms (measured: ${secondMs}ms)" `
         -Passed ($secondMs -lt 400) `
         -Message "Second boot took ${secondMs}ms"
-} catch {
+}
+catch {
     $secondTimer.Stop()
     Test-Result -Name "Second boot (cache hit)" -Passed $false -Message $_.Exception.Message
 }
@@ -150,7 +154,8 @@ if ($null -ne $script:Config) {
 
     # Test C3: TTL is configured
     Assert-True -Condition ($script:Config.CacheTTLMinutes -gt 0) -TestName "Config.CacheTTLMinutes > 0"
-} else {
+}
+else {
     Test-Skip -Name "Config property tests" -Reason "Config object is null"
 }
 
@@ -169,33 +174,38 @@ if ($null -ne $script:Config) {
         $hasTTL = $cacheHeader -match '^# fp:\S+\s+ts:\d+$'
         Assert-True -Condition $hasTTL -TestName "Cache header contains TTL timestamp"
     }
-} else {
+}
+else {
     Test-Skip -Name "Cache TTL tests" -Reason "Config object is null"
 }
 
 # Test T3: Clear-PluginCache function
 if (Get-Command Clear-PluginCache -ErrorAction SilentlyContinue) {
     Test-Result -Name "Clear-PluginCache function exists" -Passed $true -Message ""
-} else {
+}
+else {
     Test-Result -Name "Clear-PluginCache function exists" -Passed $false -Message "Function not defined"
 }
 
 # Test T4: Clear-Cache alias
 if (Get-Command Clear-Cache -ErrorAction SilentlyContinue) {
     Test-Result -Name "Clear-Cache alias exists" -Passed $true -Message ""
-} else {
+}
+else {
     Test-Result -Name "Clear-Cache alias exists" -Passed $false -Message "Alias not defined"
 }
 
 # Test T5: Import-TerminalIcons / icons alias
 if (Get-Command Import-TerminalIcons -ErrorAction SilentlyContinue) {
     Test-Result -Name "Import-TerminalIcons function exists" -Passed $true -Message ""
-} else {
+}
+else {
     Test-Result -Name "Import-TerminalIcons function exists" -Passed $false -Message "Function not defined"
 }
 if (Get-Command icons -ErrorAction SilentlyContinue) {
     Test-Result -Name "icons alias exists" -Passed $true -Message ""
-} else {
+}
+else {
     Test-Result -Name "icons alias exists" -Passed $false -Message "Alias not defined"
 }
 
@@ -213,11 +223,13 @@ try {
         docs
         if ([string]::IsNullOrEmpty($_docs)) {
             Test-Result -Name "docs function navigates to Documents" -Passed $true -Message "Skipped (Linux)"
-        } else {
+        }
+        else {
             Assert-Equal -Expected $_docs -Actual (Get-Location).Path -TestName "docs function navigates to Documents"
         }
         Set-Location $originalLocation
-    } else {
+    }
+    else {
         Test-Result -Name "docs function exists" -Passed $false -Message "Function not defined"
     }
 
@@ -225,7 +237,8 @@ try {
         home
         Assert-Equal -Expected $HOME -Actual (Get-Location).Path -TestName "home function navigates to HOME"
         Set-Location $originalLocation
-    } else {
+    }
+    else {
         Test-Result -Name "home function exists" -Passed $false -Message "Function not defined"
     }
 
@@ -234,10 +247,12 @@ try {
         up
         Assert-Equal -Expected $parent -Actual (Get-Location).Path -TestName "up function navigates to parent"
         Set-Location $originalLocation
-    } else {
+    }
+    else {
         Test-Result -Name "up function exists" -Passed $false -Message "Function not defined"
     }
-} catch {
+}
+catch {
     Test-Result -Name "Navigation tests" -Passed $false -Message $_.Exception.Message
 }
 Set-Location $originalLocation
@@ -257,7 +272,8 @@ try {
         Assert-Equal -Expected $testDir -Actual $currentLocation -TestName "mkcd changes to new directory"
         Set-Location $originalLocation
         Remove-Item $testDir -Recurse -Force -ErrorAction SilentlyContinue
-    } else {
+    }
+    else {
         Test-Result -Name "mkcd function exists" -Passed $false -Message "Function not defined"
     }
 
@@ -267,7 +283,8 @@ try {
         $exists = Test-Path $testFile
         Assert-True -Condition $exists -TestName "nf creates file"
         Remove-MockFile $testFile
-    } else {
+    }
+    else {
         Test-Result -Name "nf function exists" -Passed $false -Message "Function not defined"
     }
 
@@ -277,10 +294,12 @@ try {
         $exists = Test-Path $testFile
         Assert-True -Condition $exists -TestName "touch creates new file"
         Remove-MockFile $testFile
-    } else {
+    }
+    else {
         Test-Result -Name "touch function exists" -Passed $false -Message "Function not defined"
     }
-} catch {
+}
+catch {
     Test-Result -Name "File operations tests" -Passed $false -Message $_.Exception.Message
     if (Test-Path $testDir) { Remove-Item $testDir -Recurse -Force -ErrorAction SilentlyContinue }
 }
@@ -304,7 +323,8 @@ Line 5
         $result = head $testFile -Lines 3
         Assert-Equal -Expected 3 -Actual $result.Count -TestName "head returns correct number of lines"
         Assert-Equal -Expected "Line 1" -Actual $result[0] -TestName "head returns first line correctly"
-    } else {
+    }
+    else {
         Test-Result -Name "head function exists" -Passed $false -Message "Function not defined"
     }
 
@@ -312,12 +332,15 @@ Line 5
         $result = tail $testFile -Lines 2
         Assert-Equal -Expected 2 -Actual $result.Count -TestName "tail returns correct number of lines"
         Assert-Equal -Expected "Line 5" -Actual $result[-1] -TestName "tail returns last line correctly"
-    } else {
+    }
+    else {
         Test-Result -Name "tail function exists" -Passed $false -Message "Function not defined"
     }
-} catch {
+}
+catch {
     Test-Result -Name "Text processing tests" -Passed $false -Message $_.Exception.Message
-} finally {
+}
+finally {
     Remove-MockFile $testFile
 }
 
@@ -330,7 +353,8 @@ try {
     foreach ($fn in $sysFunctions) {
         if (Get-Command $fn -ErrorAction SilentlyContinue) {
             Test-Result -Name "$fn function exists" -Passed $true -Message ""
-        } else {
+        }
+        else {
             Test-Result -Name "$fn function exists" -Passed $false -Message "Function not defined"
         }
     }
@@ -338,7 +362,8 @@ try {
     # Test k9 alias
     if (Get-Command k9 -ErrorAction SilentlyContinue) {
         Test-Result -Name "k9 alias exists" -Passed $true -Message ""
-    } else {
+    }
+    else {
         Test-Result -Name "k9 alias exists" -Passed $false -Message "Alias not defined"
     }
 
@@ -347,7 +372,8 @@ try {
         $result = sysinfo 2>&1
         Test-Result -Name "sysinfo returns data (or runs cleanly)" -Passed $true -Message ""
     }
-} catch {
+}
+catch {
     Test-Result -Name "System functions tests" -Passed $false -Message $_.Exception.Message
 }
 
@@ -360,7 +386,8 @@ try {
     foreach ($fn in $helperFunctions) {
         if (Get-Command $fn -ErrorAction SilentlyContinue) {
             Test-Result -Name "$fn function exists" -Passed $true -Message ""
-        } else {
+        }
+        else {
             Test-Result -Name "$fn function exists" -Passed $false -Message "Function not defined"
         }
     }
@@ -368,10 +395,12 @@ try {
     # Test cpy alias
     if (Get-Command cpy -ErrorAction SilentlyContinue) {
         Test-Result -Name "cpy alias exists" -Passed $true -Message ""
-    } else {
+    }
+    else {
         Test-Result -Name "cpy alias exists" -Passed $false -Message "Alias not defined"
     }
-} catch {
+}
+catch {
     Test-Result -Name "Helper functions tests" -Passed $false -Message $_.Exception.Message
 }
 
@@ -383,14 +412,16 @@ try {
     if (Get-Command la -ErrorAction SilentlyContinue) {
         $result = la 2>&1
         Assert-NotNull -Value $result -TestName "la function executes without error"
-    } else {
+    }
+    else {
         Test-Result -Name "la function exists" -Passed $false -Message "Function not defined"
     }
 
     if (Get-Command ll -ErrorAction SilentlyContinue) {
         $result = ll 2>&1
         Assert-NotNull -Value $result -TestName "ll function executes without error"
-    } else {
+    }
+    else {
         Test-Result -Name "ll function exists" -Passed $false -Message "Function not defined"
     }
 
@@ -402,11 +433,13 @@ try {
         dtop
         if ([string]::IsNullOrEmpty($_desktop)) {
             Test-Result -Name "dtop function navigates to Desktop" -Passed $true -Message "Skipped (Linux)"
-        } else {
+        }
+        else {
             Assert-Equal -Expected $_desktop -Actual (Get-Location).Path -TestName "dtop function navigates to Desktop"
         }
         Set-Location $originalLocation
-    } else {
+    }
+    else {
         Test-Result -Name "dtop function exists" -Passed $false -Message "Function not defined"
     }
 
@@ -416,14 +449,17 @@ try {
             $grandparent = $parentItem.Parent.FullName
             up2
             Assert-Equal -Expected $grandparent -Actual (Get-Location).Path -TestName "up2 function navigates to grandparent"
-        } else {
+        }
+        else {
             Test-Result -Name "up2 function navigates to grandparent" -Passed $true -Message "Skipped (no grandparent)"
         }
         Set-Location $originalLocation
-    } else {
+    }
+    else {
         Test-Result -Name "up2 function exists" -Passed $false -Message "Function not defined"
     }
-} catch {
+}
+catch {
     Test-Result -Name "Display/navigation tests" -Passed $false -Message $_.Exception.Message
 }
 Set-Location $originalLocation
@@ -438,14 +474,17 @@ try {
         foreach ($func in $gitFunctions) {
             if (Get-Command $func -ErrorAction SilentlyContinue) {
                 Test-Result -Name "$func function exists" -Passed $true -Message ""
-            } else {
+            }
+            else {
                 Test-Result -Name "$func function exists" -Passed $false -Message "Function not defined"
             }
         }
-    } else {
+    }
+    else {
         Test-Skip -Name "Git function tests" -Reason "Git not installed"
     }
-} catch {
+}
+catch {
     Test-Result -Name "Git functions tests" -Passed $false -Message $_.Exception.Message
 }
 
@@ -482,7 +521,8 @@ try {
         $hasShouldProcess = $cmdInfo.Parameters.ContainsKey('WhatIf')
         Assert-True -Condition $hasShouldProcess -TestName "sed supports -WhatIf (ShouldProcess)"
     }
-} catch {
+}
+catch {
     Test-Result -Name "Error handling tests" -Passed $false -Message $_.Exception.Message
 }
 
@@ -506,7 +546,8 @@ if ($script:TestResults.Count -gt 0 -and $Verbose) {
 # Exit with appropriate code
 if ($script:TestsFailed -gt 0) {
     exit 1
-} else {
+}
+else {
     exit 0
 }
 

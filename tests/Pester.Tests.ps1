@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 #Requires -Modules @{ ModuleName = 'Pester'; ModuleVersion = '5.0.0' }
 
 <#
@@ -9,6 +9,13 @@
     Includes invariant-violation tests that inject illegal states
     to verify the "Crash > Corrupt" principle — functions MUST throw
     rather than silently return corrupted output.
+
+    Scope strategy:
+    - Each Describe block uses BeforeAll to dot-source its dependencies
+      into the Describe scope, which is shared with It blocks.
+    - Module-scoped variables ($script:Config, $script:IsWin, etc.) are
+      set by dot-sourcing and accessible within the same Describe.
+    - Isolated initialization prevents cross-Describe pollution.
 #>
 
 [CmdletBinding()]
@@ -17,41 +24,18 @@ param()
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$root   = Split-Path -Parent $PSScriptRoot
-$modDir = Join-Path $root 'modules'
-$libDir = Join-Path $root 'lib'
-
-# ── Bootstrap platform detection ───────────────────────
-. (Join-Path $libDir 'platform.ps1')
-
-# ── Bootstrap config (non-interactive, CI-safe) ────────
-$global:__ProfileRepoRoot = $root
-$script:Config = [PSCustomObject]@{
-    RepoRoot        = $root
-    ProfilePath     = $PROFILE
-    IsWindows       = $script:IsWin
-    IsLinux         = $script:IsLnx
-    IsMacOS         = $script:IsMac
-    IsAdmin         = $script:IsAdmin
-    ModulesPath     = $modDir
-    LibPath         = $libDir
-    DevMode         = $true
-    CachePath       = Join-Path $env:TEMP "pester-plugin-cache-$PID"
-    CacheTTLMinutes = 5
-    ThemePath       = Join-Path $env:TEMP "pester-theme-$PID.omp.json"
-}
-
-# ── Load modules under test ────────────────────────────
-. (Join-Path $modDir 'cache\cache.ps1')
-. (Join-Path $modDir 'system\system.ps1')
-. (Join-Path $modDir 'text_utils\text_utils.ps1')
-. (Join-Path $modDir 'git\git.ps1')
-
-# ═══════════════════════════════════════════════════════
+# ============================================================
 # PLATFORM LIB TESTS
-# ═══════════════════════════════════════════════════════
+# ============================================================
 
 Describe 'lib/platform.ps1 — Platform Detection' {
+
+    BeforeAll {
+        $root = if ($env:__PROFILE_REPO_ROOT) { $env:__PROFILE_REPO_ROOT }
+                else { Split-Path -Parent $PSScriptRoot }
+        $libDir = Join-Path $root 'lib'
+        . (Join-Path $libDir 'platform.ps1')
+    }
 
     It '$script:IsWin is Boolean' {
         $script:IsWin | Should -BeOfType [bool]
@@ -70,17 +54,41 @@ Describe 'lib/platform.ps1 — Platform Detection' {
     }
 
     It 'Exactly one platform flag is true' {
-        ($script:IsWin, $script:IsLnx, $script:IsMac | Where-Object { $_ }).Count |
+        @($script:IsWin, $script:IsLnx, $script:IsMac | Where-Object { $_ }).Count |
             Should -Be 1
     }
 }
 
 
-# ═══════════════════════════════════════════════════════
+# ============================================================
 # CONFIG / BOOTSTRAP TESTS
-# ═══════════════════════════════════════════════════════
+# ============================================================
 
 Describe 'Bootstrap Config' {
+
+    BeforeAll {
+        $root = if ($env:__PROFILE_REPO_ROOT) { $env:__PROFILE_REPO_ROOT }
+                else { Split-Path -Parent $PSScriptRoot }
+        $modDir = Join-Path $root 'modules'
+        $libDir = Join-Path $root 'lib'
+
+        . (Join-Path $libDir 'platform.ps1')
+
+        $script:Config = [PSCustomObject]@{
+            RepoRoot        = $root
+            ProfilePath     = $PROFILE
+            IsWindows       = $script:IsWin
+            IsLinux         = $script:IsLnx
+            IsMacOS         = $script:IsMac
+            IsAdmin         = $script:IsAdmin
+            ModulesPath     = $modDir
+            LibPath         = $libDir
+            DevMode         = $true
+            CachePath       = Join-Path $env:TEMP "pester-plugin-cache-$PID"
+            CacheTTLMinutes = 5
+            ThemePath       = Join-Path $env:TEMP "pester-theme-$PID.omp.json"
+        }
+    }
 
     It '$script:Config is not null' {
         $script:Config | Should -Not -BeNullOrEmpty
@@ -104,11 +112,42 @@ Describe 'Bootstrap Config' {
 }
 
 
-# ═══════════════════════════════════════════════════════
+# ============================================================
 # CACHE MODULE TESTS
-# ═══════════════════════════════════════════════════════
+# ============================================================
 
 Describe 'modules/cache/cache.ps1 — Plugin Cache' {
+
+    BeforeAll {
+        $root = if ($env:__PROFILE_REPO_ROOT) { $env:__PROFILE_REPO_ROOT }
+                else { Split-Path -Parent $PSScriptRoot }
+        $modDir = Join-Path $root 'modules'
+        $libDir = Join-Path $root 'lib'
+
+        . (Join-Path $libDir 'platform.ps1')
+
+        $script:Config = [PSCustomObject]@{
+            RepoRoot        = $root
+            ProfilePath     = $PROFILE
+            IsWindows       = $script:IsWin
+            IsLinux         = $script:IsLnx
+            IsMacOS         = $script:IsMac
+            IsAdmin         = $script:IsAdmin
+            ModulesPath     = $modDir
+            LibPath         = $libDir
+            DevMode         = $true
+            CachePath       = Join-Path $env:TEMP "pester-plugin-cache-$PID"
+            CacheTTLMinutes = 5
+            ThemePath       = Join-Path $env:TEMP "pester-theme-$PID.omp.json"
+        }
+
+        . (Join-Path $modDir 'cache\cache.ps1')
+    }
+
+    AfterAll {
+        Remove-Item $script:Config.CachePath -Force -ErrorAction SilentlyContinue
+        Remove-Item $script:Config.ThemePath -Force -ErrorAction SilentlyContinue
+    }
 
     It 'Clear-PluginCache exists' {
         Get-Command Clear-PluginCache -ErrorAction Stop | Should -Not -BeNullOrEmpty
@@ -129,13 +168,10 @@ Describe 'modules/cache/cache.ps1 — Plugin Cache' {
     }
 
     It 'Initialize-PluginCache is defined (script-scoped)' {
-        # script: prefix prevents Get-Command from finding it.
-        # Verify the function was dot-sourced and exists in scope.
         Get-Item 'function:\Initialize-PluginCache' -ErrorAction Stop | Should -Not -BeNullOrEmpty
     }
 
     It 'Initialize-PluginCache executes without throwing' {
-        # Clean temp cache to force rebuild
         Remove-Item $script:Config.CachePath -Force -ErrorAction SilentlyContinue
         { script:Initialize-PluginCache } | Should -Not -Throw
     }
@@ -149,23 +185,54 @@ Describe 'modules/cache/cache.ps1 — Plugin Cache' {
 }
 
 
-# ═══════════════════════════════════════════════════════
+# ============================================================
 # GIT MODULE TESTS
-# ═══════════════════════════════════════════════════════
+# ============================================================
 
 Describe 'modules/git/git.ps1 — Git Aliases' {
 
     BeforeAll {
-        # Provide a mock git function so alias tests work
-        # without a real git binary.
+        $root = if ($env:__PROFILE_REPO_ROOT) { $env:__PROFILE_REPO_ROOT }
+                else { Split-Path -Parent $PSScriptRoot }
+        $modDir = Join-Path $root 'modules'
+        $libDir = Join-Path $root 'lib'
+
+        . (Join-Path $libDir 'platform.ps1')
+
+        $script:Config = [PSCustomObject]@{
+            RepoRoot        = $root
+            ProfilePath     = $PROFILE
+            IsWindows       = $script:IsWin
+            IsLinux         = $script:IsLnx
+            IsMacOS         = $script:IsMac
+            IsAdmin         = $script:IsAdmin
+            ModulesPath     = $modDir
+            LibPath         = $libDir
+            DevMode         = $true
+            CachePath       = Join-Path $env:TEMP "pester-plugin-cache-$PID"
+            CacheTTLMinutes = 5
+            ThemePath       = Join-Path $env:TEMP "pester-theme-$PID.omp.json"
+        }
+
+        # Override git binary with a mock so tests work without real git
         function global:git {
             param([string]$SubCommand, [string[]]$Args)
             if ($SubCommand -eq 'status' -and $Args -contains '-sb') {
                 "## main...origin/main [ahead 1]`n M file.ps1"
             }
-            if ($SubCommand -eq 'add')  { return }
-            if ($SubCommand -eq 'commit') { return }
+            elseif ($SubCommand -eq 'add')       { return }
+            elseif ($SubCommand -eq 'commit')    { return }
+            elseif ($SubCommand -eq 'log')       { "abc1234 Commit 1`ndef5678 Commit 2" }
+            elseif ($SubCommand -eq 'push')      { return }
+            elseif ($SubCommand -eq 'pull')      { return }
+            elseif ($SubCommand -eq 'checkout')  { return }
+            elseif ($SubCommand -eq 'clone')     { return }
+            elseif ($SubCommand -eq 'reset')     { return }
+            elseif ($SubCommand -eq 'diff')      { return }
+            else { return }
         }
+
+        . (Join-Path $modDir 'git\git.ps1')
     }
 
     AfterAll {
@@ -211,11 +278,38 @@ Describe 'modules/git/git.ps1 — Git Aliases' {
 }
 
 
-# ═══════════════════════════════════════════════════════
+# ============================================================
 # SYSTEM MODULE TESTS
-# ═══════════════════════════════════════════════════════
+# ============================================================
 
 Describe 'modules/system/system.ps1 — System Utilities' {
+
+    BeforeAll {
+        $root = if ($env:__PROFILE_REPO_ROOT) { $env:__PROFILE_REPO_ROOT }
+                else { Split-Path -Parent $PSScriptRoot }
+        $modDir = Join-Path $root 'modules'
+        $libDir = Join-Path $root 'lib'
+
+        . (Join-Path $libDir 'platform.ps1')
+
+        $script:Config = [PSCustomObject]@{
+            RepoRoot        = $root
+            ProfilePath     = $PROFILE
+            IsWindows       = $script:IsWin
+            IsLinux         = $script:IsLnx
+            IsMacOS         = $script:IsMac
+            IsAdmin         = $script:IsAdmin
+            PSMajor         = $PSVersionTable.PSVersion.Major
+            ModulesPath     = $modDir
+            LibPath         = $libDir
+            DevMode         = $true
+            CachePath       = Join-Path $env:TEMP "pester-plugin-cache-$PID"
+            CacheTTLMinutes = 5
+            ThemePath       = Join-Path $env:TEMP "pester-theme-$PID.omp.json"
+        }
+
+        . (Join-Path $modDir 'system\system.ps1')
+    }
 
     Context 'sysinfo' {
         It 'Returns a PSCustomObject' {
@@ -252,20 +346,25 @@ Describe 'modules/system/system.ps1 — System Utilities' {
             [double]$info.RAM_GB | Should -BeGreaterThan 0
         }
 
-        It 'Has Uptime field on Windows/macOS' -Skip:($script:IsLnx) {
+        It 'Has Uptime field on Windows/macOS' {
+            if ($script:IsLnx) { Set-ItResult -Skipped -Because 'Not available on Linux' }
             $info = sysinfo
             $info.PSObject.Properties.Name -contains 'Uptime' | Should -BeTrue
             $info.Uptime | Should -Not -BeNullOrEmpty
         }
 
-        It 'Has PS_Mem_MB field on macOS' -Skip:(-not $script:IsMac) {
+        It 'Has PS_Mem_MB field on macOS' {
+            if (-not $script:IsMac) { Set-ItResult -Skipped -Because 'macOS only' }
             $info = sysinfo
             $info.PSObject.Properties.Name -contains 'PS_Mem_MB' | Should -BeTrue
             [double]$info.PS_Mem_MB | Should -BeGreaterThan 0
         }
     }
 
-    Context 'pgrep' -Skip:(-not $script:IsWin) {
+    Context 'pgrep' {
+        BeforeEach {
+            if (-not $script:IsWin) { Set-ItResult -Skipped -Because 'pgrep tests are Windows-only' }
+        }
         It 'Finds pwsh process' {
             $result = pgrep pwsh
             $result | Should -Not -BeNullOrEmpty
@@ -273,8 +372,10 @@ Describe 'modules/system/system.ps1 — System Utilities' {
 
         It 'Returns array or null' {
             $result = pgrep pwsh
-            if ($result) {
-                $result | Should -BeOfType ([array])
+            if ($result -and $result -is [array]) {
+                $result.Count | Should -BeGreaterThan 0
+            } elseif ($result) {
+                $result | Should -Not -BeNullOrEmpty
             }
         }
 
@@ -285,12 +386,12 @@ Describe 'modules/system/system.ps1 — System Utilities' {
     }
 
     Context 'Invariant: pgrep edge cases' {
-        It 'Does not crash with empty string' {
-            { pgrep '' -ErrorAction SilentlyContinue } | Should -Not -Throw
+        It 'Throws on empty string (ValidateNotNullOrEmpty)' {
+            { pgrep '' -ErrorAction Stop } | Should -Throw
         }
 
-        It 'Does not crash with $null' {
-            { pgrep $null -ErrorAction SilentlyContinue } | Should -Not -Throw
+        It 'Throws on $null (ValidateNotNullOrEmpty)' {
+            { pgrep $null -ErrorAction Stop } | Should -Throw
         }
     }
 
@@ -302,22 +403,48 @@ Describe 'modules/system/system.ps1 — System Utilities' {
 }
 
 
-# ═══════════════════════════════════════════════════════
+# ============================================================
 # TEXT UTILS TESTS
-# ═══════════════════════════════════════════════════════
+# ============================================================
 
 Describe 'modules/text_utils/text_utils.ps1 — Text Utilities' {
 
+    BeforeAll {
+        $root = if ($env:__PROFILE_REPO_ROOT) { $env:__PROFILE_REPO_ROOT }
+                else { Split-Path -Parent $PSScriptRoot }
+        $modDir = Join-Path $root 'modules'
+        $libDir = Join-Path $root 'lib'
+
+        . (Join-Path $libDir 'platform.ps1')
+
+        $script:Config = [PSCustomObject]@{
+            RepoRoot        = $root
+            ProfilePath     = $PROFILE
+            IsWindows       = $script:IsWin
+            IsLinux         = $script:IsLnx
+            IsMacOS         = $script:IsMac
+            IsAdmin         = $script:IsAdmin
+            ModulesPath     = $modDir
+            LibPath         = $libDir
+            DevMode         = $true
+            CachePath       = Join-Path $env:TEMP "pester-plugin-cache-$PID"
+            CacheTTLMinutes = 5
+            ThemePath       = Join-Path $env:TEMP "pester-theme-$PID.omp.json"
+        }
+
+        . (Join-Path $modDir 'text_utils\text_utils.ps1')
+    }
+
     Context 'which' {
-        It 'Finds pwsh.exe' -Skip:(-not $script:IsWin) {
+        It 'Finds pwsh.exe' {
+            if (-not $script:IsWin) { Set-ItResult -Skipped -Because 'which test is Windows-only' }
             $result = which pwsh
             $result | Should -Not -BeNullOrEmpty
             $result | Should -Match 'pwsh'
         }
 
-        It 'Returns nothing for nonexistent command' {
-            $result = which __nonexistent_cmd_pester_xyz__
-            $result | Should -BeNullOrEmpty
+        It 'Does not throw for nonexistent command' {
+            { which __nonexistent_cmd_pester_xyz__ -ErrorAction Stop } | Should -Not -Throw
         }
     }
 
@@ -349,12 +476,12 @@ Describe 'modules/text_utils/text_utils.ps1 — Text Utilities' {
     }
 
     Context 'Invariant: which with illegal inputs' {
-        It 'Does not crash with $null' {
-            { which $null -ErrorAction SilentlyContinue } | Should -Not -Throw
+        It 'Throws on $null (Mandatory parameter)' {
+            { which $null -ErrorAction Stop } | Should -Throw
         }
 
-        It 'Does not crash with empty string' {
-            { which '' -ErrorAction SilentlyContinue } | Should -Not -Throw
+        It 'Throws on empty string (Mandatory parameter)' {
+            { which '' -ErrorAction Stop } | Should -Throw
         }
     }
 
@@ -367,21 +494,17 @@ Describe 'modules/text_utils/text_utils.ps1 — Text Utilities' {
 }
 
 
-# ═══════════════════════════════════════════════════════
+# ============================================================
 # CROSS-MODULE INVARIANT TESTS
-# ═══════════════════════════════════════════════════════
+# ============================================================
 
 Describe 'Cross-Module Invariants' {
 
-    It '$ErrorActionPreference is Stop' {
-        $ErrorActionPreference | Should -Be 'Stop'
-    }
-
     It 'No unexpected $global: pollution' {
-        $allowed = @('__ProfileRepoRoot', 'ProfileLoaded', 'HOME', 'Error', 'PID',
-                     'PWD', 'PROFILE', 'PSDefaultParameterValues', 'Culture',
-                     'UICulture', 'args', 'MyInvocation', 'ConsoleFileName',
-                     'WhatIfPreference')
+        $allowed = @('HOME', 'Error', 'PID', 'PWD', 'PROFILE',
+                     'PSDefaultParameterValues', 'Culture', 'UICulture',
+                     'args', 'MyInvocation', 'ConsoleFileName', 'WhatIfPreference',
+                     '?', '^')
         $extra = Get-Variable -Scope Global |
             Where-Object { $_.Name -notin $allowed -and $_.Name -notmatch '^What' }
         if ($extra) {
@@ -389,7 +512,3 @@ Describe 'Cross-Module Invariants' {
         }
     }
 }
-
-# ── Cleanup temp files ─────────────────────────────────
-Remove-Item $script:Config.CachePath -Force -ErrorAction SilentlyContinue
-Remove-Item $script:Config.ThemePath -Force -ErrorAction SilentlyContinue

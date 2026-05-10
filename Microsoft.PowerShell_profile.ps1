@@ -1,4 +1,7 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
+
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '')]
+param()
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -10,8 +13,8 @@ $ErrorActionPreference = 'Stop'
 
 # Previne execução duplicada se o usuário tiver o perfil
 # vinculado em múltiplos locais (AllHosts + CurrentHost)
-if ((Get-Variable -Name 'ProfileLoaded' -Scope Global -ErrorAction SilentlyContinue).Value) { return }
-$global:ProfileLoaded = $true
+if ($env:__PROFILE_LOADED) { return }
+$env:__PROFILE_LOADED = '1'
 
 # ── STOPWATCH ────────────────────────────────────────────────
 $script:BootTimer = [System.Diagnostics.Stopwatch]::StartNew()
@@ -19,8 +22,8 @@ $script:BootTimer = [System.Diagnostics.Stopwatch]::StartNew()
 # ── ROOT DO REPOSITÓRIO ──────────────────────────────────────
 # Quando dot-sourced via $PROFILE, $PSScriptRoot resolve para o
 # diretório do PROFILE e não do repositório. O instalador define
-# $global:__ProfileRepoRoot com o caminho correto antes do dot-source.
-$script:ProfileRoot = if (Get-Variable -Name '__ProfileRepoRoot' -Scope Global -ErrorAction SilentlyContinue) { $global:__ProfileRepoRoot } else { $PSScriptRoot }
+# $env:__PROFILE_REPO_ROOT com o caminho correto antes do dot-source.
+$script:ProfileRoot = if ($env:__PROFILE_REPO_ROOT) { $env:__PROFILE_REPO_ROOT } else { $PSScriptRoot }
 
 # ── LISTA DE MÓDULOS CARREGADOS (consumida pelo cache) ───────
 $script:StartupModules = [System.Collections.Generic.List[string]]::new()
@@ -76,4 +79,3 @@ $color = if ($bootMs -lt 300) { 'Green' } elseif ($bootMs -lt 600) { 'Yellow' } 
 
 Write-Host "PS $($PSVersionTable.PSVersion)${moduleList}${adminTag}" -ForegroundColor Cyan -NoNewline
 Write-Host " [${bootMs}ms]" -ForegroundColor $color
-

@@ -2,6 +2,10 @@
 # Funções de output padronizadas para instaladores e scripts standalone.
 # Dot-source: . (Join-Path $PSScriptRoot 'lib/ux-helpers.ps1')
 
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '')]
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseSingularNouns', '')]
+param()
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
@@ -10,5 +14,3 @@ function Write-Ok    { param([string]$Msg) Write-Host "  ✔ $Msg" -ForegroundCo
 function Write-Warn  { param([string]$Msg) Write-Host "  ⚠ $Msg" -ForegroundColor Yellow }
 function Write-Fail  { param([string]$Msg) Write-Host "  ❌ $Msg" -ForegroundColor Red }
 function Write-Info  { param([string]$Msg) Write-Host "  ℹ $Msg" -ForegroundColor DarkGray }
-
-
