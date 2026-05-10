@@ -6,6 +6,7 @@
 # NOTA: Nomes $script:IsWin / IsLnx / IsMac evitam colisão com as variáveis
 # automáticas read-only do PS 6+ ($IsWindows, $IsLinux, $IsMacOS).
 
+Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 if ($PSVersionTable.PSVersion.Major -ge 6) {

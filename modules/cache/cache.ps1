@@ -1,3 +1,6 @@
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
 # ── 2. PLUGINS & CACHE v2 ────────────────────────────────────
 # Cache com TTL (Time-To-Live): evita recálculo de fingerprint MD5
 # se o arquivo de cache foi atualizado recentemente.

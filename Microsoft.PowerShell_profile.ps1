@@ -1,5 +1,8 @@
 #Requires -Version 5.1
 
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
 # ============================================================
 # POWERSHELL PROFILE
 # PS 5.1+ / PS Core 7+ | Revisão: 05/2026
@@ -17,7 +20,7 @@ $script:BootTimer = [System.Diagnostics.Stopwatch]::StartNew()
 # Quando dot-sourced via $PROFILE, $PSScriptRoot resolve para o
 # diretório do PROFILE e não do repositório. O instalador define
 # $global:__ProfileRepoRoot com o caminho correto antes do dot-source.
-$script:ProfileRoot = if ($null -ne $global:__ProfileRepoRoot) { $global:__ProfileRepoRoot } else { $PSScriptRoot }
+$script:ProfileRoot = if (Get-Variable -Name '__ProfileRepoRoot' -Scope Global -ErrorAction SilentlyContinue) { $global:__ProfileRepoRoot } else { $PSScriptRoot }
 
 # ── LISTA DE MÓDULOS CARREGADOS (consumida pelo cache) ───────
 $script:StartupModules = [System.Collections.Generic.List[string]]::new()

@@ -1,4 +1,7 @@
-﻿# ── 0. CONFIGURAÇÃO CENTRALIZADA ─────────────────────────────
+﻿Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+# ── 0. CONFIGURAÇÃO CENTRALIZADA ─────────────────────────────
 # Ponto único de verdade para caminhos, constantes e detecção de plataforma.
 # Todos os módulos consomem $script:Config — nenhum módulo repete essa lógica.
 

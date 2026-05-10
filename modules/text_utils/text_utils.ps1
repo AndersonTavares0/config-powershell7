@@ -1,5 +1,9 @@
-# ── 5. ARQUIVOS E TEXTO ───────────────────────────────────────
 using namespace System.Management.Automation
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+# ── 5. ARQUIVOS E TEXTO ───────────────────────────────────────
 function touch {
     param([Parameter(Mandatory, ValueFromPipeline)][string]$File)
     process {

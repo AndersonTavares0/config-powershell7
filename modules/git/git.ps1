@@ -1,4 +1,7 @@
-﻿# ── 7. GIT ────────────────────────────────────────────────────
+﻿Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+# ── 7. GIT ────────────────────────────────────────────────────
 # Verificação de existência do binário antes de carregar aliases
 $gitCmd = Get-Command git -ErrorAction SilentlyContinue
 

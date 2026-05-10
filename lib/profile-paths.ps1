@@ -2,6 +2,7 @@
 # Resolve o caminho do profile do usuário de forma cross-platform.
 # Requer: $script:IsLnx (de lib/platform.ps1)
 
+Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 function script:Get-TargetProfilePath {

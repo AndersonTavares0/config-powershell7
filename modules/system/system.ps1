@@ -1,8 +1,11 @@
+using namespace System.Management.Automation
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
 # ── 6. SISTEMA ────────────────────────────────────────────────
 # Todas as funções consomem $script:Config (módulo centralizado).
 # Detecção de plataforma NÃO é duplicada aqui.
-
-using namespace System.Management.Automation
 
 # Cross-platform pkill: usa Get-Process (Windows) ou comando nativo (Linux/macOS)
 function pkill {
