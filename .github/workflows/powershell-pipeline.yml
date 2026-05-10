@@ -56,11 +56,18 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           # Collect every .ps1 and .psm1 file in the repo
-          $files = Get-ChildItem -Recurse -Include '*.ps1','*.psm1' -Exclude '*.Tests.ps1' |
-                   Where-Object { $_.FullName -notmatch '\\(graphify|graphify-out)\\' }
+          $files = @(Get-ChildItem -Recurse -Include '*.ps1','*.psm1' -Exclude '*.Tests.ps1' |
+                    Where-Object { $_.FullName -notmatch '\\(graphify|graphify-out)\\' })
 
-          # Invoke with full rule set. RenderRuleName makes output human-readable.
-          $results = Invoke-ScriptAnalyzer -Path $files.FullName -Recurse -Severity Warning,Error
+          if ($files.Count -eq 0) {
+            Write-Host "No source files to analyze."
+            exit 0
+          }
+
+          # Invoke with full rule set, iterating per file for array-type safety.
+          $results = foreach ($f in $files) {
+            Invoke-ScriptAnalyzer -Path $f.FullName -Recurse -Severity Warning,Error
+          }
 
           if ($results) {
             $results | Format-Table -AutoSize -Wrap

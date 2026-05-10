@@ -6,6 +6,8 @@
 # NOTA: Nomes $script:IsWin / IsLnx / IsMac evitam colisão com as variáveis
 # automáticas read-only do PS 6+ ($IsWindows, $IsLinux, $IsMacOS).
 
+$ErrorActionPreference = 'Stop'
+
 if ($PSVersionTable.PSVersion.Major -ge 6) {
     $script:IsWin = $IsWindows
     $script:IsLnx = $IsLinux

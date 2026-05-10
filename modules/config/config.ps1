@@ -2,9 +2,25 @@
 # Ponto único de verdade para caminhos, constantes e detecção de plataforma.
 # Todos os módulos consomem $script:Config — nenhum módulo repete essa lógica.
 
-# Dot-source shared platform detection (lib/platform.ps1)
-# $script:IsWin, $script:IsLnx, $script:IsMac, $script:IsAdmin
-. (Join-Path $PSScriptRoot '../../lib/platform.ps1')
+# Detecção cross-platform inline — lib/platform.ps1 é para scripts standalone,
+# módulos do profile devem ser autossuficientes (sem dependência de diretório lib/).
+if ($PSVersionTable.PSVersion.Major -ge 6) {
+    $script:IsWin = $IsWindows
+    $script:IsLnx = $IsLinux
+    $script:IsMac = $IsMacOS
+} else {
+    $script:IsWin = $true
+    $script:IsLnx = $false
+    $script:IsMac = $false
+}
+
+if ($script:IsWin) {
+    $script:IsAdmin = ([Security.Principal.WindowsPrincipal] `
+        [Security.Principal.WindowsIdentity]::GetCurrent()
+    ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+} else {
+    $script:IsAdmin = ((id -u 2>$null) -eq '0')
+}
 
 $psMajor = $PSVersionTable.PSVersion.Major
 $isLinuxOrMac = $script:IsLnx -or $script:IsMac
