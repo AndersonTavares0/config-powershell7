@@ -7,7 +7,7 @@ title PowerShell Profile Uninstaller
 
 where pwsh >nul 2>nul
 if %errorlevel% equ 0 (
-    pwsh -NoProfile -ExecutionPolicy Bypass -File "%~dp0uninstall.ps1"
+    pwsh -NoProfile -ExecutionPolicy Bypass -File "%~dp0uninstall.ps1" -NonInteractive
 ) else (
-    powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0uninstall.ps1"
+    powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0uninstall.ps1" -NonInteractive
 )

@@ -1,33 +1,13 @@
 ﻿# ── 0. CONFIGURAÇÃO CENTRALIZADA ─────────────────────────────
 # Ponto único de verdade para caminhos, constantes e detecção de plataforma.
 # Todos os módulos consomem $script:Config — nenhum módulo repete essa lógica.
-# Variáveis intermediárias usam escopo local para não poluir $script:.
 
-# Detecção cross-platform de sistema operacional
-# PowerShell 6+ fornece variáveis automáticas SOMENTE LEITURA: $IsWindows, $IsLinux, $IsMacOS
-# Fallback para PS 5.1 que não possui essas variáveis
-if ($PSVersionTable.PSVersion.Major -ge 6) {
-    $platformIsWindows = $IsWindows
-    $platformIsLinux   = $IsLinux
-    $platformIsMacOS   = $IsMacOS
-} else {
-    # PS 5.1 só roda no Windows
-    $platformIsWindows = $true
-    $platformIsLinux   = $false
-    $platformIsMacOS   = $false
-}
-
-# Detecção de privilégios administrativos (cross-platform)
-if ($platformIsWindows) {
-    $isAdmin = ([Security.Principal.WindowsPrincipal] `
-        [Security.Principal.WindowsIdentity]::GetCurrent()
-    ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-} else {
-    # Linux/macOS: checa se uid é 0 (root)
-    $isAdmin = (id -u 2>$null) -eq '0'
-}
+# Dot-source shared platform detection (lib/platform.ps1)
+# $script:IsWin, $script:IsLnx, $script:IsMac, $script:IsAdmin
+. (Join-Path $PSScriptRoot '../../lib/platform.ps1')
 
 $psMajor = $PSVersionTable.PSVersion.Major
+$isLinuxOrMac = $script:IsLnx -or $script:IsMac
 
 # Resolução de caminhos com fallbacks multiplataforma
 # Windows: $HOME\.cache_pwsh_plugins.ps1
@@ -61,14 +41,12 @@ function script:Resolve-ThemePath {
     return (Join-Path $HOME '.poshthemes\atomic.omp.json')
 }
 
-$isLinuxOrMac = $platformIsLinux -or $platformIsMacOS
-
 $script:Config = [PSCustomObject]@{
     # Plataforma
-    IsWindows   = $platformIsWindows
-    IsLinux     = $platformIsLinux
-    IsMacOS     = $platformIsMacOS
-    IsAdmin     = $isAdmin
+    IsWindows   = $script:IsWin
+    IsLinux     = $script:IsLnx
+    IsMacOS     = $script:IsMac
+    IsAdmin     = $script:IsAdmin
     PSMajor     = $psMajor
 
     # Caminhos (resolvidos dinamicamente)
@@ -76,9 +54,5 @@ $script:Config = [PSCustomObject]@{
     ThemePath   = (script:Resolve-ThemePath -IsLinuxOrMac $isLinuxOrMac)
 
     # Cache TTL em minutos (pular recálculo de fingerprint se cache é recente)
-    CacheTTLMinutes = 30
-
-    # Constantes
-    MaxFileSizeMB   = 50
+    CacheTTLMinutes = 60
 }
-

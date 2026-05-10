@@ -5,6 +5,7 @@
 - **Entrypoint**: `Microsoft.PowerShell_profile.ps1` — dot-sourced by `$PROFILE`
 - **Install**: `install.ps1` sets `$global:__ProfileRepoRoot` then dot-sources the profile
 - **Loading order is critical**: config (0) → cache (1) → navigation → git → system → psreadline → text_utils
+- **psreadline** is its own module (`modules/psreadline/`), not nested under `system/`
 - Config (`modules/config/config.ps1`) is mandatory; all other modules are try/catch wrapped (non-critical)
 - Internal modules use **dot-sourcing** (`. $path`), not `Import-Module`
 - Shared libs in `lib/`: `platform.ps1`, `ux-helpers.ps1`, `profile-paths.ps1`

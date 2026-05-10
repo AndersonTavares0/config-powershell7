@@ -43,7 +43,7 @@ $nonCriticalModules = @(
     'navigation/navigation.ps1'
     'git/git.ps1'
     'system/system.ps1'
-    'system/psreadline.ps1'
+    'psreadline/psreadline.ps1'
     'text_utils/text_utils.ps1'
 )
 
@@ -53,7 +53,7 @@ foreach ($module in $nonCriticalModules) {
         try {
             . $modulePath
         } catch {
-            Write-Verbose "Failed to load module: $module - $($_.Exception.Message)"
+            Write-Warning "Failed to load module: $module — $($_.Exception.Message)"
         }
     }
 }

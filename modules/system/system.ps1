@@ -2,6 +2,8 @@
 # Todas as funções consomem $script:Config (módulo centralizado).
 # Detecção de plataforma NÃO é duplicada aqui.
 
+using namespace System.Management.Automation
+
 # Cross-platform pkill: usa Get-Process (Windows) ou comando nativo (Linux/macOS)
 function pkill {
     [CmdletBinding(SupportsShouldProcess)]
@@ -23,8 +25,8 @@ function pkill {
             $procs | Stop-Process -Force -ErrorAction SilentlyContinue
         }
     } catch {
-        $er = [System.Management.Automation.ErrorRecord]::new(
-            $_.Exception, 'PkillFailed', [System.Management.Automation.ErrorCategory]::InvalidOperation, $Name
+        $er = [ErrorRecord]::new(
+            $_.Exception, 'PkillFailed', [ErrorCategory]::InvalidOperation, $Name
         )
         $PSCmdlet.WriteError($er)
     }
@@ -42,10 +44,10 @@ function pgrep {
                 $ids = & '/usr/bin/pgrep' -f $Name 2>&1
                 if ($ids) {
                     foreach ($id in $ids) {
+                        $processName = (Get-Process -Id $id.Trim() -ErrorAction SilentlyContinue).ProcessName
                         [PSCustomObject]@{
-                            Id = $id.Trim()
-                            $pName = (Get-Process -Id $id.Trim() -ErrorAction SilentlyContinue).ProcessName
-                            ProcessName = if ($pName) { $pName } else { 'unknown' }
+                            Id          = $id.Trim()
+                            ProcessName = if ($processName) { $processName } else { 'unknown' }
                         }
                     }
                 }
@@ -58,8 +60,8 @@ function pgrep {
             Format-Table Id, ProcessName, CPU,
                 @{ L='Mem(MB)'; E={ [math]::Round($_.WorkingSet64/1MB, 1) } } -AutoSize
     } catch {
-        $er = [System.Management.Automation.ErrorRecord]::new(
-            $_.Exception, 'PgrepFailed', [System.Management.Automation.ErrorCategory]::ObjectNotFound, $Name
+        $er = [ErrorRecord]::new(
+            $_.Exception, 'PgrepFailed', [ErrorCategory]::ObjectNotFound, $Name
         )
         $PSCmdlet.WriteError($er)
     }
@@ -97,8 +99,8 @@ function flushdns {
             }
         }
     } catch {
-        $er = [System.Management.Automation.ErrorRecord]::new(
-            $_.Exception, 'FlushDnsFailed', [System.Management.Automation.ErrorCategory]::ResourceUnavailable, $null
+        $er = [ErrorRecord]::new(
+            $_.Exception, 'FlushDnsFailed', [ErrorCategory]::ResourceUnavailable, $null
         )
         $PSCmdlet.WriteError($er)
     }
@@ -124,8 +126,8 @@ function df {
             }
         }
     } catch {
-        $er = [System.Management.Automation.ErrorRecord]::new(
-            $_.Exception, 'DfFailed', [System.Management.Automation.ErrorCategory]::ReadError, $null
+        $er = [ErrorRecord]::new(
+            $_.Exception, 'DfFailed', [ErrorCategory]::ReadError, $null
         )
         $PSCmdlet.WriteError($er)
     }
@@ -134,34 +136,32 @@ function df {
 function pubip {
     [CmdletBinding()]
     param([switch]$Force)
-    if ($script:CachedPublicIP -and -not $Force) {
-        Write-Verbose "IP (cache): $script:CachedPublicIP"
+    # Cache válido por 5 minutos — evita chamada de rede a cada execução
+    $cacheValid = $script:CachedPublicIP -and $script:CachedPublicIPTimestamp -and
+                  ((Get-Date) - $script:CachedPublicIPTimestamp).TotalMinutes -lt 5
+    if ($cacheValid -and -not $Force) {
         return $script:CachedPublicIP
     }
     $endpoints = 'https://api.ipify.org', 'https://icanhazip.com', 'https://ifconfig.me/ip'
-    $lastError = $null
     foreach ($url in $endpoints) {
         try {
             $response = Invoke-RestMethod -Uri $url -TimeoutSec 3 `
                 -ErrorAction Stop -UseBasicParsing
             if ($response) {
                 $script:CachedPublicIP = $response.Trim()
-                Write-Verbose "pubip: obtido de $url"
+                $script:CachedPublicIPTimestamp = Get-Date
                 return $script:CachedPublicIP
             }
         } catch [System.Net.WebException] {
-            $lastError = $_
-            Write-Verbose "pubip: timeout ou falha de rede em $url"
+            Write-Verbose "pubip: $url indisponível"
         } catch {
-            $lastError = $_
-            Write-Verbose "pubip: falha em $url - $_"
+            Write-Verbose "pubip: falha em $url"
         }
     }
-    # Todas as tentativas falharam — ErrorRecord estruturado
-    $er = [System.Management.Automation.ErrorRecord]::new(
+    $er = [ErrorRecord]::new(
         [System.Net.WebException]::new('Nenhum endpoint de IP público respondeu.'),
         'PubIpAllEndpointsFailed',
-        [System.Management.Automation.ErrorCategory]::ConnectionError,
+        [ErrorCategory]::ConnectionError,
         $endpoints
     )
     $PSCmdlet.WriteError($er)
@@ -197,7 +197,7 @@ function script:Get-LinuxSystemInfo {
         }
     }
     [PSCustomObject]@{
-        Computer = if ($hostname) { $hostname } elseif ($env:HOSTNAME) { $env:HOSTNAME } else { 'unknown' }
+        Computer = if ($env:HOSTNAME) { $env:HOSTNAME } elseif ($env:COMPUTERNAME) { $env:COMPUTERNAME } else { 'unknown' }
         User     = if ($env:USER) { $env:USER } elseif ($env:USERNAME) { $env:USERNAME } else { 'unknown' }
         OS       = $osName
         PS       = $PSVersionTable.PSVersion.ToString()
@@ -210,13 +210,22 @@ function script:Get-MacSystemInfo {
     try {
         $memBytes = sysctl -n hw.memsize 2>&1
         if ($memBytes) { $memGb = [math]::Round($memBytes / 1GB, 1) }
-    } catch {}
+    } catch { Write-Warning "Get-MacSystemInfo: sysctl hw.memsize falhou — RAM reportada como 0" }
+    $uptime = try {
+        $raw = (sysctl -n kern.boottime 2>&1 | Out-String)
+        if ($raw -match 'sec\s*=\s*(\d+)') {
+            $bootTime = [DateTimeOffset]::FromUnixTimeSeconds([long]$Matches[1])
+            (Get-Date) - $bootTime.LocalDateTime
+        } else { 'N/A' }
+    } catch { 'N/A' }
     [PSCustomObject]@{
-        Computer = if ($hostname) { $hostname } elseif ($env:HOSTNAME) { $env:HOSTNAME } else { 'unknown' }
-        User     = if ($env:USER) { $env:USER } elseif ($env:USERNAME) { $env:USERNAME } else { 'unknown' }
-        OS       = 'macOS'
-        PS       = $PSVersionTable.PSVersion.ToString()
-        RAM_GB   = $memGb
+        Computer  = if ($env:HOSTNAME) { $env:HOSTNAME } elseif ($env:COMPUTERNAME) { $env:COMPUTERNAME } else { 'unknown' }
+        User      = if ($env:USER) { $env:USER } elseif ($env:USERNAME) { $env:USERNAME } else { 'unknown' }
+        OS        = 'macOS'
+        PS        = $PSVersionTable.PSVersion.ToString()
+        Uptime    = $uptime
+        RAM_GB    = $memGb
+        PS_Mem_MB = [math]::Round([Environment]::WorkingSet/1MB, 1)
     }
 }
 
@@ -278,9 +287,9 @@ function sudo {
             $cmdText = $cmdText -replace '[\x00-\x08\x0B\x0C\x0E-\x1F]', ''
 
             if ([string]::IsNullOrWhiteSpace($cmdText)) {
-                $er = [System.Management.Automation.ErrorRecord]::new(
+                $er = [ErrorRecord]::new(
                     [System.ArgumentException]::new('Comando ficou vazio após sanitização.'),
-                    'SudoEmptyCommand', [System.Management.Automation.ErrorCategory]::InvalidArgument, $cmdText
+                    'SudoEmptyCommand', [ErrorCategory]::InvalidArgument, $cmdText
                 )
                 $PSCmdlet.WriteError($er)
                 return
@@ -293,8 +302,8 @@ function sudo {
                 Start-Process $exe -Verb RunAs -ArgumentList '-NoExit', '-EncodedCommand', $encoded
             }
         } catch {
-            $er = [System.Management.Automation.ErrorRecord]::new(
-                $_.Exception, 'SudoElevationFailed', [System.Management.Automation.ErrorCategory]::SecurityError, $cmdText
+            $er = [ErrorRecord]::new(
+                $_.Exception, 'SudoElevationFailed', [ErrorCategory]::SecurityError, $cmdText
             )
             $PSCmdlet.WriteError($er)
         }
