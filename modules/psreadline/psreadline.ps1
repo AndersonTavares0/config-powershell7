@@ -1,4 +1,7 @@
-﻿# ── 3. PSREADLINE ─────────────────────────────────────────────
+﻿Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+# ── 3. PSREADLINE ─────────────────────────────────────────────
 if (Get-Command Set-PSReadLineOption -ErrorAction SilentlyContinue) {
     try {
         Set-PSReadLineOption -EditMode Windows `

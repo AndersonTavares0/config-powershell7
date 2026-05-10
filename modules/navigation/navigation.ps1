@@ -1,4 +1,7 @@
-﻿# ── 4. NAVEGAÇÃO ──────────────────────────────────────────────
+﻿Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+# ── 4. NAVEGAÇÃO ──────────────────────────────────────────────
 # Nomes descritivos sem underscore (convencao PS, nao Python)
 
 # Cross-platform path resolution lazy-init: resolved on first use
