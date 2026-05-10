@@ -4,7 +4,7 @@
 
 The profile uses a modular architecture for maintainability and organization. The main file `Microsoft.PowerShell_profile.ps1` acts as a **Loader**:
 
-1.  It identifies the repository root via `$global:__ProfileRepoRoot` (set by the installer) or `$PSScriptRoot` as fallback.
+1.  It identifies the repository root via `$env:__PROFILE_REPO_ROOT` (set by the installer) or `$PSScriptRoot` as fallback.
 2.  Automatically loads scripts from `modules/` via *dot-sourcing* in strict order: **config → cache → navigation → git → system → psreadline → text_utils**.
 3.  Each module is wrapped in `try/catch` so a failure in one non-critical module does not block the rest of the profile.
 
@@ -60,7 +60,7 @@ cd config-powershell7
 
 > **Windows:** You can also double-click `install.cmd`.
 
-The installer writes a lightweight `$PROFILE` file that dot-sources the repository profile via `$global:__ProfileRepoRoot`. No symlinks, no Administrator elevation required.
+The installer writes a lightweight `$PROFILE` file that dot-sources the repository profile via `$env:__PROFILE_REPO_ROOT`. No symlinks, no Administrator elevation required.
 
 **Run in normal terminal:**
 ```powershell
@@ -92,7 +92,7 @@ If you prefer not to use the script:
 2. **Link via Dot-Source:**
    Add the following lines to your `$PROFILE`:
    ```powershell
-   $global:__ProfileRepoRoot = "C:\Path\To\Your\config-powershell7"
+   $env:__PROFILE_REPO_ROOT = "C:\Path\To\Your\config-powershell7"
    . "C:\Path\To\Your\config-powershell7\Microsoft.PowerShell_profile.ps1"
    ```
 

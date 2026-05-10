@@ -314,3 +314,5 @@ if ($Detailed) {
 
 if ($failed -gt 0) { exit 1 } else { exit 0 }
 
+if ($failed -gt 0) { exit 1 } else { exit 0 }
+
