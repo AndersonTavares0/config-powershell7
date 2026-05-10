@@ -2,6 +2,8 @@
 # Resolve o caminho do profile do usuário de forma cross-platform.
 # Requer: $script:IsLnx (de lib/platform.ps1)
 
+$ErrorActionPreference = 'Stop'
+
 function script:Get-TargetProfilePath {
     if ($PROFILE -and $PROFILE.CurrentUserCurrentHost) {
         return $PROFILE.CurrentUserCurrentHost

@@ -2,6 +2,8 @@
 # Funções de output padronizadas para instaladores e scripts standalone.
 # Dot-source: . (Join-Path $PSScriptRoot 'lib/ux-helpers.ps1')
 
+$ErrorActionPreference = 'Stop'
+
 function Write-Step  { param([string]$Msg) Write-Host "  → $Msg" -ForegroundColor White }
 function Write-Ok    { param([string]$Msg) Write-Host "  ✔ $Msg" -ForegroundColor Green }
 function Write-Warn  { param([string]$Msg) Write-Host "  ⚠ $Msg" -ForegroundColor Yellow }
