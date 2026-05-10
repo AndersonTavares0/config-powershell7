@@ -6,7 +6,7 @@
 ![PowerShell](https://img.shields.io/badge/PowerShell-7%2B-blue?logo=powershell)
 ![Windows](https://img.shields.io/badge/Windows-10%2B-blue?logo=windows)
 ![CI/CD](https://img.shields.io/badge/CI%2FCD-GitHub_Actions-2088FF?logo=githubactions)
-![Pester](https://img.shields.io/badge/Test-Pester_5.x-cf4647?logo=powershell)
+![Tests](https://img.shields.io/badge/Test-Custom_Framework-cf4647?logo=powershell)
 ![Oh My Posh](https://img.shields.io/badge/Prompt-Oh_My_Posh-4b32c3)
 ![Zoxide](https://img.shields.io/badge/Nav-Zoxide-purple)
 ![PSReadLine](https://img.shields.io/badge/Input-PSReadLine-darkgreen?logo=powershell)
@@ -61,7 +61,7 @@ config-powershell7/
 │   ├── system/                 # System/Network utilities + sudo
 │   ├── psreadline/             # PSReadLine configuration + keybindings
 │   └── text_utils/             # Unix-like tools (grep, tail, sed, touch)
-└── tests/                      # Test Suites (custom + Pester)
+└── tests/                      # Test Suites (custom framework)
 ```
 
 **Loading order** (critical): config → cache → navigation → git → system → psreadline → text_utils
