@@ -1,4 +1,5 @@
 # ── 5. ARQUIVOS E TEXTO ───────────────────────────────────────
+using namespace System.Management.Automation
 function touch {
     param([Parameter(Mandatory, ValueFromPipeline)][string]$File)
     process {
@@ -23,8 +24,8 @@ function unzip {
     )
     try   { Expand-Archive -Path $File -DestinationPath $Dest -Force -ErrorAction Stop }
     catch {
-        $er = [System.Management.Automation.ErrorRecord]::new(
-            $_.Exception, 'UnzipFailed', [System.Management.Automation.ErrorCategory]::ReadError, $File
+        $er = [ErrorRecord]::new(
+            $_.Exception, 'UnzipFailed', [ErrorCategory]::ReadError, $File
         )
         $PSCmdlet.WriteError($er)
     }
@@ -65,7 +66,7 @@ function pst { Get-Clipboard }
 # Leitura e escrita via [System.IO.File]: encoding uniforme entre PS 5.1 e PS 7.
 # Get-Content -Encoding UTF8 difere entre versões (BOM no 5.1, sem BOM no 7).
 # .tmp no mesmo diretório do alvo → Move-Item = rename de SO = atômico em qualquer volume.
-# Validação de tamanho: rejeita arquivos maiores que $script:Config.MaxFileSizeMB (proteção DoS).
+# Validação de tamanho: rejeita arquivos maiores que 50MB (proteção DoS).
 function sed {
     [CmdletBinding(SupportsShouldProcess)]
     param(
@@ -76,9 +77,9 @@ function sed {
     )
 
     if (-not (Test-Path $File)) {
-        $er = [System.Management.Automation.ErrorRecord]::new(
+        $er = [ErrorRecord]::new(
             [System.IO.FileNotFoundException]::new("Arquivo '$File' não encontrado."),
-            'SedFileNotFound', [System.Management.Automation.ErrorCategory]::ObjectNotFound, $File
+            'SedFileNotFound', [ErrorCategory]::ObjectNotFound, $File
         )
         $PSCmdlet.WriteError($er)
         return
@@ -90,19 +91,19 @@ function sed {
 
         # Validação de tamanho para proteção contra DoS
         $fileSize = (Get-Item $resolved -ErrorAction Stop).Length
-        $limMB = if ($script:Config.MaxFileSizeMB) { $script:Config.MaxFileSizeMB } else { 50 }
+        $limMB = 50
         $maxBytes = $limMB * 1MB
         if ($fileSize -gt $maxBytes) {
-            $er = [System.Management.Automation.ErrorRecord]::new(
+            $er = [ErrorRecord]::new(
                 [System.IO.IOException]::new("Arquivo excede o limite de ${limMB}MB."),
-                'SedFileTooLarge', [System.Management.Automation.ErrorCategory]::LimitsExceeded, $resolved
+                'SedFileTooLarge', [ErrorCategory]::LimitsExceeded, $resolved
             )
             $PSCmdlet.WriteError($er)
             return
         }
 
         # UTF8 com BOM para compatibilidade total com PowerShell 5.1 e ferramentas Windows
-        $enc        = New-Object System.Text.UTF8Encoding $true
+        $enc        = [System.Text.UTF8Encoding]::new($true)
         $newContent = ([System.IO.File]::ReadAllText($resolved, $enc)).Replace($Find, $Replace)
 
         $tmp = [System.IO.Path]::Combine(
@@ -119,8 +120,8 @@ function sed {
         }
     } catch {
         if ($tmp -and (Test-Path $tmp)) { Remove-Item $tmp -ErrorAction SilentlyContinue }
-        $er = [System.Management.Automation.ErrorRecord]::new(
-            $_.Exception, 'SedOperationFailed', [System.Management.Automation.ErrorCategory]::WriteError, $File
+        $er = [ErrorRecord]::new(
+            $_.Exception, 'SedOperationFailed', [ErrorCategory]::WriteError, $File
         )
         $PSCmdlet.WriteError($er)
     }

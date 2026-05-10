@@ -5,57 +5,57 @@ $gitCmd = Get-Command git -ErrorAction SilentlyContinue
 if ($gitCmd) {
     function gst {
         try { git status -sb 2>&1 }
-        catch { Write-Verbose "gst: git não disponível - $_" }
+        catch { Write-Warning "gst: git não disponível - $_" }
     }
 
     function ga {
         try { git add . 2>&1 }
-        catch { Write-Verbose "ga: falha no git add - $_" }
+        catch { Write-Warning "ga: falha no git add - $_" }
     }
 
     # gcmt em vez de gcm: `gcm` é alias nativo do PS para Get-Command - colisão crítica
     function gcmt {
         param([Parameter(Mandatory)][string]$Message)
         try { git commit -m $Message 2>&1 }
-        catch { Write-Verbose "gcmt: falha no commit - $_" }
+        catch { Write-Warning "gcmt: falha no commit - $_" }
     }
 
     # gco com [Parameter(Mandatory)]: git checkout sem branch imprime usage em vez de erro claro
     function gco {
         param([Parameter(Mandatory)][string]$Branch)
         try { git checkout $Branch 2>&1 }
-        catch { Write-Verbose "gco: falha no checkout - $_" }
+        catch { Write-Warning "gco: falha no checkout - $_" }
     }
 
     function gpush {
         try { git push 2>&1 }
-        catch { Write-Verbose "gpush: falha no push - $_" }
+        catch { Write-Warning "gpush: falha no push - $_" }
     }
 
     function gpull {
         try { git pull 2>&1 }
-        catch { Write-Verbose "gpull: falha no pull - $_" }
+        catch { Write-Warning "gpull: falha no pull - $_" }
     }
 
     function glog {
         try { git log --oneline --graph -15 2>&1 }
-        catch { Write-Verbose "glog: falha no log - $_" }
+        catch { Write-Warning "glog: falha no log - $_" }
     }
 
     function gundo {
         try { git reset --soft HEAD~1 2>&1 }
-        catch { Write-Verbose "gundo: falha no reset - $_" }
+        catch { Write-Warning "gundo: falha no reset - $_" }
     }
 
     function gdiff {
         try { git diff 2>&1 }
-        catch { Write-Verbose "gdiff: falha no diff - $_" }
+        catch { Write-Warning "gdiff: falha no diff - $_" }
     }
 
     function gcl {
         param([Parameter(Mandatory)][string]$URL)
         try { git clone $URL 2>&1 }
-        catch { Write-Verbose "gcl: falha no clone - $_" }
+        catch { Write-Warning "gcl: falha no clone - $_" }
     }
 
     # gcom verifica $LASTEXITCODE: falha em git add não deve chegar ao commit
@@ -63,10 +63,13 @@ if ($gitCmd) {
         param([Parameter(Mandatory)][string]$Message)
         git add .
         if ($LASTEXITCODE -ne 0) {
-            Write-Verbose "gcom: git add falhou."
+            Write-Warning "gcom: git add falhou."
             return
         }
         git commit -m $Message
+        if ($LASTEXITCODE -ne 0) {
+            Write-Warning "gcom: git commit falhou."
+        }
     }
 
     # Detecção cross-platform de sessão interativa
@@ -94,7 +97,7 @@ if ($gitCmd) {
                     return
                 }
             } catch {
-                Write-Verbose "lazyg: erro ao ler entrada do usuário - $_"
+                Write-Warning "lazyg: erro ao ler entrada do usuário - $_"
                 Write-Host "Abortado (erro de leitura)." -ForegroundColor Red
                 return
             }
@@ -103,10 +106,11 @@ if ($gitCmd) {
         }
 
         git add .
-        if ($LASTEXITCODE -ne 0) { Write-Verbose "lazyg: git add falhou.";    return }
+        if ($LASTEXITCODE -ne 0) { Write-Warning "lazyg: git add falhou.";    return }
         git commit -m $Message
-        if ($LASTEXITCODE -ne 0) { Write-Verbose "lazyg: git commit falhou."; return }
+        if ($LASTEXITCODE -ne 0) { Write-Warning "lazyg: git commit falhou."; return }
         git push
+        if ($LASTEXITCODE -ne 0) { Write-Warning "lazyg: git push falhou." }
     }
 
     # gss em vez de gs: `gs` pode colidir com Get-Service em alguns ambientes PS 5.1

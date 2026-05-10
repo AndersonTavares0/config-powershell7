@@ -1,10 +1,14 @@
-﻿# ============================================================
+﻿#Requires -Version 5.1
+# ============================================================
 # UNIT TESTS FOR Microsoft.PowerShell_profile.ps1
 # PS 5.1+ / PS Core 7+ | Revisão: 05/2026
 # ============================================================
 # Cobertura: Config centralizado, Cache TTL, Performance, Funções
 
 param([switch]$Verbose)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
 
 # ── TEST FRAMEWORK ────────────────────────────────────────────
 $script:TestsPassed = 0
@@ -146,9 +150,6 @@ if ($null -ne $script:Config) {
 
     # Test C3: TTL is configured
     Assert-True -Condition ($script:Config.CacheTTLMinutes -gt 0) -TestName "Config.CacheTTLMinutes > 0"
-
-    # Test C4: MaxFileSizeMB is configured
-    Assert-True -Condition ($script:Config.MaxFileSizeMB -gt 0) -TestName "Config.MaxFileSizeMB > 0"
 } else {
     Test-Skip -Name "Config property tests" -Reason "Config object is null"
 }

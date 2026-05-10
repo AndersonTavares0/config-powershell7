@@ -15,7 +15,6 @@ function Clear-PluginCache {
 }
 Set-Alias Clear-Cache Clear-PluginCache
 
-# Verifica se já carregado antes de chamar Import-Module
 function Import-TerminalIcons {
     if (Get-Module Terminal-Icons) {
         return
@@ -28,8 +27,10 @@ Set-Alias icons Import-TerminalIcons
 # fingerprint inclui versão dos binários via VersionInfo, não apenas caminho
 # Inclui hash do conteúdo do tema para detecção profunda de mudanças
 function script:Get-PluginFingerprint {
-    $zcmd = Get-Command zoxide -ErrorAction SilentlyContinue
-    $ocmd = Get-Command oh-my-posh -ErrorAction SilentlyContinue
+    param([object]$zcmd, [object]$ocmd)
+
+    if (-not $zcmd)  { $zcmd  = Get-Command zoxide -ErrorAction SilentlyContinue }
+    if (-not $ocmd)  { $ocmd  = Get-Command oh-my-posh -ErrorAction SilentlyContinue }
     $parts = @()
 
     if ($zcmd) {
@@ -73,22 +74,25 @@ function script:Get-PluginFingerprint {
 
 # Lógica de rebuild extraída: testável, nomeada, sem bloco `& {}` anônimo
 function script:Update-PluginCache {
+    param([object]$zcmd, [object]$ocmd)
+
+    if (-not $zcmd)  { $zcmd  = Get-Command zoxide -ErrorAction SilentlyContinue }
+    if (-not $ocmd)  { $ocmd  = Get-Command oh-my-posh -ErrorAction SilentlyContinue }
+
     $buf = [System.Text.StringBuilder]::new()
     $ts  = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
-    $fp  = script:Get-PluginFingerprint
+    $fp  = script:Get-PluginFingerprint -zcmd $zcmd -ocmd $ocmd
     [void]$buf.AppendLine("# fp:${fp} ts:${ts}")
 
-    $zcmd = Get-Command zoxide -ErrorAction SilentlyContinue
     if ($zcmd) {
         try {
             [void]$buf.AppendLine((zoxide init powershell 2>&1 | Out-String))
             [void]$buf.AppendLine("`$script:StartupModules.Add('Zoxide')")
         } catch {
-            Write-Verbose "Update-PluginCache: zoxide init falhou - $_"
+            Write-Warning "Update-PluginCache: zoxide init falhou — Zoxide não inicializado. $_"
         }
     }
 
-    $ocmd = Get-Command oh-my-posh -ErrorAction SilentlyContinue
     if ($ocmd) {
         try {
             $themeExists = Test-Path $script:Config.ThemePath
@@ -101,12 +105,12 @@ function script:Update-PluginCache {
             [void]$buf.AppendLine(($initCmd | Out-String))
             [void]$buf.AppendLine("`$script:StartupModules.Add('$label')")
         } catch {
-            Write-Verbose "Update-PluginCache: oh-my-posh init falhou - $_"
+            Write-Warning "Update-PluginCache: oh-my-posh init falhou — Oh My Posh não inicializado. $_"
         }
     }
 
     try   { Set-Content -Path $script:Config.CachePath -Value $buf.ToString() -Encoding UTF8 -ErrorAction Stop }
-    catch { Write-Verbose "Update-PluginCache: Falha ao salvar cache - $_" }
+    catch { Write-Warning "Update-PluginCache: falha ao salvar cache — cache será regenerado na próxima sessão. $_" }
 }
 
 # ── LÓGICA DE INICIALIZAÇÃO COM TTL ──────────────────────────
@@ -116,37 +120,45 @@ function script:Update-PluginCache {
 # 3. Se cache não existe              → rebuild completo
 
 function script:Initialize-PluginCache {
-    $needRebuild = $true
+    $cachedFP = $null
 
+    # HOT PATH: cache válido com TTL ok — sem Get-Command, sem fingerprint
     if (Test-Path $script:Config.CachePath) {
         $firstLine = Get-Content $script:Config.CachePath -TotalCount 1 -ErrorAction SilentlyContinue
         if ($firstLine -match '^# fp:(\S+)\s+ts:(\d+)$') {
-            $cachedFP = $Matches[1]
             $cachedTS = [long]$Matches[2]
             $nowTS    = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
             $ageMin   = ($nowTS - $cachedTS) / 60
 
             if ($ageMin -lt $script:Config.CacheTTLMinutes) {
-                # HOT PATH: TTL válido, pular fingerprint completamente
-                $needRebuild = $false
-            } else {
-                # TTL expirado: recalcular fingerprint para verificar mudanças
-                $currentFP = script:Get-PluginFingerprint
-                if ($cachedFP -eq $currentFP) {
-                    # Fingerprint idêntico — apenas atualizar o timestamp (touch)
-                    $content = Get-Content $script:Config.CachePath -Raw -ErrorAction SilentlyContinue
-                    $newTs   = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
-                    $content = $content -replace '^# fp:(\S+)\s+ts:\d+', "# fp:`$1 ts:${newTs}"
-                    Set-Content -Path $script:Config.CachePath -Value $content -Encoding UTF8 -ErrorAction SilentlyContinue
-                    $needRebuild = $false
-                }
-                # Se fingerprint diferente, needRebuild permanece $true
+                # TTL válido: early return — dispensa Get-Command, Get-FileHash e zoxide/omp init
+                . $script:Config.CachePath
+                return
             }
+            # TTL expirado: armazena fingerprint para comparação no cold path
+            $cachedFP = $Matches[1]
         }
-        # Se header não bate no regex → formato antigo, rebuild
     }
 
-    if ($needRebuild) { script:Update-PluginCache }
+    # COLD PATH: cache ausente, expirado ou com header inválido — discovery completo
+    $zcmd = Get-Command zoxide -ErrorAction SilentlyContinue
+    $ocmd = Get-Command oh-my-posh -ErrorAction SilentlyContinue
+
+    $needRebuild = $true
+
+    if ($cachedFP) {
+        $currentFP = script:Get-PluginFingerprint -zcmd $zcmd -ocmd $ocmd
+        if ($cachedFP -eq $currentFP) {
+            # Fingerprint idêntico — apenas atualizar o timestamp (touch)
+            $content = Get-Content $script:Config.CachePath -Raw -ErrorAction SilentlyContinue
+            $newTs   = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
+            $content = $content -replace '^# fp:(\S+)\s+ts:\d+', "# fp:`$1 ts:${newTs}"
+            Set-Content -Path $script:Config.CachePath -Value $content -Encoding UTF8 -ErrorAction SilentlyContinue
+            $needRebuild = $false
+        }
+    }
+
+    if ($needRebuild) { script:Update-PluginCache -zcmd $zcmd -ocmd $ocmd }
     if (Test-Path $script:Config.CachePath) { . $script:Config.CachePath }
 }
 

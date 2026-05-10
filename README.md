@@ -1,21 +1,29 @@
 # PowerShell Config (PS7)
 
-> High-performance, modular PowerShell 7 startup profile optimized for developer ergonomics.
-> Perfil de inicialização modular e de alta performance para PowerShell 7, otimizado para ergonomia.
+> High-performance, modular PowerShell 7+ startup profile optimized for developer ergonomics.
+> Perfil de inicialização modular e de alta performance para PowerShell 7+, otimizado para ergonomia.
 
 ![PowerShell](https://img.shields.io/badge/PowerShell-7%2B-blue?logo=powershell)
 ![Windows](https://img.shields.io/badge/Windows-10%2B-blue?logo=windows)
-![Performance](https://img.shields.io/badge/Boot-Sub_300ms-brightgreen)
+![CI/CD](https://img.shields.io/badge/CI%2FCD-GitHub_Actions-2088FF?logo=githubactions)
+![Pester](https://img.shields.io/badge/Test-Pester_5.x-cf4647?logo=powershell)
+![PSScriptAnalyzer](https://img.shields.io/badge/Lint-PSScriptAnalyzer-012456?logo=powershell)
+![Oh My Posh](https://img.shields.io/badge/Prompt-Oh_My_Posh-4b32c3)
+![Zoxide](https://img.shields.io/badge/Nav-Zoxide-purple)
+![PSReadLine](https://img.shields.io/badge/Input-PSReadLine-darkgreen?logo=powershell)
+![StrictMode](https://img.shields.io/badge/Mode-Strict-orange?logo=powershell)
+![License](https://img.shields.io/badge/License-MIT-lightgrey)
 
-## ⚡ Key Technical Features / Principais Recursos Técnicos
+## Key Technical Features / Principais Recursos Tecnicos
 
-- **Extreme Performance (Sub 300ms)**: Heavily optimized boot sequence with conditional lazy loading. Non-critical modules (like `Terminal-Icons`) are loaded on-demand via aliases (e.g., `icons`), slicing boot times by over 50%.
-- **TTL Cache System**: Third-party plugins (`oh-my-posh`, `zoxide`) are cached intelligently with a 30-minute Time-To-Live. The custom MD5 hashing completely skips hash evaluation during the hot path, achieving near-zero overhead (`~5ms`).
-- **Zero-Elevation Installer**: Migrated away from symbolic links. The installer dynamically dot-sources the profile (`$global:__ProfileRepoRoot`), ensuring 100% path resolution accuracy without ever triggering UAC Administrator prompts.
-- **Strict-Mode Compliant**: The entire codebase passes `Set-StrictMode -Version Latest`, ensuring absolutely zero uninitialized variables or hidden scoping bugs.
-- **Dynamic Visual Boot Summary**: Displays a clean, highlighted boot report with dynamic colors based on performance (🟢 Green < 300ms, 🟡 Yellow < 600ms, 🔴 Red > 600ms).
+- **Extreme Performance**: Optimized boot sequence with TTL-based plugin cache (60 min). Hot path skips `Get-Command` and MD5 fingerprint entirely, achieving ~5ms overhead (~11% faster boot with cache valid). Boot time color-coded: 🟢 Green < 300ms, 🟡 Yellow < 600ms, 🔴 Red > 600ms.
+- **TTL Cache System**: Third-party plugins (`oh-my-posh`, `zoxide`) are cached with a 60-minute Time-To-Live. Cache header includes fingerprint + Unix timestamp; when TTL is valid, `Get-Command` and fingerprint recalculation are skipped entirely.
+- **Zero-Elevation Installer**: No symlinks, no UAC prompts. The installer writes a lightweight `$PROFILE` file that dot-sources the repository via `$global:__ProfileRepoRoot`, ensuring 100% path resolution without Administrator privileges.
+- **Strict-Mode Compliant**: Entire codebase passes `Set-StrictMode -Version Latest` — zero uninitialized variables, no hidden scoping bugs. Code Quality Guide enforced: no bare `catch {}`, no silent failures.
+- **Cross-Platform**: Full support for Windows, Linux (Fedora), and macOS with graceful degradation per platform.
+- **Dynamic Boot Summary**: Clean, highlighted boot report with platform info, loaded modules, and admin status.
 
-## 📖 Documentation / Documentação
+## Documentation / Documentacao
 
 Choose your preferred language / Escolha seu idioma preferido:
 
@@ -24,40 +32,45 @@ Choose your preferred language / Escolha seu idioma preferido:
   - [Modules, Features & Technical Reference](docs/en/modules.md)
   - [Troubleshooting & Tests](docs/en/troubleshooting.md)
 
-- 🇧🇷 **Documentação em Português**: [`docs/pt-br/`](docs/pt-br/)
-  - [Instalação e Compatibilidade](docs/pt-br/installation.md)
-  - [Módulos, Recursos e Referência Técnica](docs/pt-br/modules.md)
-  - [Solução de Problemas e Testes](docs/pt-br/troubleshooting.md)
+- 🇧🇷 **Documentacao em Portugues**: [`docs/pt-br/`](docs/pt-br/)
+  - [Instalacao e Compatibilidade](docs/pt-br/installation.md)
+  - [Modulos, Recursos e Referencia Tecnica](docs/pt-br/modules.md)
+  - [Solucao de Problemas e Testes](docs/pt-br/troubleshooting.md)
 
 ---
 
-## 🏗 Architecture Overview / Visão Geral da Arquitetura
+## Architecture Overview / Visao Geral da Arquitetura
 
 The profile is structured into strict modular components for isolation and fault tolerance:
 
 ```text
 config-powershell7/
-├── .github/workflows/          # CI/CD (GitHub Actions)
-├── Microsoft.PowerShell_profile.ps1 # Entrypoint Profile
+├── .github/workflows/          # CI/CD (GitHub Actions) — 2 pipelines
+├── Microsoft.PowerShell_profile.ps1 # Entrypoint Profile (Loader)
 ├── install.ps1                 # Automated Installer (Zero-UAC)
-├── install.cmd                 # Installer (double-click on Windows)
+├── uninstall.ps1               # Safe Uninstaller (backup + cache cleanup)
+├── install.cmd                 # Double-click installer (Windows)
+├── uninstall.cmd               # Double-click uninstaller (Windows)
 ├── lib/                        # Shared Utilities (DRY)
-│   ├── platform.ps1            # Cross-platform detection
-│   ├── ux-helpers.ps1          # Console output functions
+│   ├── platform.ps1            # Cross-platform detection + elevation
+│   ├── ux-helpers.ps1          # Console output (Write-Ok, Write-Warn, etc.)
 │   └── profile-paths.ps1       # Profile path resolution
 ├── modules/                    # Modular Logic
+│   ├── config/                 # Centralized configuration (critical, loaded first)
 │   ├── cache/                  # TTL Cache Engine & Lazy Loaders
-│   ├── config/                 # Centralized configuration
-│   ├── git/                    # Git shortcuts
 │   ├── navigation/             # Directory shortcuts
-│   ├── system/                 # System/Network shortcuts
-│   └── text_utils/             # Unix-like tools (grep, tail)
-└── tests/                      # Unit Tests (Strict-Mode Ready)
+│   ├── git/                    # Git shortcuts (conditional)
+│   ├── system/                 # System/Network utilities + sudo
+│   ├── psreadline/             # PSReadLine configuration + keybindings
+│   └── text_utils/             # Unix-like tools (grep, tail, sed, touch)
+└── tests/                      # Test Suites (custom + Pester)
 ```
+
+**Loading order** (critical): config → cache → navigation → git → system → psreadline → text_utils
 
 ---
 
-## 🚀 Quick Start / Início Rápido
+## Quick Start / Inicio Rapido
 
 **Option A — Double-click (Windows):**
 
@@ -77,8 +90,12 @@ cd config-powershell7
 
 ---
 
-## ⚙️ Requirements / Requisitos
+## Requirements / Requisitos
 
 - **PowerShell 7.x** (Core) highly recommended (supports PS 5.1 Legacy via graceful degradation)
 - **FiraCode Nerd Font** (for icons/ligatures)
-- **Alacritty** or Windows Terminal
+- **Alacritty** or **Windows Terminal**
+- **Git** (required for Git aliases)
+- **Oh My Posh** (optional — prompt theming)
+- **Zoxide** (optional — smart directory navigation)
+- **Terminal-Icons** (optional — file icons in listings)

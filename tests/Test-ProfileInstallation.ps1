@@ -3,12 +3,12 @@
 .SYNOPSIS
     Post-installation validation for the PowerShell Profile ecosystem.
 .DESCRIPTION
-    Comprehensive health check that validates:
-    - Symlink integrity
-    - Module loading (syntax + runtime)
-    - Function/alias availability
-    - Cache system integrity
-    - Cross-platform path resolution
+    Cross-platform post-installation validation with:
+    - Profile link integrity checks
+    - Module structure validation
+    - Syntax verification of core files
+    - Cache system validation
+    - Dependency availability checks
     Can be run at any time to diagnose issues.
 .EXAMPLE
     .\tests\Test-ProfileInstallation.ps1
@@ -24,6 +24,9 @@ param(
     [switch]$Quiet,
     [switch]$Detailed
 )
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
 
 # ── SHARED LIBS ──────────────────────────────────────────────
 $script:LibPath = Join-Path $PSScriptRoot '../lib/platform.ps1'
@@ -107,7 +110,7 @@ if (Test-Path $profilePath) {
 # ══════════════════════════════════════════════════════════════
 if (-not $Quiet) { Write-Host "  Module Syntax" -ForegroundColor Cyan }
 
-# Resolve module directory from profile content (dot-source path or symlink fallback)
+# Resolve module directory from profile content (dot-source path)
 $moduleDir = $null
 if (Test-Path $profilePath) {
     $profContent = Get-Content $profilePath -Raw -ErrorAction SilentlyContinue

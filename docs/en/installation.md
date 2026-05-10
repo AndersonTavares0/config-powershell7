@@ -2,14 +2,14 @@
 
 ## How Modularization Works
 
-The profile now uses a modular architecture to facilitate maintenance and organization. The main file `Microsoft.PowerShell_profile.ps1` acts as a **Loader**:
+The profile uses a modular architecture for maintainability and organization. The main file `Microsoft.PowerShell_profile.ps1` acts as a **Loader**:
 
-1.  It identifies the directory where the repository was cloned (`$PSScriptRoot`).
-2.  Automatically loads scripts located in `modules/` via *dot-sourcing*.
-3.  This ensures that each functionality (Git, System, Navigation) is in its own file, keeping the main profile clean and fast.
+1.  It identifies the repository root via `$global:__ProfileRepoRoot` (set by the installer) or `$PSScriptRoot` as fallback.
+2.  Automatically loads scripts from `modules/` via *dot-sourcing* in strict order: **config → cache → navigation → git → system → psreadline → text_utils**.
+3.  Each module is wrapped in `try/catch` so a failure in one non-critical module does not block the rest of the profile.
 
 > [!IMPORTANT]
-> Due to this structure, **you must keep the `modules/` folder in the same location as the profile file** for loading to work correctly.
+> You must keep the `modules/`, `lib/`, and `Microsoft.PowerShell_profile.ps1` files together in the cloned repository for loading to work correctly.
 
 ---
 
@@ -18,11 +18,13 @@ The profile now uses a modular architecture to facilitate maintenance and organi
 | Component | Minimum Version |
 |---|---|
 | Windows | 10 or higher |
+| Linux | Fedora (any modern distro with PS 7+) |
+| macOS | Any version with PS 7+ |
 | PowerShell | 5.1+ (full features on PS 7+) |
 | Oh My Posh | Any current version (optional) |
 | Zoxide | Any current version (optional) |
 
-> The profile automatically detects the PowerShell version and enables advanced PSReadLine features only on PS 7+.
+> The profile automatically detects the platform and PowerShell version, enabling advanced PSReadLine features only on PS 7+.
 
 ---
 
@@ -32,7 +34,7 @@ The profile now uses a modular architecture to facilitate maintenance and organi
 
 | Component | Installation | Required |
 |---|---|---|
-| **PowerShell 5.1+** | Included in Windows 10+<br>PS 7: `winget install Microsoft.PowerShell` | ✅ |
+| **PowerShell 7+** | `winget install Microsoft.PowerShell` (Win)<br>`sudo dnf install powershell` (Fedora) | ✅ |
 | **Nerd Font** | [nerdfonts.com](https://www.nerdfonts.com)<br>Recommended: `FiraCode Nerd Font` | ✅ |
 | **Git** | `winget install Git.Git` | ✅ |
 | **Oh My Posh** | `winget install JanDeDobbeleer.OhMyPosh` | Optional |
@@ -55,26 +57,40 @@ cd config-powershell7
 ```
 
 ### Step 3: Automated Installation (Zero-UAC)
-The repository includes an intelligent script that automates the link creation without requiring Administrator privileges.
+
+> **Windows:** You can also double-click `install.cmd`.
+
+The installer writes a lightweight `$PROFILE` file that dot-sources the repository profile via `$global:__ProfileRepoRoot`. No symlinks, no Administrator elevation required.
 
 **Run in normal terminal:**
 ```powershell
 .\install.ps1
 ```
-*This script will safely dot-source your new profile in `$PROFILE` by explicitly injecting the repository path, backing up any old profile if it exists. It runs entirely in user-space without UAC prompts.*
+
+**Non-interactive (CI):**
+```powershell
+.\install.ps1 -NonInteractive
+```
+
+The installer performs 5 steps:
+1. **ExecutionPolicy** — sets `RemoteSigned` at `CurrentUser` scope (Windows only)
+2. **Dependency check** — validates PowerShell version, optional tools, and modules
+3. **Backup** — if an existing non-ours profile exists, backs it up with a unique timestamp
+4. **Link** — writes the dot-source profile file to `$PROFILE`
+5. **Validation** — syntax-checks core files and verifies the link is correct
 
 ---
 
 ### Manual Installation (Alternative)
 
-If you prefer not to use the script, follow these steps:
+If you prefer not to use the script:
 
-1. **Unblock files:**
+1. **Unblock downloaded files:**
    ```powershell
    Get-ChildItem -Recurse *.ps1 | Unblock-File
    ```
 2. **Link via Dot-Source:**
-   Add the following line to your `$PROFILE`:
+   Add the following lines to your `$PROFILE`:
    ```powershell
    $global:__ProfileRepoRoot = "C:\Path\To\Your\config-powershell7"
    . "C:\Path\To\Your\config-powershell7\Microsoft.PowerShell_profile.ps1"
@@ -87,18 +103,25 @@ If you prefer not to use the script, follow these steps:
 To remove the profile and restore your previous environment:
 
 1.  Navigate to the repository folder.
-2.  Run the uninstallation script:
+2.  Run the uninstall script:
     ```powershell
     .\uninstall.ps1
     ```
-*The script will remove the symbolic link and offer the option to restore the backup (`.bak`) and clear the plugin cache.*
+
+> **Windows:** You can also double-click `uninstall.cmd`.
+
+The uninstaller:
+- Detects whether `$PROFILE` was created by this project (only removes ours)
+- Offers interactive backup restoration (newest first); use `-NonInteractive` to skip prompts
+- Cleans up the plugin cache file (`~\.cache_pwsh_plugins.ps1` or XDG equivalent)
+- Provides manual cleanup guidance for optional modules and tools
 
 ---
 
 ## Additional Configuration
 
 ### Oh My Posh Theme
-The profile expects the theme at `$HOME\.poshthemes\atomic.omp.json`. 
+The profile expects the theme at `$HOME\.poshthemes\atomic.omp.json` (Windows) or `$XDG_DATA_HOME/poshthemes/atomic.omp.json` (Linux).
 ```powershell
 # Create directory and download theme
 New-Item -ItemType Directory -Force "$HOME\.poshthemes" | Out-Null

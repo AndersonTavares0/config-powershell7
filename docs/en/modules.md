@@ -2,25 +2,23 @@
 
 ## Description
 
-This repository contains a custom PowerShell profile (`Microsoft.PowerShell_profile.ps1`) that is automatically loaded in every terminal session. The profile defines functions, aliases, and settings that increase productivity, standardize the environment, and reduce startup time through a plugin caching system.
+This repository contains a custom PowerShell profile (`Microsoft.PowerShell_profile.ps1`) that is automatically loaded in every terminal session. The profile defines functions, aliases, and settings that increase productivity, standardize the environment, and reduce startup time through a TTL-based plugin caching system.
 
 ---
-
 
 ## Features
 
-- **Plugin caching system** — avoids reloading Zoxide and Oh My Posh on every session
+- **TTL Plugin Cache** — 60-minute Time-To-Live for Zoxide and Oh My Posh; hot path skips `Get-Command` and MD5 entirely (~5ms)
 - **Quick navigation** — aliases for directories and filesystem movement
 - **Utility functions** — Unix-like equivalents (`touch`, `which`, `grep`, `head`, `tail`, `sed`)
-- **Git shortcuts** — full Git workflow with functions and aliases
-- **System functions** — information, processes, disk, DNS, and public IP
+- **Git shortcuts** — full Git workflow with functions and aliases (conditional on git availability)
+- **System functions** — cross-platform info, processes, disk, DNS, and public IP
 - **Clipboard** — copy and paste via pipeline
-- **Privilege elevation** — `sudo` opens an elevated session or runs a command as Admin
-- **Configured PSReadLine** — smart history, key navigation, autocomplete
-- **Boot summary** — displays startup time and loaded modules on each session
+- **Privilege elevation** — `sudo` on Windows (UAC), Linux, and macOS
+- **Configured PSReadLine** — smart history, key navigation, autocomplete, prediction
+- **Boot summary** — displays startup time, modules, and admin status on each session
 
 ---
-
 
 ## Usage
 
@@ -30,10 +28,9 @@ When opening a new PowerShell session, the profile loads automatically and displ
 PS 7.4.2 · OMP:atomic · Zoxide [85ms]
 ```
 
-The line shows: PS version, loaded modules, startup time (green < 200ms, yellow < 400ms, red > 400ms).
+The line shows: PS version, loaded modules, startup time color-coded (green < 300ms, yellow < 600ms, red > 600ms). Admin sessions append `[ADMIN]`.
 
 ---
-
 
 ## Aliases
 
@@ -48,7 +45,6 @@ All aliases available in the profile:
 | `gss` | `gst` | `git status -sb` |
 
 ---
-
 
 ## Functions
 
@@ -78,18 +74,18 @@ All aliases available in the profile:
 | `grep <pattern>` | Filter input via pipeline | `Get-Content log.txt \| grep "error"` |
 | `Copy-ToClipboard` / `cpy` | Copy pipeline to clipboard | `cat file.txt \| cpy` |
 | `pst` | Paste clipboard content | `pst` |
-| `sed <file> <find> <replace> [-Backup]` | Atomic text replacement in file | `sed config.txt "old" "new" -Backup` |
+| `sed <file> <find> <replace> [-Backup]` | Atomic text replacement in file (50MB limit) | `sed config.txt "old" "new" -Backup` |
 
 ### System
 
 | Function | Description | Example |
 |---|---|---|
-| `pkill <name>` / `k9` | Kill process by name | `pkill notepad` |
+| `pkill <name>` / `k9` | Kill process by name (cross-platform) | `pkill notepad` |
 | `pgrep <name>` | List processes by name with details | `pgrep chrome` |
-| `flushdns` | Clear DNS cache (requires Admin) | `flushdns` |
+| `flushdns` | Clear DNS cache (cross-platform) | `flushdns` |
 | `df` | Show disk usage by volume | `df` |
-| `pubip [-Force]` | Display public IP (cached per session) | `pubip` / `pubip -Force` |
-| `sysinfo` | Hardware, OS, and uptime summary | `sysinfo` |
+| `pubip [-Force]` | Display public IP (cached 5 min per session) | `pubip` / `pubip -Force` |
+| `sysinfo` | Hardware, OS, platform, and uptime summary | `sysinfo` |
 
 ### Git
 
@@ -116,7 +112,7 @@ All aliases available in the profile:
 # Open a new elevated PowerShell window
 sudo
 
-# Run a specific command as Administrator
+# Run a specific command as Administrator (Windows) or root (Linux/macOS)
 sudo Get-Service
 
 # Re-run the last command from history as Admin
@@ -127,26 +123,25 @@ sudo !!
 
 | Function | Alias | Description |
 |---|---|---|
-| `Clear-PluginCache` | `Clear-Cache` | Removes `~\.cache_pwsh_plugins.ps1` and prompts terminal restart |
+| `Clear-PluginCache` | `Clear-Cache` | Removes the plugin cache file and prompts terminal restart |
 | `Import-TerminalIcons` | `icons` | Loads Terminal-Icons module (with double-load check) |
 
 ---
 
-
 ## Performance
 
-### Plugin Caching System
+### TTL Plugin Cache System
 
-The profile avoids reloading Zoxide and Oh My Posh from scratch every session by using a cache file at `~\.cache_pwsh_plugins.ps1`.
+The profile avoids reloading Zoxide and Oh My Posh from scratch every session by using a cache file with a 60-minute Time-To-Live.
 
 **How it works:**
 
-1. On startup, the profile calculates an MD5 fingerprint based on the paths of `zoxide`, `oh-my-posh`, and the current theme.
-2. Compares the fingerprint with the one recorded in the cache.
-3. If they match, the cache is loaded directly (fast path).
-4. If they differ (tools updated, theme changed), the cache is regenerated.
+1. On startup, reads the first line of the cache file (`# fp:<hash> ts:<unix_epoch>`).
+2. If TTL is still valid (< 60 min), loads the cache directly — **skips `Get-Command` and MD5 entirely** (~5ms hot path).
+3. If TTL has expired, recalculates the MD5 fingerprint. If unchanged, only updates the timestamp (no rebuild needed).
+4. If fingerprint differs (tools updated, theme changed), regenerates the cache.
 
-**Estimated savings:** ~200ms per session when the cache is valid.
+**Estimated savings:** ~200–300ms per session when the cache is valid (depending on `Get-Command` and plugin init costs).
 
 ### PSReadLine
 
@@ -156,48 +151,60 @@ Configured with smart history (no duplicates, up to 5,000 entries), arrow key na
 
 At the end of loading, the profile displays the total boot time and loaded modules, color-coded:
 
-- 🟢 Green: < 200ms
-- 🟡 Yellow: 200–400ms
-- 🔴 Red: > 400ms
+- 🟢 Green: < 300ms
+- 🟡 Yellow: 300–600ms
+- 🔴 Red: > 600ms
 
 ---
-
 
 # Technical Reference
 
 ## Overview
 
-`Microsoft.PowerShell_profile.ps1` is a startup profile for PowerShell 5.1+/7+ on Windows. It is automatically loaded in every new session via `$PROFILE` and has the following core objectives:
+`Microsoft.PowerShell_profile.ps1` is a startup profile for PowerShell 5.1+/7+ on Windows, Linux, and macOS. It is automatically loaded in every new session via `$PROFILE` and has the following core objectives:
 
-- Minimize boot time through plugin caching
+- Minimize boot time through TTL-based plugin caching
 - Expose a consistent set of utility aliases and functions
 - Configure PSReadLine for an improved command-line editing experience
-- Ensure robustness through error handling and explicit scoping
+- Ensure robustness through error handling, explicit scoping, and structured error records
 
-The file is structured into 9 numbered sections, clearly delimited by header comments.
+The profile is modular: individual `.ps1` files are dot-sourced in strict loading order (config → cache → navigation → git → system → psreadline → text_utils).
 
 ---
 
 ## Profile Architecture
 
-The profile is now modular, separating responsibilities into individual files that are imported by the main file.
+The profile is modular, separating responsibilities into individual files imported by the main loader.
 
 ```
 config-powershell7/
-├── .github/workflows/          # CI/CD Automation (GitHub Actions)
+├── .github/workflows/          # CI/CD Automation (2 pipelines)
 ├── Microsoft.PowerShell_profile.ps1    # Main Loader
 ├── install.ps1                 # Automated installation script
-├── tests/                      # Unit testing suite
+├── uninstall.ps1               # Safe uninstallation script
+├── install.cmd                 # Double-click installer (Windows)
+├── uninstall.cmd               # Double-click uninstaller (Windows)
+├── lib/                        # Shared Utilities
+│   ├── platform.ps1            # Cross-platform detection + elevation check
+│   ├── ux-helpers.ps1          # Console output (Write-Ok, Write-Warn, etc.)
+│   └── profile-paths.ps1       # Profile path resolution
+├── tests/                      # Test suites (custom + Pester)
+│   ├── Test-ProfileInstallation.ps1    # Post-install health check
+│   ├── Microsoft.PowerShell_profile.Tests.ps1  # Unit tests (custom framework)
+│   └── Pester.Tests.ps1               # Pester CI tests
 └── modules/
+    ├── config/
+    │   └── config.ps1                  # Centralized configuration (critical — loaded first)
     ├── cache/
-    │   └── cache.ps1                   # Zoxide, Oh-My-Posh, Terminal-Icons
-    ├── git/
-    │   └── git.ps1                     # Git aliases and functions
+    │   └── cache.ps1                   # TTL cache: Zoxide, Oh-My-Posh, Terminal-Icons
     ├── navigation/
     │   └── navigation.ps1              # Navigation aliases (up, mkcd, la)
+    ├── git/
+    │   └── git.ps1                     # Git aliases and functions (conditional)
     ├── system/
-    │   ├── psreadline.ps1              # PSReadLine config and keybindings
-    │   └── system.ps1                  # Sudo, processes, DNS, IP
+    │   └── system.ps1                  # Sudo, processes, DNS, IP, sysinfo
+    ├── psreadline/
+    │   └── psreadline.ps1              # PSReadLine config and keybindings
     └── text_utils/
         └── text_utils.ps1              # Touch, unzip, sed, grep, clipboard
 ```
@@ -210,22 +217,25 @@ The execution order when opening a new session:
 
 ```
 1. PowerShell loads $PROFILE automatically (Microsoft.PowerShell_profile.ps1).
-2. The Loader starts the boot stopwatch and defines $script: variables.
-3. The Loader loads all submodules using dot-sourcing (. "$moduleDir/..."):
-   ├── cache.ps1: Checks/loads Zoxide and Oh-My-Posh cache.
-   ├── psreadline.ps1: Configures terminal and history prediction.
-   ├── navigation.ps1: Adds directory shortcuts.
-   ├── text_utils.ps1: Adds file manipulation functions.
-   ├── system.ps1: OS functions and Sudo.
-   └── git.ps1: Loads Git functions (only if 'git' is in PATH).
-4. The Loader stops the stopwatch and displays the boot summary.
+2. Guard: checks $global:ProfileLoaded to prevent double-loading.
+3. Stopwatch starts for performance measurement.
+4. Resolves repository root via $global:__ProfileRepoRoot or $PSScriptRoot.
+5. Loads config module (critical — must succeed, return on failure).
+6. Loads remaining modules in try/catch (non-critical — failure in one does not block others):
+   ├── cache/cache.ps1:       TTL check → hot path or rebuild → dot-source cache.
+   ├── navigation/navigation.ps1: Directory shortcuts (docs, dtop, up, mkcd).
+   ├── git/git.ps1:           Git functions (only if git is in PATH).
+   ├── system/system.ps1:     Platform-aware system utilities + sudo.
+   ├── psreadline/psreadline.ps1: Terminal, history, keybindings.
+   └── text_utils/text_utils.ps1: File manipulation (touch, sed, grep).
+7. Stopwatch stops and boot summary is displayed.
 ```
 
-> The function and alias definitions (step 3) are nearly instantaneous. The real boot cost is in the cache (`cache.ps1`).
+> The function and alias definitions (step 6) are nearly instantaneous. The real boot cost is in the plugin initialization (`cache.ps1`).
 
 ---
 
-## Plugin Caching System
+## Plugin Caching System (TTL)
 
 ### Purpose
 
@@ -233,28 +243,38 @@ Avoid the startup cost of `zoxide init powershell` and `oh-my-posh init pwsh` on
 
 ### Implementation
 
-**Fingerprint (Get-PluginFingerprint):**
-
-```powershell
-$zcmd = Get-Command zoxide -ErrorAction SilentlyContinue
-$ocmd = Get-Command oh-my-posh -ErrorAction SilentlyContinue
-$parts = @(
-    if ($zcmd) { $zcmd.Source } else { $null }
-    if ($ocmd) { $ocmd.Source } else { $null }
-    $script:ThemePath
-    [int](Test-Path $script:ThemePath)
-)
-$bytes = [System.Text.Encoding]::UTF8.GetBytes($parts -join '|')
-$md5   = [System.Security.Cryptography.MD5]::Create()
-try    { [System.BitConverter]::ToString($md5.ComputeHash($bytes)) -replace '-', '' }
-finally{ $md5.Dispose() }
+**Cache format (header line):**
+```
+# fp:<md5_hash> ts:<unix_timestamp>
 ```
 
-The fingerprint is derived from binary paths and the existence of the theme file. Any change (tool update, theme switch) invalidates the cache.
+**TTL flow (`Initialize-PluginCache`):**
 
-**Regeneration (Update-PluginCache):**
+1. **Cache exists + TTL valid (< 60 min):** Load cache directly — **~5ms hot path** (no `Get-Command`, no MD5).
+2. **Cache exists + TTL expired:** Recalculate fingerprint. If unchanged, only update timestamp. If changed, rebuild cache.
+3. **No cache:** Full rebuild (Get-Command zoxide + oh-my-posh, MD5 fingerprint, StringBuilder generation).
+
+**Fingerprint (`Get-PluginFingerprint`):**
+
+The fingerprint is derived from binary paths, file versions (via `VersionInfo`), theme path, theme existence, and theme content hash (MD5). Any change (tool update, theme switch, theme edit) invalidates the cache.
+
+```powershell
+$parts = @(
+    $zcmd.Source                     # zoxide binary path
+    $zcmd.VersionInfo.FileVersion    # zoxide version
+    $ocmd.Source                     # oh-my-posh binary path
+    $ocmd.VersionInfo.FileVersion    # oh-my-posh version
+    $script:Config.ThemePath         # theme file path
+    [int](Test-Path $ThemePath)      # theme existence
+    (Get-FileHash $ThemePath).Hash   # theme content hash
+)
+# MD5 with guaranteed Dispose via try/finally
+```
+
+**Regeneration (`Update-PluginCache`):**
 
 The cache is a dynamically generated `.ps1` file built via `StringBuilder`. It contains:
+- Header: `# fp:<hash> ts:<unix_epoch>`
 - Zoxide initialization code (`zoxide init powershell`)
 - Oh My Posh initialization code (with specific theme if it exists, or default)
 - `$script:StartupModules.Add(...)` lines for the boot summary
@@ -262,15 +282,14 @@ The cache is a dynamically generated `.ps1` file built via `StringBuilder`. It c
 **Loading:**
 
 ```powershell
-if ($script:CachedFP -ne $script:CurrentFP) { script:Update-PluginCache }
-if (Test-Path $script:CachePath)             { . $script:CachePath }
+if ($needRebuild) { script:Update-PluginCache -zcmd $zcmd -ocmd $ocmd }
+if (Test-Path $script:Config.CachePath) { . $script:Config.CachePath }
 ```
 
 ### Cache location
 
-```
-$HOME\.cache_pwsh_plugins.ps1
-```
+- **Windows:** `$HOME\.cache_pwsh_plugins.ps1`
+- **Linux/macOS (XDG):** `$XDG_CACHE_HOME/pwsh/plugins_cache.ps1` (fallback: `$HOME/.cache/pwsh/plugins_cache.ps1`)
 
 ### Manual invalidation
 
@@ -294,17 +313,19 @@ Import-Module Terminal-Icons -ErrorAction SilentlyContinue
 
 ### PSReadLine
 
-Checked with `Get-Command Set-PSReadLineOption` before configuring — if unavailable, the block is silently skipped. Features conditional on PS 7+:
+Checked with `Get-Command Set-PSReadLineOption` before configuring — if unavailable, the block is silently skipped. Prediction features are conditional on PS 7+:
 
 ```powershell
-if ($script:PSMajor -ge 7) {
+if ($script:Config.PSMajor -ge 7) {
     Set-PSReadLineOption -PredictionSource History -PredictionViewStyle ListView
 }
 ```
 
+Keybindings: UpArrow (HistorySearchBackward), DownArrow (HistorySearchForward), Tab (MenuComplete), Ctrl+D (DeleteChar), Ctrl+W (BackwardDeleteWord), Ctrl+Left/Right (word navigation).
+
 ### Zoxide and Oh My Posh
 
-Initialized via cache. `Update-PluginCache` checks availability with `Get-Command` before including in the cache.
+Initialized via TTL cache. `Update-PluginCache` checks availability with `Get-Command` before including in the cache. Failures are logged with `Write-Warning`.
 
 ---
 
@@ -326,7 +347,7 @@ Initialized via cache. `Update-PluginCache` checks availability with `Get-Comman
 
 ## Functions — Technical Detail
 
-### Section 4: Navigation
+### Navigation
 
 **`mkcd`**
 - `[Parameter(Mandatory)]` — enables tab completion and prevents no-argument calls
@@ -337,7 +358,7 @@ Initialized via cache. `Update-PluginCache` checks availability with `Get-Comman
 - Accepts `ValueFromPipeline` — allows `"file.txt" | nf`
 - Processed in `process {}` block to support multiple pipeline items
 
-### Section 5: Files and Text
+### Files and Text
 
 **`touch`**
 - If file exists: updates `LastWriteTime` via `(Get-Item $File).LastWriteTime = Get-Date`
@@ -351,7 +372,7 @@ Initialized via cache. `Update-PluginCache` checks availability with `Get-Comman
 **`unzip`**
 - Default destination: `.` (current directory)
 - Uses `Expand-Archive` with `-Force` (overwrites)
-- `try/catch` with `Write-Error` on failure
+- Structured `ErrorRecord` via `$PSCmdlet.WriteError()`
 
 **`head` / `tail`**
 - `head`: `Get-Content -TotalCount $Lines`
@@ -370,51 +391,73 @@ Initialized via cache. `Update-PluginCache` checks availability with `Get-Comman
 
 **`sed`**
 - Reads with `[System.IO.File]::ReadAllText` with UTF8+BOM encoding (compatible with PS 5.1 and 7)
-- Writes to a temporary `.tmp` file in the same directory as the target
+- **50MB file size limit** — larger files rejected with structured error (DoS protection)
+- Writes to a random-named `.tmp` file in the same directory as the target
 - `Move-Item` from `.tmp` to target = atomic OS-level rename operation
 - Optional `-Backup` creates a `.bak` before replacement
 - `.tmp` cleanup in `catch` prevents orphaned files
+- Supports `-WhatIf` via `SupportsShouldProcess`
 
-### Section 6: System
+### System
+
+**`pkill`**
+- Cross-platform: uses `Stop-Process` on Windows, native `/usr/bin/pkill -f` on Linux/macOS
+- Supports `-WhatIf` via `SupportsShouldProcess`
+- Structured `ErrorRecord` on failure
 
 **`pgrep`**
-- Uses `Where-Object { $_.ProcessName -like "*$Name*" }` instead of `-Name` directly, because `Get-Process -Name` does not accept mid-string wildcards
+- Cross-platform: uses `Where-Object` filter on Windows, native `/usr/bin/pgrep -f` on Linux/macOS
+- On Windows: uses `Where-Object { $_.ProcessName -like "*$Name*" }` because `Get-Process -Name` does not accept mid-string wildcards
 - Displays: Id, ProcessName, CPU, Mem(MB) formatted
+- Structured `ErrorRecord` on failure
 
 **`pubip`**
-- Cache in `$script:CachedPublicIP` — avoids multiple requests per session
+- Cache in `$script:CachedPublicIP` with 5-minute TTL — avoids multiple requests per session
 - `-Force` bypasses cache and fetches fresh value
 - 3 fallback endpoints: `api.ipify.org`, `icanhazip.com`, `ifconfig.me/ip`
 - 3-second timeout per endpoint
 - Catches `[System.Net.WebException]` separately for better diagnostics
+- Structured `ErrorRecord` if all endpoints fail
 
 **`sysinfo`**
-- Primary: `Get-CimInstance Win32_OperatingSystem` + `Win32_ComputerSystem`
-- Fallback (if CIM fails): reads `HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion`
-- Returns `PSCustomObject` with fields: Computer, User, OS, PS, Uptime, RAM_GB
+- Cross-platform: dispatches to platform-specific functions
+  - Windows: `Get-WindowsSystemInfo` — uses `Get-CimInstance Win32_OperatingSystem` + `Win32_ComputerSystem`
+  - Linux: `Get-LinuxSystemInfo` — reads `/etc/os-release`, `/proc/meminfo`
+  - macOS: `Get-MacSystemInfo` — uses `sysctl` for memory and boot time
+- macOS uptime: parses `sysctl -n kern.boottime` with regex `sec\s*=\s*(\d+)`, converts via `[DateTimeOffset]::FromUnixTimeSeconds()`
+- Returns `PSCustomObject` with platform-specific fields
+- Fallback generates a generic object with best-effort data
 
 **`flushdns`**
-- Checks `$script:IsAdmin` before executing `Clear-DnsClientCache`
-- Silent failure with `Write-Warning` if not Admin
+- Cross-platform: `Clear-DnsClientCache` (Windows Admin), `systemd-resolve --flush-caches` / `nscd -i hosts` (Linux), `dscacheutil -flushcache` + `killall -HUP mDNSResponder` (macOS)
+- Windows: checks `$script:Config.IsAdmin` before executing; silent failure with `Write-Warning` if not Admin
 
-### Section 7: Git
+**`df`**
+- Cross-platform: `Get-Volume` on Windows, native `df -h` on Linux/macOS
+- Structured `ErrorRecord` on failure
+
+### Git
 
 **`gcom`**
 - Checks `$LASTEXITCODE` after `git add .` — if it fails, does not execute the commit
 
 **`lazyg`**
-- Detects interactive environment via `[Environment]::UserInteractive` and `$env:CI`, `$IsLinux`, `$IsMacOS`
+- Detects interactive environment via `[Environment]::UserInteractive`, `$env:CI`, `$IsLinux`, `$IsMacOS`
 - In non-interactive environments (CI, Linux, macOS): skips confirmation (or requires `-Force`)
 - Uses `[Console]::ReadLine()` instead of `ReadKey()` — compatible with environments without an interactive console
-- Checks `$LASTEXITCODE` after `git add` and `git commit` — failure at any step aborts the rest
+- Checks `$LASTEXITCODE` after each step (`git add`, `git commit`, `git push`) — failure at any step aborts the rest
 
-### Section 8: Sudo
+### Sudo
 
 **`sudo`**
+- Cross-platform: detects Linux/macOS and delegates to native `/usr/bin/sudo` if available
+- Windows: `Start-Process -Verb RunAs` with UAC elevation
 - Detects `!!` as a special argument and replaces it with the last history command (`Get-History -Count 1`)
-- Selects `pwsh` (PS 7+) or `powershell` (PS 5.1) based on `$script:PSMajor`
+- Windows: selects `pwsh` (PS 7+) or `powershell` (PS 5.1) based on `$script:Config.PSMajor`
 - Uses `-EncodedCommand` with Unicode Base64 to preserve quotes and special characters in complex commands
-- Without arguments: opens a new empty elevated session
+- Sanitizes commands: removes null bytes and control characters (U+0000–U+001F except tab/newline)
+- Supports `-WhatIf` via `SupportsShouldProcess`
+- Structured `ErrorRecord` on failure
 
 ---
 
@@ -426,7 +469,21 @@ All variables shared between functions use explicit `$script:`, preventing leaka
 
 ### `script:`-scoped functions
 
-`Get-PluginFingerprint` and `Update-PluginCache` are declared as `function script:...`, making them invisible to end users and limiting their scope to the profile file.
+Internal functions (`Get-PluginFingerprint`, `Update-PluginCache`, `Initialize-PluginCache`, `Get-WindowsSystemInfo`, `Get-LinuxSystemInfo`, `Get-MacSystemInfo`, `Test-InteractiveSession`) are declared as `function script:...`, making them invisible to end users and limiting their scope to the module.
+
+### Structured error handling
+
+Critical functions use `[CmdletBinding()]` with `$PSCmdlet.WriteError()` for structured `ErrorRecord` objects, enabling proper `-ErrorAction` support and `$Error` variable integration:
+
+- `pkill`, `pgrep`, `flushdns`, `df`, `pubip` — structured `ErrorRecord` with descriptive error IDs
+- `sed`, `unzip` — structured `ErrorRecord` with specific error categories
+
+### No silent failures
+
+- All `catch` blocks log at minimum `Write-Verbose` (informational) or `Write-Warning` (actual failures)
+- Zero bare `catch {}` blocks in the codebase
+- Plugin init failures write `Write-Warning` (visible to user)
+- Cache save failure writes `Write-Warning`
 
 ### Guaranteed Dispose
 
@@ -434,15 +491,11 @@ The MD5 object in `Get-PluginFingerprint` uses `try/finally` to guarantee `Dispo
 
 ### Boot summary in scriptblock
 
-Section 9 runs inside `& { ... }` so local variables (`$ms`, `$color`, `$plugins`, `$admin`) do not leak into the user session.
+The boot summary runs inside the loader file with local variables (`$bootMs`, `$color`, `$moduleList`, `$adminTag`) that do not leak into the user session.
 
-### Error handling
+### `$ErrorActionPreference = 'Stop'`
 
-- `try/catch` in functions with side effects (`mkcd`, `unzip`, `sed`, `sysinfo`, `lazyg`)
-- `Write-Error` for fatal function errors
-- `Write-Warning` for warning conditions (no permission, endpoint unavailable)
-- `Write-Verbose` for diagnostic information (no noise in normal output)
-- `-ErrorAction SilentlyContinue` on `Get-Command` and other existence checks
+Enforced in all standalone scripts (`install.ps1`, `uninstall.ps1`, test files, CI pipeline).
 
 ### ExecutionPolicy
 
@@ -450,7 +503,7 @@ The profile requires `RemoteSigned` or higher at `CurrentUser` scope. Downloaded
 
 ### Sudo and privileges
 
-`flushdns` checks `$script:IsAdmin` before executing. `sudo` uses `Start-Process -Verb RunAs` to request UAC elevation, without storing credentials.
+`flushdns` checks `$script:Config.IsAdmin` before executing. `sudo` uses platform-appropriate elevation mechanisms without storing credentials.
 
 ---
 
@@ -458,14 +511,17 @@ The profile requires `RemoteSigned` or higher at `CurrentUser` scope. Downloaded
 
 | Scenario | Behavior |
 |---|---|
+| Windows 10+ | Full support — all features enabled |
+| Linux (Fedora) | Full support — native `sudo`, XDG paths, native tools |
+| macOS | Full support — native `sudo`, `sysctl`, platform detection |
 | PS 5.1, without updated PSReadLine | PSReadLine configured without history prediction |
 | PS 7+, with PSReadLine | History prediction enabled with ListView |
-| No git in PATH | Entire section 7 skipped; `Write-Verbose` logs the reason |
-| Without Zoxide | Cache generated without Zoxide initialization |
-| Without Oh My Posh | Cache generated without Oh My Posh initialization |
+| No git in PATH | Git module entirely skipped; `Write-Verbose` logs the reason |
+| Without Zoxide | Cache generated without Zoxide initialization; `Write-Warning` on init fail |
+| Without Oh My Posh | Cache generated without Oh My Posh initialization; `Write-Warning` on init fail |
 | Without `atomic.omp.json` theme | Oh My Posh uses default theme automatically |
-| Linux/macOS (PS Core) | `lazyg` skips interactive confirmation; `df` and `flushdns` may fail |
-| CI environment (`$env:CI`) | `lazyg` detects and skips interactive confirmation |
+| CI environment (`$env:CI`) | `lazyg` skips interactive confirmation; `sudo` skips `ShouldProcess` prompts |
+| Non-admin Windows session | `flushdns` warns; `sudo` opens UAC prompt |
 
 ---
 
@@ -475,43 +531,65 @@ The profile requires `RemoteSigned` or higher at `CurrentUser` scope. Downloaded
 
 | Scenario | Expected boot time |
 |---|---|
-| Without Oh My Posh / Zoxide, valid cache | < 100ms |
-| With Oh My Posh + Zoxide, valid cache | < 200ms |
-| With Oh My Posh + Zoxide, cache miss | < 400ms (single regeneration) |
+| With Oh My Posh + Zoxide, valid cache (TTL hot path) | < 150ms |
+| With Oh My Posh + Zoxide, TTL expired, fingerprint unchanged | < 200ms |
+| With Oh My Posh + Zoxide, cache miss (full rebuild) | < 400ms |
 
 ### Applied techniques
 
 | Technique | Where | Impact |
 |---|---|---|
-| Plugin initialization cache | Section 2 | ~200ms saved per session |
-| Incremental MD5 fingerprint | `Get-PluginFingerprint` | Invalidates cache only when necessary |
+| TTL cache with hot path | cache.ps1 (`Initialize-PluginCache`) | ~5ms when valid (skips `Get-Command` and MD5 entirely) |
+| Incremental MD5 fingerprint with versions | `Get-PluginFingerprint` | Invalidates cache on tool updates |
+| Theme content hash in fingerprint | `Get-PluginFingerprint` | Invalidates on theme edits |
 | `StringBuilder` for cache generation | `Update-PluginCache` | Avoids string concatenation in loop |
-| `StringBuilder` in `Copy-ToClipboard` | Section 5 | Efficiency in long pipelines |
-| Single-line cache read | Section 2 (`-TotalCount 1`) | Avoids reading entire file to verify fingerprint |
-| Conditional Git loading | Section 7 | Avoids failure if git not installed |
-| `filter` for `grep` | Section 5 | Line-by-line processing without buffering |
-| `[System.IO.File]` for `sed` | Section 5 | Consistent encoding between PS 5.1 and 7 |
+| `StringBuilder` in `Copy-ToClipboard` | text_utils.ps1 | Efficiency in long pipelines |
+| Single-line cache read | `Initialize-PluginCache` (`-TotalCount 1`) | Avoids reading entire file for TTL check |
+| Conditional Git loading | git.ps1 | Avoids failure if git not installed |
+| `filter` for `grep` | text_utils.ps1 | Line-by-line processing without buffering |
+| `[System.IO.File]` for `sed` | text_utils.ps1 | Consistent encoding between PS 5.1 and 7 |
+| 5-min TTL on `pubip` | system.ps1 | Avoids network calls in same session |
+| Early return before `Get-Command` | cache.ps1 (`Initialize-PluginCache` hot path) | Saves 40–100ms by deferring `Get-Command zoxide`/`oh-my-posh` to cold path |
+| Navigation lazy-init (`docs`, `dtop`) | navigation.ps1 | Saves 2–6ms by deferring `[Environment]::GetFolderPath` to first call |
 
 ---
+
 ---
 
 ## Automated Testing and CI
 
-The project includes a unit testing suite to ensure that functions and aliases work as expected across different PowerShell versions.
+### Three Test Suites
 
-### Local Testing Suite
-Tests are located in `tests/Microsoft.PowerShell_profile.Tests_diff.ps1`. They verify:
-- Profile loading without errors.
-- Navigation functionality (`up`, `home`, `mkcd`).
-- File and text operations (`touch`, `nf`, `head`, `tail`).
-- Existence of critical aliases and system functions.
+| Test Suite | Framework | Use |
+|---|---|---|
+| `tests/Pester.Tests.ps1` | Pester 5.x | CI pipeline — strict invariant tests, coverage targets |
+| `tests/Test-ProfileInstallation.ps1` | Custom | Post-install health check — 64 checks across 6 categories |
+| `tests/Microsoft.PowerShell_profile.Tests.ps1` | Custom | Behavioral integration — navigation, file ops, error handling |
 
-To run tests locally:
+### Running Tests
+
 ```powershell
-pwsh -c "./tests/Microsoft.PowerShell_profile.Tests_diff.ps1 -Verbose"
+# Pester CI tests
+Invoke-Pester tests/Pester.Tests.ps1
+
+# Post-install health check
+.\tests\Test-ProfileInstallation.ps1 -Detailed
+.\tests\Microsoft.PowerShell_profile.Tests.ps1 -Verbose
+
+# After sourcing the profile:
+Test-ProfileInstallation
 ```
 
-### GitHub Actions (CI)
-The repository uses **GitHub Actions** to automatically validate every push or pull request.
-- **Environment:** Tests run on **Windows Server** instances (`windows-latest`).
-- **Validation:** Ensures that code changes do not break initialization or core functions in clean environments.
+### GitHub Actions (CI/CD)
+
+Two pipelines automatically validate every push or pull request to `main`:
+
+- **`test.yml`** — copies profile + modules to `$PROFILE` path, runs custom test suites
+- **`powershell-pipeline.yml`** — 5-stage strict pipeline:
+  1. PSScriptAnalyzer (strict rules)
+  2. Security audit (hardcoded credentials, `$ErrorActionPreference = 'Stop'`)
+  3. Pester unit tests (coverage on core modules)
+  4. Environmental validation (clean session)
+  5. Deploy/artifact (zip packaging)
+
+Environment: **Windows Server** (`windows-latest`).

@@ -85,33 +85,45 @@ Clear-Cache
 
 ---
 
-
 ## Testes
 
-O projeto inclui uma suíte de testes unitários avançada e compatível com **Strict-Mode** em `tests/Test-ProfileInstallation.ps1`.
+O projeto inclui três suítes de teste:
 
-### Executar
+### 1. Testes Pester (CI)
+
+`tests/Pester.Tests.ps1` — Suíte Pester de alta integridade usada no CI/CD (`powershell-pipeline.yml`). Cobre módulos de platform, config, cache, git, system e text_utils com testes de violação de invariantes (princípio Crash > Corrupt).
+
+```powershell
+Invoke-Pester tests/Pester.Tests.ps1
+```
+
+### 2. Profile Installation Health Check
+
+`tests/Test-ProfileInstallation.ps1` — Verificação pós-instalação abrangente usando framework customizado (compatível com Strict-Mode).
 
 ```powershell
 cd config-powershell7
 .\tests\Test-ProfileInstallation.ps1
 
 # Com saída detalhada
-.\tests\Test-ProfileInstallation.ps1 -Verbose
+.\tests\Test-ProfileInstallation.ps1 -Detailed
+
+# Ou após carregar o perfil:
+Test-ProfileInstallation
 ```
 
-### Cobertura
+#### Cobertura
 
 | Categoria | Itens Testados |
 |---|---|
-| **Integridade do Perfil** | Garante a lógica correta de injeção dot-source |
+| **Integridade do Perfil** | Verifica a lógica de dot-source no `$PROFILE` |
 | **Sintaxe dos Módulos** | Faz o parser estrito de todos os scripts |
-| **Carregamento (Boot)** | Valida o tempo de performance extrema (< 200ms) |
-| **Funções e Aliases** | Verifica a existência das lógicas (Git, Sistema, Arquivos) |
-| **Sistema de Config** | Verifica a presença de objetos e variáveis |
-| **Sistema de Cache** | Valida os timestamps de Time-To-Live (TTL) |
+| **Carregamento (Boot)** | Mede o tempo de boot (WARN aos 200ms, FAIL aos 400ms) |
+| **Funções e Aliases** | Verifica existência de 26 funções + 5 aliases |
+| **Sistema de Config** | Valida `$script:Config` e todas as 8 propriedades |
+| **Sistema de Cache** | Valida header TTL (fingerprint + timestamp) |
 
-### Saída esperada
+#### Saída esperada
 
 ```
   ╔══════════════════════════════════════════════╗
@@ -119,76 +131,57 @@ cd config-powershell7
   ╚══════════════════════════════════════════════╝
 
   Profile Integrity
-  ✔ Profile/Type - Profile dot-sources the config
+  ✔ Profile/Type — Profile dot-sources the config
   ...
   ════════════════════════════════════════════
-  Results: 57 PASS, 0 FAIL, 0 WARN, 0 SKIP (57 total)
+  Results: 63 PASS, 0 FAIL, 0 WARN, 0 SKIP (64 total)
   ════════════════════════════════════════════
 ```
 
-- 🟢 Todos passaram: o perfil está funcionando perfeitamente.
-- 🔴 Algum falhou: verifique as dependências e a Política de Execução.
+### 3. Testes Unitários (Framework Customizado)
+
+`tests/Microsoft.PowerShell_profile.Tests.ps1` — Suíte com framework customizado cobrindo performance, config, cache TTL, navegação, operações de arquivo, processamento de texto, funções de sistema, Git e tratamento estruturado de erros.
+
+```powershell
+.\tests\Microsoft.PowerShell_profile.Tests.ps1 -Verbose
+```
 
 ---
 
-# Integração de Testes
+## Integração de Testes
 
-## Integração com Testes
+### Pipelines CI/CD
+
+O repositório utiliza **GitHub Actions** com dois pipelines:
+
+| Pipeline | Arquivo | Gatilhos |
+|---|---|---|
+| **CI Original** | `.github/workflows/test.yml` | push/PR para `main` |
+| **CI/CD Estrito** | `.github/workflows/powershell-pipeline.yml` | push/PR para `main` |
+
+O pipeline estrito (`powershell-pipeline.yml`) tem 5 estágios:
+1. **Análise Estática** — PSScriptAnalyzer com regras estritas, proíbe `Write-Host` em modules/lib
+2. **Auditoria de Segurança** — Detecção de credenciais, reforço de `$ErrorActionPreference = 'Stop'`
+3. **Testes Pester** — Cobertura nos módulos principais (`config.ps1`, `cache.ps1`, `git.ps1`, `system.ps1`, `text_utils.ps1`, `platform.ps1`)
+4. **Validação Ambiental** — Sessão limpa, sem vazamento de perfil
+5. **Deploy/Artefato** — Empacotamento zip com step outputs
 
 ### Framework
 
-O arquivo `tests/Test-ProfileInstallation.ps1` implementa um framework de testes customizado otimizado para ambientes de CI/CD.
+- `tests/Test-ProfileInstallation.ps1` implementa framework customizado (funções: `Test-Result`, `Test-Skip`, `Assert-True`, `Assert-Equal`, etc.) otimizado para saída diagnóstica.
+- `tests/Pester.Tests.ps1` usa Pester 5.x para CI — inclui testes de violação de invariantes que injetam estados ilegais para verificar o princípio "Crash > Corrupt".
+- `tests/Microsoft.PowerShell_profile.Tests.ps1` usa o mesmo framework customizado para testes de integração comportamental.
 
-### Estratégia
+### Estratégia de Testes
 
-O arquivo de testes verifica dinamicamente `$global:ProfileLoaded` e avalia o perfil em isolamento para prevenir efeitos colaterais (side-effects), garantindo zero falsos-positivos mesmo sob a bandeira imperdoável de `Set-StrictMode -Version Latest`.
-
-### Suítes de teste (15 suítes)
-
-| # | Suíte | Abordagem |
-|---|---|---|
-| 1 | Navigation Functions | Executa e verifica `Get-Location` |
-| 2 | File Operations (mkcd, nf, touch) | Cria arquivos/diretórios temporários e verifica existência |
-| 3 | Text Processing (head, tail) | Cria arquivo com 5 linhas, verifica contagem e conteúdo |
-| 4 | System Functions (pkill, pgrep) | Verifica existência das funções/aliases |
-| 5 | Helper Functions (which) | Executa e verifica ausência de erro |
-| 6 | Clipboard Functions (cpy, pst) | Verifica existência |
-| 7 | Git Functions | Verifica existência de todas as 13 funções/aliases (skip se git ausente) |
-| 8 | Plugin Cache System | Verifica existência de funções e aliases de cache |
-| 9 | Display Functions (la, ll) | Executa e verifica retorno não-nulo |
-| 10 | Additional Navigation (dtop, up2) | Executa e verifica `Get-Location` |
-| 11 | File Operation Utilities (unzip) | Verifica existência |
-| 12 | System Information (df, pubip, sysinfo) | Executa (skip df no Linux) e verifica retorno |
-| 13 | Advanced Text Processing (grep, sed) | Verifica existência |
-| 14 | Copy-ToClipboard | Verifica existência |
-| 15 | flushdns | Verifica existência |
+Os arquivos de teste verificam dinamicamente `$global:ProfileLoaded` e avaliam o perfil em isolamento para prevenir efeitos colaterais, garantindo zero falsos-positivos sob `Set-StrictMode -Version Latest`.
 
 ### Tratamento de plataforma nos testes
 
 - `docs` e `dtop`: verificam se `GetFolderPath()` retorna string vazia (Linux) e pulam o assert de localização
-- `df`: executado apenas se `$PSVersionTable.OS -match 'Windows'`
-- `up2`: verifica se há avô antes de executar
-
-### Saída de testes
-
-```
-========================================
-PowerShell Profile Unit Tests
-========================================
-  ✓ PASS: Profile loads without errors
-  ✓ PASS: docs function navigates to Documents
-  ...
-  ✓ PASS: flushdns function exists
-========================================
-TEST SUMMARY
-========================================
-Total Tests: XX
-Passed:      XX
-Failed:      0
-========================================
-```
-
-Exit code: `0` (sucesso) ou `1` (falha).
+- `df`: executado apenas em Windows
+- `up2`: verifica se há diretório avô antes de executar
+- `pubip`: trata indisponibilidade de rede com graça (pula, não falha)
 
 ---
 
@@ -196,29 +189,31 @@ Exit code: `0` (sucesso) ou `1` (falha).
 
 ### Boas decisões
 
-- **Fingerprint MD5 com Dispose garantido** — trata corretamente recurso não gerenciado
-- **`filter` para `grep`** — processamento de pipeline correto e eficiente
-- **`sed` com escrita atômica** — arquivo temporário no mesmo volume garante rename de SO
+- **Fingerprint MD5 com Dispose garantido** — trata corretamente recurso não gerenciado via `try/finally`
+- **`filter` para `grep`** — processamento de pipeline eficiente linha a linha
+- **`sed` com escrita atômica + limite de tamanho** — arquivo temporário no mesmo volume garante rename de SO; limite de 50MB previne DoS
 - **`$script:` explícito** — evita problemas de escopo silenciosos
 - **`lazyg` com detecção de CI** — comportamento correto em ambientes automatizados
-- **`gcmt` ao invés de `gcm`** — evita colisão com `Get-Command`
-- **`gss` ao invés de `gs`** — evita colisão com `Get-Service`
-- **`sudo !!`** — QoL feature implementada de forma robusta com histórico do PS
+- **`gcmt` ao invés de `gcm`** — evita colisão com alias nativo `Get-Command`
+- **`gss` ao invés de `gs`** — evita colisão com `Get-Service` no PS 5.1
+- **`sudo !!`** — feature QoL implementada de forma robusta com histórico do PS
+- **Cache TTL (60 min)** — hot path ignora `Get-Command` e MD5 completamente; recálculo de fingerprint apenas quando TTL expira
+- **`sudo` cross-platform** — elevação Windows via `Start-Process -Verb RunAs`, Linux/macOS via `/usr/bin/sudo` nativo
 
 ### Observações
 
 - **`sudo` usa `-NoExit`** — a janela elevada não fecha após executar o comando, o que pode ser inesperado para usuários que esperam comportamento de `sudo` Unix (fechar ao terminar)
-- **`pubip` sem timeout configurável** — o timeout está fixo em 3 segundos; em redes lentas pode haver delay perceptível na primeira chamada
-- **Cache não tem TTL por tempo** — o cache é invalidado apenas por mudança de fingerprint, não por decurso de tempo. Se uma ferramenta for atualizada sem alterar o caminho do binário, o cache não será regenerado automaticamente
-- **`sed` faz substituição simples** — não suporta regex; usa `String.Replace()` literal, diferente do `sed` Unix
+- **`pubip` sem timeout configurável** — o timeout está fixo em 3 segundos por endpoint; em redes lentas pode haver delay perceptível na primeira chamada
+- **Cache TTL é por tempo (60 min)** — o cache é invalidado por mudança de fingerprint OU expiração do TTL, o que ocorrer primeiro
+- **`sed` faz substituição literal** — não suporta regex; usa `String.Replace()` literal, diferente do `sed` Unix
+- **`sed` tem limite de 50MB** — arquivos maiores são rejeitados para proteção DoS
 
 ### Melhorias possíveis (sem alterar comportamento atual)
 
-- Adicionar suporte a TTL no cache de plugins (ex: expirar após N dias)
 - Expor `-TimeoutSec` como parâmetro em `pubip`
 - Suporte a regex em `sed` via parâmetro `-Regex`
 - Adicionar `-WhatIf` em `sed` para visualizar mudanças antes de aplicar
 
 ---
 
-*Revisão: 29/04/2026 — Compatível com PS 5.1+ / PS Core 7+ / Windows 10+*
+*Revisão: 05/2026 — Compatível com PS 5.1+ / PS Core 7+ / Windows 10+ / Linux / macOS*
