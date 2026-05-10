@@ -1,4 +1,4 @@
-# Troubleshooting & Tests
+﻿# Troubleshooting & Tests
 
 ## Troubleshooting
 
@@ -91,7 +91,7 @@ The project includes three test suites:
 
 ### 1. Pester Tests (CI)
 
-`tests/Pester.Tests.ps1` — High-integrity Pester test suite used in CI/CD (`powershell-pipeline.yml`). Covers platform, config, cache, git, system, and text_utils modules with invariant-violation tests (Crash > Corrupt principle).
+`tests/Pester.Tests.ps1` — High-integrity Pester test suite used in CI/CD. Covers platform, config, cache, git, system, and text_utils modules with invariant-violation tests (Crash > Corrupt principle).
 
 ```powershell
 Invoke-Pester tests/Pester.Tests.ps1
@@ -150,21 +150,15 @@ Test-ProfileInstallation
 
 ## Test Integration
 
-### CI/CD Pipelines
+### CI/CD Pipeline
 
-The repository uses **GitHub Actions** with two pipelines:
+The repository uses **GitHub Actions** with one pipeline:
 
 | Pipeline | File | Triggers |
 |---|---|---|
 | **Original CI** | `.github/workflows/test.yml` | push/PR to `main` |
-| **Strict CI/CD** | `.github/workflows/powershell-pipeline.yml` | push/PR to `main` |
 
-The strict pipeline (`powershell-pipeline.yml`) has 5 stages:
-1. **Static Analysis** — PSScriptAnalyzer with strict rules, no `Write-Host` in modules/lib
-2. **Security Audit** — Hardcoded credential detection, `$ErrorActionPreference = 'Stop'` enforcement
-3. **Pester Unit Tests** — Coverage targets on core modules (`config.ps1`, `cache.ps1`, `git.ps1`, `system.ps1`, `text_utils.ps1`, `platform.ps1`)
-4. **Environmental Validation** — Clean session, no profile leakage
-5. **Deploy/Artifact** — Zip packaging with step outputs
+The pipeline copies profile + modules to `$PROFILE` path and runs the custom test suites.
 
 ### Framework
 
@@ -174,7 +168,7 @@ The strict pipeline (`powershell-pipeline.yml`) has 5 stages:
 
 ### Test Strategy
 
-The test files dynamically verify `$global:ProfileLoaded` and evaluate the profile in isolation to prevent side-effects, guaranteeing zero false-positives under `Set-StrictMode -Version Latest`.
+The test files dynamically verify `$env:__PROFILE_LOADED` and evaluate the profile in isolation to prevent side-effects, guaranteeing zero false-positives under `Set-StrictMode -Version Latest`.
 
 ### Platform handling in tests
 
@@ -189,7 +183,7 @@ The test files dynamically verify `$global:ProfileLoaded` and evaluate the profi
 
 ### Good decisions
 
-- **MD5 fingerprint with guaranteed Dispose** — correctly handles unmanaged resource via `try/finally`
+- **SHA256 fingerprint with guaranteed Dispose** — correctly handles unmanaged resource via `try/finally`
 - **`filter` for `grep`** — efficient line-by-line pipeline processing
 - **`sed` with atomic write + size limit** — temp file on same volume guarantees OS-level rename; 50MB limit prevents DoS
 - **Explicit `$script:` scope** — avoids silent scoping issues
@@ -197,7 +191,7 @@ The test files dynamically verify `$global:ProfileLoaded` and evaluate the profi
 - **`gcmt` instead of `gcm`** — avoids collision with native `Get-Command` alias
 - **`gss` instead of `gs`** — avoids collision with `Get-Service` in PS 5.1
 - **`sudo !!`** — QoL feature robustly implemented using PS history
-- **TTL cache (60 min)** — hot path skips `Get-Command` and MD5 entirely; fingerprint recalculation only when TTL expires
+- **TTL cache (60 min)** — hot path skips `Get-Command` and SHA256 entirely; fingerprint recalculation only when TTL expires
 - **Cross-platform `sudo`** — Windows elevation via `Start-Process -Verb RunAs`, Linux/macOS via native `/usr/bin/sudo`
 
 ### Observations

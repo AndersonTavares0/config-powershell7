@@ -7,19 +7,17 @@
 ![Windows](https://img.shields.io/badge/Windows-10%2B-blue?logo=windows)
 ![CI/CD](https://img.shields.io/badge/CI%2FCD-GitHub_Actions-2088FF?logo=githubactions)
 ![Pester](https://img.shields.io/badge/Test-Pester_5.x-cf4647?logo=powershell)
-![PSScriptAnalyzer](https://img.shields.io/badge/Lint-PSScriptAnalyzer-012456?logo=powershell)
 ![Oh My Posh](https://img.shields.io/badge/Prompt-Oh_My_Posh-4b32c3)
 ![Zoxide](https://img.shields.io/badge/Nav-Zoxide-purple)
 ![PSReadLine](https://img.shields.io/badge/Input-PSReadLine-darkgreen?logo=powershell)
-![StrictMode](https://img.shields.io/badge/Mode-Strict-orange?logo=powershell)
 ![License](https://img.shields.io/badge/License-MIT-lightgrey)
 
 ## Key Technical Features / Principais Recursos Tecnicos
 
-- **Extreme Performance**: Optimized boot sequence with TTL-based plugin cache (60 min). Hot path skips `Get-Command` and MD5 fingerprint entirely, achieving ~5ms overhead (~11% faster boot with cache valid). Boot time color-coded: 🟢 Green < 300ms, 🟡 Yellow < 600ms, 🔴 Red > 600ms.
+- **Extreme Performance**: Optimized boot sequence with TTL-based plugin cache (60 min). Hot path skips `Get-Command` and SHA256 fingerprint entirely, achieving ~5ms overhead. Boot time color-coded: 🟢 Green < 300ms, 🟡 Yellow < 600ms, 🔴 Red > 600ms.
 - **TTL Cache System**: Third-party plugins (`oh-my-posh`, `zoxide`) are cached with a 60-minute Time-To-Live. Cache header includes fingerprint + Unix timestamp; when TTL is valid, `Get-Command` and fingerprint recalculation are skipped entirely.
-- **Zero-Elevation Installer**: No symlinks, no UAC prompts. The installer writes a lightweight `$PROFILE` file that dot-sources the repository via `$global:__ProfileRepoRoot`, ensuring 100% path resolution without Administrator privileges.
-- **Strict-Mode Compliant**: Entire codebase passes `Set-StrictMode -Version Latest` — zero uninitialized variables, no hidden scoping bugs. Code Quality Guide enforced: no bare `catch {}`, no silent failures.
+- **Zero-Elevation Installer**: No symlinks, no UAC prompts. The installer writes a lightweight `$PROFILE` file that dot-sources the repository via `$env:__PROFILE_REPO_ROOT`, ensuring 100% path resolution without Administrator privileges.
+- **Strict-Mode Compliant**: Entire codebase passes `Set-StrictMode -Version Latest` — zero uninitialized variables, no hidden scoping bugs. Code Quality Guide enforced: no bare `catch {}`, no silent failures. Globals migrated to environment variables (`$env:__PROFILE_LOADED`, `$env:__PROFILE_REPO_ROOT`).
 - **Cross-Platform**: Full support for Windows, Linux (Fedora), and macOS with graceful degradation per platform.
 - **Dynamic Boot Summary**: Clean, highlighted boot report with platform info, loaded modules, and admin status.
 
@@ -45,7 +43,7 @@ The profile is structured into strict modular components for isolation and fault
 
 ```text
 config-powershell7/
-├── .github/workflows/          # CI/CD (GitHub Actions) — 2 pipelines
+├── .github/workflows/          # CI/CD (GitHub Actions) — 1 pipeline
 ├── Microsoft.PowerShell_profile.ps1 # Entrypoint Profile (Loader)
 ├── install.ps1                 # Automated Installer (Zero-UAC)
 ├── uninstall.ps1               # Safe Uninstaller (backup + cache cleanup)

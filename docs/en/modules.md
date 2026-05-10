@@ -1,4 +1,4 @@
-# Modules & Features
+﻿# Modules & Features
 
 ## Description
 
@@ -8,7 +8,7 @@ This repository contains a custom PowerShell profile (`Microsoft.PowerShell_prof
 
 ## Features
 
-- **TTL Plugin Cache** — 60-minute Time-To-Live for Zoxide and Oh My Posh; hot path skips `Get-Command` and MD5 entirely (~5ms)
+- **TTL Plugin Cache** — 60-minute Time-To-Live for Zoxide and Oh My Posh; hot path skips `Get-Command` and SHA256 entirely (~5ms)
 - **Quick navigation** — aliases for directories and filesystem movement
 - **Utility functions** — Unix-like equivalents (`touch`, `which`, `grep`, `head`, `tail`, `sed`)
 - **Git shortcuts** — full Git workflow with functions and aliases (conditional on git availability)
@@ -137,8 +137,8 @@ The profile avoids reloading Zoxide and Oh My Posh from scratch every session by
 **How it works:**
 
 1. On startup, reads the first line of the cache file (`# fp:<hash> ts:<unix_epoch>`).
-2. If TTL is still valid (< 60 min), loads the cache directly — **skips `Get-Command` and MD5 entirely** (~5ms hot path).
-3. If TTL has expired, recalculates the MD5 fingerprint. If unchanged, only updates the timestamp (no rebuild needed).
+2. If TTL is still valid (< 60 min), loads the cache directly — **skips `Get-Command` and SHA256 entirely** (~5ms hot path).
+3. If TTL has expired, recalculates the SHA256 fingerprint. If unchanged, only updates the timestamp (no rebuild needed).
 4. If fingerprint differs (tools updated, theme changed), regenerates the cache.
 
 **Estimated savings:** ~200–300ms per session when the cache is valid (depending on `Get-Command` and plugin init costs).
@@ -178,7 +178,7 @@ The profile is modular, separating responsibilities into individual files import
 
 ```
 config-powershell7/
-├── .github/workflows/          # CI/CD Automation (2 pipelines)
+├── .github/workflows/          # CI/CD Automation (1 pipeline)
 ├── Microsoft.PowerShell_profile.ps1    # Main Loader
 ├── install.ps1                 # Automated installation script
 ├── uninstall.ps1               # Safe uninstallation script
@@ -217,9 +217,9 @@ The execution order when opening a new session:
 
 ```
 1. PowerShell loads $PROFILE automatically (Microsoft.PowerShell_profile.ps1).
-2. Guard: checks $global:ProfileLoaded to prevent double-loading.
+2. Guard: checks $env:__PROFILE_LOADED to prevent double-loading.
 3. Stopwatch starts for performance measurement.
-4. Resolves repository root via $global:__ProfileRepoRoot or $PSScriptRoot.
+4. Resolves repository root via $env:__PROFILE_REPO_ROOT or $PSScriptRoot.
 5. Loads config module (critical — must succeed, return on failure).
 6. Loads remaining modules in try/catch (non-critical — failure in one does not block others):
    ├── cache/cache.ps1:       TTL check → hot path or rebuild → dot-source cache.
@@ -245,18 +245,18 @@ Avoid the startup cost of `zoxide init powershell` and `oh-my-posh init pwsh` on
 
 **Cache format (header line):**
 ```
-# fp:<md5_hash> ts:<unix_timestamp>
+# fp:<sha256_hash> ts:<unix_timestamp>
 ```
 
 **TTL flow (`Initialize-PluginCache`):**
 
-1. **Cache exists + TTL valid (< 60 min):** Load cache directly — **~5ms hot path** (no `Get-Command`, no MD5).
+1. **Cache exists + TTL valid (< 60 min):** Load cache directly — **~5ms hot path** (no `Get-Command`, no SHA256).
 2. **Cache exists + TTL expired:** Recalculate fingerprint. If unchanged, only update timestamp. If changed, rebuild cache.
-3. **No cache:** Full rebuild (Get-Command zoxide + oh-my-posh, MD5 fingerprint, StringBuilder generation).
+3. **No cache:** Full rebuild (Get-Command zoxide + oh-my-posh, SHA256 fingerprint, StringBuilder generation).
 
 **Fingerprint (`Get-PluginFingerprint`):**
 
-The fingerprint is derived from binary paths, file versions (via `VersionInfo`), theme path, theme existence, and theme content hash (MD5). Any change (tool update, theme switch, theme edit) invalidates the cache.
+The fingerprint is derived from binary paths, file versions (via `VersionInfo`), theme path, theme existence, and theme content hash (SHA256). Any change (tool update, theme switch, theme edit) invalidates the cache.
 
 ```powershell
 $parts = @(
@@ -266,9 +266,9 @@ $parts = @(
     $ocmd.VersionInfo.FileVersion    # oh-my-posh version
     $script:Config.ThemePath         # theme file path
     [int](Test-Path $ThemePath)      # theme existence
-    (Get-FileHash $ThemePath).Hash   # theme content hash
+    (Get-FileHash $ThemePath -Algorithm SHA256).Hash   # theme content hash
 )
-# MD5 with guaranteed Dispose via try/finally
+# SHA256 with guaranteed Dispose via try/finally
 ```
 
 **Regeneration (`Update-PluginCache`):**
@@ -487,7 +487,7 @@ Critical functions use `[CmdletBinding()]` with `$PSCmdlet.WriteError()` for str
 
 ### Guaranteed Dispose
 
-The MD5 object in `Get-PluginFingerprint` uses `try/finally` to guarantee `Dispose()` even on exception, preventing unmanaged resource leaks.
+The SHA256 object in `Get-PluginFingerprint` uses `try/finally` to guarantee `Dispose()` even on exception, preventing unmanaged resource leaks.
 
 ### Boot summary in scriptblock
 
@@ -539,8 +539,8 @@ The profile requires `RemoteSigned` or higher at `CurrentUser` scope. Downloaded
 
 | Technique | Where | Impact |
 |---|---|---|
-| TTL cache with hot path | cache.ps1 (`Initialize-PluginCache`) | ~5ms when valid (skips `Get-Command` and MD5 entirely) |
-| Incremental MD5 fingerprint with versions | `Get-PluginFingerprint` | Invalidates cache on tool updates |
+| TTL cache with hot path | cache.ps1 (`Initialize-PluginCache`) | ~5ms when valid (skips `Get-Command` and SHA256 entirely) |
+| Incremental SHA256 fingerprint with versions | `Get-PluginFingerprint` | Invalidates cache on tool updates |
 | Theme content hash in fingerprint | `Get-PluginFingerprint` | Invalidates on theme edits |
 | `StringBuilder` for cache generation | `Update-PluginCache` | Avoids string concatenation in loop |
 | `StringBuilder` in `Copy-ToClipboard` | text_utils.ps1 | Efficiency in long pipelines |
@@ -562,7 +562,7 @@ The profile requires `RemoteSigned` or higher at `CurrentUser` scope. Downloaded
 
 | Test Suite | Framework | Use |
 |---|---|---|
-| `tests/Pester.Tests.ps1` | Pester 5.x | CI pipeline — strict invariant tests, coverage targets |
+| `tests/Pester.Tests.ps1` | Pester 5.x | CI pipeline — strict invariant tests |
 | `tests/Test-ProfileInstallation.ps1` | Custom | Post-install health check — 64 checks across 6 categories |
 | `tests/Microsoft.PowerShell_profile.Tests.ps1` | Custom | Behavioral integration — navigation, file ops, error handling |
 
@@ -582,14 +582,8 @@ Test-ProfileInstallation
 
 ### GitHub Actions (CI/CD)
 
-Two pipelines automatically validate every push or pull request to `main`:
+One pipeline validates every push or pull request to `main`:
 
 - **`test.yml`** — copies profile + modules to `$PROFILE` path, runs custom test suites
-- **`powershell-pipeline.yml`** — 5-stage strict pipeline:
-  1. PSScriptAnalyzer (strict rules)
-  2. Security audit (hardcoded credentials, `$ErrorActionPreference = 'Stop'`)
-  3. Pester unit tests (coverage on core modules)
-  4. Environmental validation (clean session)
-  5. Deploy/artifact (zip packaging)
 
 Environment: **Windows Server** (`windows-latest`).
