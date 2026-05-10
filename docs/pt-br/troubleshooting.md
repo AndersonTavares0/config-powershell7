@@ -87,17 +87,9 @@ Clear-Cache
 
 ## Testes
 
-O projeto inclui três suítes de teste:
+O projeto inclui duas suítes de teste:
 
-### 1. Testes Pester (CI)
-
-`tests/Pester.Tests.ps1` — Suíte Pester de alta integridade usada no CI/CD. Cobre módulos de platform, config, cache, git, system e text_utils com testes de violação de invariantes (princípio Crash > Corrupt).
-
-```powershell
-Invoke-Pester tests/Pester.Tests.ps1
-```
-
-### 2. Profile Installation Health Check
+### 1. Profile Installation Health Check
 
 `tests/Test-ProfileInstallation.ps1` — Verificação pós-instalação abrangente usando framework customizado (compatível com Strict-Mode).
 
@@ -163,7 +155,6 @@ O pipeline copia perfil + módulos para `$PROFILE` e executa as suítes de teste
 ### Framework
 
 - `tests/Test-ProfileInstallation.ps1` implementa framework customizado (funções: `Test-Result`, `Test-Skip`, `Assert-True`, `Assert-Equal`, etc.) otimizado para saída diagnóstica.
-- `tests/Pester.Tests.ps1` usa Pester 5.x para CI — inclui testes de violação de invariantes que injetam estados ilegais para verificar o princípio "Crash > Corrupt".
 - `tests/Microsoft.PowerShell_profile.Tests.ps1` usa o mesmo framework customizado para testes de integração comportamental.
 
 ### Estratégia de Testes

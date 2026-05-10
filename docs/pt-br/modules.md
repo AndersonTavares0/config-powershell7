@@ -188,10 +188,9 @@ config-powershell7/
 │   ├── platform.ps1            # Detecção cross-platform + verificação de elevação
 │   ├── ux-helpers.ps1          # Output do console (Write-Ok, Write-Warn, etc.)
 │   └── profile-paths.ps1       # Resolução de caminho do profile
-├── tests/                      # Suítes de teste (custom + Pester)
+├── tests/                      # Suítes de teste (framework custom)
 │   ├── Test-ProfileInstallation.ps1    # Health check pós-instalação
-│   ├── Microsoft.PowerShell_profile.Tests.ps1  # Testes unitários (framework custom)
-│   └── Pester.Tests.ps1               # Testes Pester para CI
+│   └── Microsoft.PowerShell_profile.Tests.ps1  # Testes unitários (framework custom)
 └── modules/
     ├── config/
     │   └── config.ps1                  # Configuração centralizada (crítica — carregada primeiro)
@@ -558,26 +557,19 @@ O perfil requer `RemoteSigned` ou superior no escopo `CurrentUser`. Arquivos bai
 
 ## Testes Automatizados e CI
 
-### Três Suítes de Teste
+### Duas Suítes de Teste
 
 | Suíte de Teste | Framework | Uso |
 |---|---|---|
-| `tests/Pester.Tests.ps1` | Pester 5.x | Pipeline CI — testes estritos de invariantes, metas de cobertura |
 | `tests/Test-ProfileInstallation.ps1` | Customizado | Health check pós-instalação — 64 verificações em 6 categorias |
 | `tests/Microsoft.PowerShell_profile.Tests.ps1` | Customizado | Integração comportamental — navegação, operações de arquivo, tratamento de erros |
 
 ### Executando Testes
 
 ```powershell
-# Testes Pester (CI)
-Invoke-Pester tests/Pester.Tests.ps1
-
 # Health check pós-instalação
 .\tests\Test-ProfileInstallation.ps1 -Detailed
 .\tests\Microsoft.PowerShell_profile.Tests.ps1 -Verbose
-
-# Após carregar o perfil:
-Test-ProfileInstallation
 ```
 
 ### GitHub Actions (CI/CD)

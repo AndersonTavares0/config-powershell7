@@ -188,10 +188,9 @@ config-powershell7/
 │   ├── platform.ps1            # Cross-platform detection + elevation check
 │   ├── ux-helpers.ps1          # Console output (Write-Ok, Write-Warn, etc.)
 │   └── profile-paths.ps1       # Profile path resolution
-├── tests/                      # Test suites (custom + Pester)
+├── tests/                      # Test suites (custom framework)
 │   ├── Test-ProfileInstallation.ps1    # Post-install health check
-│   ├── Microsoft.PowerShell_profile.Tests.ps1  # Unit tests (custom framework)
-│   └── Pester.Tests.ps1               # Pester CI tests
+│   └── Microsoft.PowerShell_profile.Tests.ps1  # Unit tests (custom framework)
 └── modules/
     ├── config/
     │   └── config.ps1                  # Centralized configuration (critical — loaded first)
@@ -558,26 +557,19 @@ The profile requires `RemoteSigned` or higher at `CurrentUser` scope. Downloaded
 
 ## Automated Testing and CI
 
-### Three Test Suites
+### Two Test Suites
 
 | Test Suite | Framework | Use |
 |---|---|---|
-| `tests/Pester.Tests.ps1` | Pester 5.x | CI pipeline — strict invariant tests |
 | `tests/Test-ProfileInstallation.ps1` | Custom | Post-install health check — 64 checks across 6 categories |
 | `tests/Microsoft.PowerShell_profile.Tests.ps1` | Custom | Behavioral integration — navigation, file ops, error handling |
 
 ### Running Tests
 
 ```powershell
-# Pester CI tests
-Invoke-Pester tests/Pester.Tests.ps1
-
 # Post-install health check
 .\tests\Test-ProfileInstallation.ps1 -Detailed
 .\tests\Microsoft.PowerShell_profile.Tests.ps1 -Verbose
-
-# After sourcing the profile:
-Test-ProfileInstallation
 ```
 
 ### GitHub Actions (CI/CD)

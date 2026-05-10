@@ -2,29 +2,25 @@
 $ErrorActionPreference = 'Stop'
 
 # ── 3. PSREADLINE ─────────────────────────────────────────────
-if (Get-Command Set-PSReadLineOption -ErrorAction SilentlyContinue) {
-    try {
-        Set-PSReadLineOption -EditMode Windows `
-            -HistoryNoDuplicates `
-            -HistorySearchCursorMovesToEnd `
-            -BellStyle None `
-            -MaximumHistoryCount 5000 `
-            -ErrorAction Stop
+try {
+    Set-PSReadLineOption -EditMode Windows `
+        -HistoryNoDuplicates `
+        -HistorySearchCursorMovesToEnd `
+        -BellStyle None `
+        -MaximumHistoryCount 5000 `
+        -ErrorAction Stop
 
-        if ($script:Config.PSMajor -ge 7) {
-            try { Set-PSReadLineOption -PredictionSource History -PredictionViewStyle ListView -ErrorAction Stop } catch { Write-Warning "PSReadLine: predição de histórico indisponível — $($_.Exception.Message)" }
-        }
-
-        Set-PSReadLineKeyHandler -Key UpArrow   -Function HistorySearchBackward
-        Set-PSReadLineKeyHandler -Key DownArrow -Function HistorySearchForward
-        Set-PSReadLineKeyHandler -Key Tab       -Function MenuComplete
-        Set-PSReadLineKeyHandler -Chord 'Ctrl+d'          -Function DeleteChar
-        Set-PSReadLineKeyHandler -Chord 'Ctrl+w'          -Function BackwardDeleteWord
-        Set-PSReadLineKeyHandler -Chord 'Ctrl+LeftArrow'  -Function BackwardWord
-        Set-PSReadLineKeyHandler -Chord 'Ctrl+RightArrow' -Function ForwardWord
-    } catch {
-        Write-Warning "PSReadLine: falha ao configurar opções — $($_.Exception.Message)"
+    if ($script:Config.PSMajor -ge 7) {
+        try { Set-PSReadLineOption -PredictionSource History -PredictionViewStyle ListView -ErrorAction Stop } catch { Write-Warning "PSReadLine: predição de histórico indisponível — $($_.Exception.Message)" }
     }
-} else {
-    Write-Verbose "PSReadLine não disponível — configuração de input ignorada."
+
+    Set-PSReadLineKeyHandler -Key UpArrow   -Function HistorySearchBackward
+    Set-PSReadLineKeyHandler -Key DownArrow -Function HistorySearchForward
+    Set-PSReadLineKeyHandler -Key Tab       -Function MenuComplete
+    Set-PSReadLineKeyHandler -Chord 'Ctrl+d'          -Function DeleteChar
+    Set-PSReadLineKeyHandler -Chord 'Ctrl+w'          -Function BackwardDeleteWord
+    Set-PSReadLineKeyHandler -Chord 'Ctrl+LeftArrow'  -Function BackwardWord
+    Set-PSReadLineKeyHandler -Chord 'Ctrl+RightArrow' -Function ForwardWord
+} catch {
+    Write-Warning "PSReadLine: falha ao configurar opções — $($_.Exception.Message)"
 }
