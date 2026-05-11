@@ -87,9 +87,30 @@ Clear-Cache
 
 ## Tests
 
-The project includes two test suites:
+The project includes three test suites:
 
-### 1. Profile Installation Health Check
+### 1. Setup Module Tests (TDD)
+
+`tests/Setup.Tests.ps1` — 32-assertion TDD suite covering the WPF GUI/CLI installer modules. Uses a custom framework (not Pester).
+
+```powershell
+.\tests\Setup.Tests.ps1
+```
+
+#### Coverage
+
+| Module | Tested Items |
+|---|---|
+| **Write-GuiLog** | Synchronized log messages, all 5 types |
+| **Core Constants** | RepoOwner, RepoName, RepoZipUrl |
+| **Get-WingetPath** | Returns existing file path |
+| **Get-ProfilePath** | Non-null from string or object `$PROFILE` |
+| **Install-Profile** | Success, idempotency, missing repo |
+| **Uninstall-Profile** | Own-link detection, cleanup |
+| **Orchestrator** | Dry-run profile link creation |
+| **Module Syntax** | ParseFile validation on all setup `.ps1` files |
+
+### 2. Profile Installation Health Check
 
 `tests/Test-ProfileInstallation.ps1` — Comprehensive post-installation health check using a custom framework (Strict-Mode ready).
 
@@ -110,7 +131,7 @@ Test-ProfileInstallation
 |---|---|
 | **Profile Integrity** | Verifies dot-source logic in `$PROFILE` |
 | **Module Syntax** | Parses all scripts against strict parser rules |
-| **Profile Loading** | Measures boot time (WARN at 200ms, FAIL at 400ms) |
+| **Profile Loading** | Measures boot time (WARN at 200ms, FAIL at 500ms) |
 | **Functions & Aliases** | Verifies existence of all 26 functions + 5 aliases |
 | **Config System** | Validates `$script:Config` object and all 8 properties |
 | **Cache System** | Validates TTL header (fingerprint + timestamp) |
@@ -130,7 +151,7 @@ Test-ProfileInstallation
   ════════════════════════════════════════════
 ```
 
-### 3. Unit Tests (Custom Framework)
+### 3. Behavioral Integration Tests
 
 `tests/Microsoft.PowerShell_profile.Tests.ps1` — Custom framework test suite covering performance, config, cache TTL, navigation, file operations, text processing, system functions, Git functions, and structured error handling.
 
@@ -154,7 +175,8 @@ The pipeline copies profile + modules to `$PROFILE` path and runs the custom tes
 
 ### Framework
 
-- `tests/Test-ProfileInstallation.ps1` implements a custom test framework (functions: `Test-Result`, `Test-Skip`, `Assert-True`, `Assert-Equal`, etc.) optimized for diagnostic output.
+- `tests/Setup.Tests.ps1` uses a custom TDD framework (functions: `Test-Result`, `Test-Skip`, `Assert-True`, `Assert-Equal`, `Assert-NotNull`, `Assert-False`) with 32 assertions across 6 modules.
+- `tests/Test-ProfileInstallation.ps1` implements a custom test framework (functions: `Test-Result`, `Test-Skip`, `Assert-True`, `Assert-Equal`, etc.) optimized for diagnostic output. 64 checks.
 - `tests/Microsoft.PowerShell_profile.Tests.ps1` uses the same custom framework for behavioral integration tests (navigation, file ops, text processing).
 
 ### Test Strategy
@@ -174,7 +196,7 @@ The test files dynamically verify `$env:__PROFILE_LOADED` and evaluate the profi
 
 ### Good decisions
 
-- **SHA256 fingerprint with guaranteed Dispose** — correctly handles unmanaged resource via `try/finally`
+- **LastWriteTime fingerprint** — uses `LastWriteTime` + file size instead of SHA256 (~0ms vs ~43ms), with guaranteed `try/finally` Dispose on the SHA256 object when it was used
 - **`filter` for `grep`** — efficient line-by-line pipeline processing
 - **`sed` with atomic write + size limit** — temp file on same volume guarantees OS-level rename; 50MB limit prevents DoS
 - **Explicit `$script:` scope** — avoids silent scoping issues
@@ -182,14 +204,15 @@ The test files dynamically verify `$env:__PROFILE_LOADED` and evaluate the profi
 - **`gcmt` instead of `gcm`** — avoids collision with native `Get-Command` alias
 - **`gss` instead of `gs`** — avoids collision with `Get-Service` in PS 5.1
 - **`sudo !!`** — QoL feature robustly implemented using PS history
-- **TTL cache (60 min)** — hot path skips `Get-Command` and SHA256 entirely; fingerprint recalculation only when TTL expires
+- **TTL cache (24h)** — hot path skips `Get-Command` and `Get-FileHash` entirely; fingerprint recalculation only when TTL expires; uses `LastWriteTime` + size for fast change detection
 - **Cross-platform `sudo`** — Windows elevation via `Start-Process -Verb RunAs`, Linux/macOS via native `/usr/bin/sudo`
+- **OMP hot path bottleneck (~120ms)** — `oh-my-posh init` output calls a 25KB `init.ps1` that creates a dynamic module via `New-Module -ScriptBlock { ... } | Import-Module -Global`. This is intrinsic to oh-my-posh and cannot be optimized without modifying OMP internals or lazy-loading the prompt.
 
 ### Observations
 
 - **`sudo` uses `-NoExit`** — the elevated window does not close after executing the command, which may be unexpected for users expecting Unix `sudo` behavior (close when done)
 - **`pubip` without configurable timeout** — timeout is fixed at 3 seconds per endpoint; on slow networks there may be a noticeable delay on the first call
-- **Cache TTL is time-based (60 min)** — cache is invalidated by fingerprint change OR TTL expiration, whichever comes first
+- **Cache TTL is time-based (24h)** — cache is invalidated by fingerprint change OR TTL expiration, whichever comes first
 - **`sed` does literal replacement** — no regex support; uses `String.Replace()` literal, unlike Unix `sed`
 - **`sed` has 50MB size limit** — larger files are rejected for DoS protection
 
