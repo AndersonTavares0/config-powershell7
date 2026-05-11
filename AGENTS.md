@@ -20,7 +20,7 @@
 - `#Requires -Version 5.1` at top of all runnable scripts
 - `[SuppressMessageAttribute('PSAvoidUsingWriteHost', '')]` on `param()` blocks (not file-level) — used in profile, install, ux-helpers to suppress PSScriptAnalyzer
 - Lazy loading via aliases (e.g. `icons` → `Import-TerminalIcons` → Terminal-Icons module)
-- English function names, bilingual docs (`docs/en/`, `docs/pt-br/`)
+- English function names, documentation in `docs/`
 - No bare `catch {}` — always log `$_.Exception.Message`
 
 ## Tests

@@ -23,9 +23,9 @@
 
 ## Documentation
 
-- [Installation & Compatibility](docs/en/installation.md)
-- [Modules, Features & Technical Reference](docs/en/modules.md)
-- [Troubleshooting & Tests](docs/en/troubleshooting.md)
+- [Installation & Compatibility](docs/installation.md)
+- [Modules, Features & Technical Reference](docs/modules.md)
+- [Troubleshooting & Tests](docs/troubleshooting.md)
 
 ---
 
