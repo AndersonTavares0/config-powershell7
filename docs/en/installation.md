@@ -58,26 +58,33 @@ cd config-powershell7
 
 ### Step 3: Automated Installation (Zero-UAC)
 
-> **Windows:** You can also double-click `install.cmd`.
+> **Windows:** Double-click `install.cmd` to launch the WPF GUI installer.  
+> **CI/headless:** Use `.\install.ps1 -NonInteractive` or the CLI entry point `.\setup.ps1`.
 
 The installer writes a lightweight `$PROFILE` file that dot-sources the repository profile via `$env:__PROFILE_REPO_ROOT`. No symlinks, no Administrator elevation required.
 
-**Run in normal terminal:**
+**WPF GUI (Windows — recommended):**
 ```powershell
-.\install.ps1
+.\setup.ps1
+# or double-click install.cmd
 ```
 
-**Non-interactive (CI):**
+**CLI terminal menu (fallback for non-interactive / CI):**
+```powershell
+.\setup.ps1 -CLI
+```
+
+**Legacy headless (CI):**
 ```powershell
 .\install.ps1 -NonInteractive
 ```
 
-The installer performs 5 steps:
+The installer performs these steps:
 1. **ExecutionPolicy** — sets `RemoteSigned` at `CurrentUser` scope (Windows only)
-2. **Dependency check** — validates PowerShell version, optional tools, and modules
+2. **Dependency installation** — WinGet packages (PS7, Git, Oh My Posh, Zoxide), Nerd Font, PS modules (Terminal-Icons, PSReadLine), and optional tools (Alacritty with Catppuccin Mocha, Chocolatey with custom sources, Scoop with custom buckets)
 3. **Backup** — if an existing non-ours profile exists, backs it up with a unique timestamp
-4. **Link** — writes the dot-source profile file to `$PROFILE`
-5. **Validation** — syntax-checks core files and verifies the link is correct
+4. **Profile link** — writes the dot-source profile file to `$PROFILE`
+5. **Cache setup** — generates TTL cache on first load
 
 ---
 

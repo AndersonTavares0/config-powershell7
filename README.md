@@ -1,7 +1,6 @@
 # PowerShell Config (PS7)
 
 > High-performance, modular PowerShell 7+ startup profile optimized for developer ergonomics.
-> Perfil de inicialização modular e de alta performance para PowerShell 7+, otimizado para ergonomia.
 
 ![PowerShell](https://img.shields.io/badge/PowerShell-7%2B-blue?logo=powershell)
 ![Windows](https://img.shields.io/badge/Windows-10%2B-blue?logo=windows)
@@ -12,32 +11,25 @@
 ![PSReadLine](https://img.shields.io/badge/Input-PSReadLine-darkgreen?logo=powershell)
 ![License](https://img.shields.io/badge/License-MIT-lightgrey)
 
-## Key Technical Features / Principais Recursos Tecnicos
+## Key Technical Features
 
-- **Extreme Performance**: Optimized boot sequence with TTL-based plugin cache (60 min). Hot path skips `Get-Command` and SHA256 fingerprint entirely, achieving ~5ms overhead. Boot time color-coded: 🟢 Green < 300ms, 🟡 Yellow < 600ms, 🔴 Red > 600ms.
-- **TTL Cache System**: Third-party plugins (`oh-my-posh`, `zoxide`) are cached with a 60-minute Time-To-Live. Cache header includes fingerprint + Unix timestamp; when TTL is valid, `Get-Command` and fingerprint recalculation are skipped entirely.
+- **Extreme Performance**: Optimized boot sequence with TTL-based plugin cache (24h). Hot path skips `Get-Command` and `Get-FileHash` entirely (~5ms cache validation + ~120ms OMP init). Fingerprint uses `LastWriteTime` + file size (not SHA256) for change detection. Boot time color-coded: 🟢 Green < 300ms, 🟡 Yellow < 600ms, 🔴 Red > 600ms.
+- **TTL Cache System**: Third-party plugins (`oh-my-posh`, `zoxide`) are cached with a 24-hour Time-To-Live. Cache header includes fingerprint + Unix timestamp; when TTL is valid, `Get-Command` and fingerprint recalculation are skipped entirely. Fingerprint uses file `LastWriteTime` + size for fast change detection (~0ms vs SHA256's ~43ms).
+- **WPF GUI Installer**: Interactive Windows installer with progress bar, synchronized logging, and terminal menu fallback for non-interactive/CI environments. Installs PS7, Git, Oh My Posh, Zoxide, Nerd Font, Alacritty, Chocolatey, Scoop — all from one unified setup.
 - **Zero-Elevation Installer**: No symlinks, no UAC prompts. The installer writes a lightweight `$PROFILE` file that dot-sources the repository via `$env:__PROFILE_REPO_ROOT`, ensuring 100% path resolution without Administrator privileges.
 - **Strict-Mode Compliant**: Entire codebase passes `Set-StrictMode -Version Latest` — zero uninitialized variables, no hidden scoping bugs. Code Quality Guide enforced: no bare `catch {}`, no silent failures. Globals migrated to environment variables (`$env:__PROFILE_LOADED`, `$env:__PROFILE_REPO_ROOT`).
 - **Cross-Platform**: Full support for Windows, Linux (Fedora), and macOS with graceful degradation per platform.
 - **Dynamic Boot Summary**: Clean, highlighted boot report with platform info, loaded modules, and admin status.
 
-## Documentation / Documentacao
+## Documentation
 
-Choose your preferred language / Escolha seu idioma preferido:
-
-- 🇺🇸 **English Documentation**: [`docs/en/`](docs/en/)
-  - [Installation & Compatibility](docs/en/installation.md)
-  - [Modules, Features & Technical Reference](docs/en/modules.md)
-  - [Troubleshooting & Tests](docs/en/troubleshooting.md)
-
-- 🇧🇷 **Documentacao em Portugues**: [`docs/pt-br/`](docs/pt-br/)
-  - [Instalacao e Compatibilidade](docs/pt-br/installation.md)
-  - [Modulos, Recursos e Referencia Tecnica](docs/pt-br/modules.md)
-  - [Solucao de Problemas e Testes](docs/pt-br/troubleshooting.md)
+- [Installation & Compatibility](docs/en/installation.md)
+- [Modules, Features & Technical Reference](docs/en/modules.md)
+- [Troubleshooting & Tests](docs/en/troubleshooting.md)
 
 ---
 
-## Architecture Overview / Visao Geral da Arquitetura
+## Architecture Overview
 
 The profile is structured into strict modular components for isolation and fault tolerance:
 
@@ -45,10 +37,20 @@ The profile is structured into strict modular components for isolation and fault
 config-powershell7/
 ├── .github/workflows/          # CI/CD (GitHub Actions) — 1 pipeline
 ├── Microsoft.PowerShell_profile.ps1 # Entrypoint Profile (Loader)
-├── install.ps1                 # Automated Installer (Zero-UAC)
+├── install.ps1                 # Legacy CLI installer (preserved for CI)
 ├── uninstall.ps1               # Safe Uninstaller (backup + cache cleanup)
-├── install.cmd                 # Double-click installer (Windows)
+├── install.cmd                 # Double-click GUI launcher (calls setup/)
 ├── uninstall.cmd               # Double-click uninstaller (Windows)
+├── setup.ps1                   # Entry point for new GUI/CLI installer
+├── setup/                      # Modular GUI installer
+│   ├── setup.ps1               # Module loader/dispatcher (GUI or CLI)
+│   └── modules/                # Installer sub-modules
+│       ├── core.ps1            # Platform detection, constants, logging
+│       ├── deps.ps1            # Dependency installers (WinGet, Nerd Font, etc.)
+│       ├── profile.ps1         # Profile link management
+│       ├── orchestrator.ps1    # Install/uninstall orchestration
+│       ├── gui.ps1             # WPF XAML UI with runspace logging
+│       └── cli.ps1             # Terminal menu fallback (CI/non-interactive)
 ├── lib/                        # Shared Utilities (DRY)
 │   ├── platform.ps1            # Cross-platform detection + elevation
 │   ├── ux-helpers.ps1          # Console output (Write-Ok, Write-Warn, etc.)
@@ -61,16 +63,20 @@ config-powershell7/
 │   ├── system/                 # System/Network utilities + sudo
 │   ├── psreadline/             # PSReadLine configuration + keybindings
 │   └── text_utils/             # Unix-like tools (grep, tail, sed, touch)
-└── tests/                      # Test Suites (custom framework)
+├── tests/                      # Test Suites (custom framework)
+│   ├── Test-ProfileInstallation.ps1    # 64 post-install checks
+│   ├── Microsoft.PowerShell_profile.Tests.ps1  # Behavioral integration tests
+│   └── Setup.Tests.ps1                 # 32 TDD tests for setup modules
+└── graphify-out/               # Knowledge graph (queryable via /graphify)
 ```
 
-**Loading order** (critical): config → cache → navigation → git → system → psreadline → text_utils
+**Loading order** (critical): config (0) → cache (1) → navigation → git → system → psreadline → text_utils
 
 ---
 
-## Quick Start / Inicio Rapido
+## Quick Start
 
-**Option A — Double-click (Windows):**
+**Option A — WPF GUI (Windows):**
 
 > Clone the repo and double-click `install.cmd`.
 
@@ -79,16 +85,22 @@ config-powershell7/
 ```powershell
 git clone https://github.com/AndersonTavares0/config-powershell7.git
 cd config-powershell7
-.\install.ps1
+.\setup.ps1
 ```
 
-**Uninstall / Desinstalar:**
+**Option C — Headless (CI):**
+
+```powershell
+.\install.ps1 -NonInteractive
+```
+
+**Uninstall:**
 
 > Double-click `uninstall.cmd` or run `.\uninstall.ps1`.
 
 ---
 
-## Requirements / Requisitos
+## Requirements
 
 - **PowerShell 7.x** (Core) highly recommended (supports PS 5.1 Legacy via graceful degradation)
 - **FiraCode Nerd Font** (for icons/ligatures)
