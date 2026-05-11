@@ -191,6 +191,78 @@ function Install-PSModules {
     }
 }
 
+function Set-WindowsTerminalFont {
+    param([string]$SettingsPath)
+
+    $fontName = 'FiraCode Nerd Font'
+
+    if (-not $SettingsPath) {
+        $knownPaths = @(
+            "$env:LOCALAPPDATA\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json",
+            "$env:LOCALAPPDATA\Packages\Microsoft.WindowsTerminalPreview_8wekyb3d8bbwe\LocalState\settings.json",
+            "$env:LOCALAPPDATA\Microsoft\Windows Terminal\settings.json"
+        )
+        $SettingsPath = $knownPaths | Where-Object { Test-Path $_ -PathType Leaf } | Select-Object -First 1
+    }
+
+    if (-not $settingsPath) {
+        Write-GuiLog "Windows Terminal settings.json not found." -Type Info
+        return
+    }
+
+    try {
+        $settings = Get-Content $settingsPath -Raw -Encoding UTF8 | ConvertFrom-Json
+
+        if (-not $settings.profiles) {
+            Write-GuiLog "Windows Terminal settings has no profiles section." -Type Warn
+            return
+        }
+
+        $changed = $false
+
+        if (-not $settings.profiles.defaults) {
+            $settings.profiles | Add-Member -Name 'defaults' -Value @{} -MemberType NoteProperty -Force
+        }
+        $defaultsFontProp = $settings.profiles.defaults.PSObject.Properties['font']
+        $defaultsFont = if ($defaultsFontProp) { $defaultsFontProp.Value } else { $null }
+        if (-not $defaultsFont) {
+            $defaultsFont = [PSCustomObject]@{}
+            $settings.profiles.defaults | Add-Member -Name 'font' -Value $defaultsFont -MemberType NoteProperty -Force
+        }
+        $defaultsFaceProp = $defaultsFont.PSObject.Properties['face']
+        if (-not $defaultsFaceProp -or $defaultsFaceProp.Value -ne $fontName) {
+            $defaultsFont | Add-Member -Name 'face' -Value $fontName -MemberType NoteProperty -Force
+            $changed = $true
+        }
+
+        $profileList = $settings.profiles.PSObject.Properties['list']
+        if ($profileList -and $profileList.Value) {
+            foreach ($wtProfile in $profileList.Value) {
+                $pfFontProp = $wtProfile.PSObject.Properties['font']
+                $pfFont = if ($pfFontProp) { $pfFontProp.Value } else { $null }
+                if (-not $pfFont) {
+                    $pfFont = [PSCustomObject]@{}
+                    $wtProfile | Add-Member -Name 'font' -Value $pfFont -MemberType NoteProperty -Force
+                }
+                $pfFaceProp = $pfFont.PSObject.Properties['face']
+                if (-not $pfFaceProp -or $pfFaceProp.Value -ne $fontName) {
+                    $pfFont | Add-Member -Name 'face' -Value $fontName -MemberType NoteProperty -Force
+                    $changed = $true
+                }
+            }
+        }
+
+        if ($changed) {
+            $settings | ConvertTo-Json -Depth 10 | Set-Content $settingsPath -Encoding UTF8 -Force
+            Write-GuiLog "Windows Terminal font set to $fontName." -Type Ok
+        } else {
+            Write-GuiLog "Windows Terminal already using $fontName." -Type Ok
+        }
+    } catch {
+        Write-GuiLog "Could not configure Windows Terminal font: $($_.Exception.Message)" -Type Warn
+    }
+}
+
 function Install-AlacrittyConfig {
     $configDir = Join-Path $env:APPDATA 'alacritty'
     if (-not (Test-Path $configDir)) {
@@ -295,37 +367,46 @@ function Install-Chocolatey {
     param([string[]]$Sources = @())
 
     $existing = Get-Command choco -ErrorAction SilentlyContinue
-    if (-not $existing) {
-        Write-GuiLog "Installing Chocolatey..." -Type Step
-        try {
-            Set-ExecutionPolicy Bypass -Scope Process -Force -ErrorAction Stop
-            if ($PSVersionTable.PSVersion.Major -lt 6) {
-                [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
-            }
-            $chocoInstall = Invoke-WebRequest -Uri 'https://community.chocolatey.org/install.ps1' -UseBasicParsing -ErrorAction Stop
-            Invoke-Expression $chocoInstall.Content
+    if ($existing) {
+        Write-GuiLog "Chocolatey already installed: $($existing.Source)" -Type Ok
+        return $true
+    }
 
-            $chocoBin = 'C:\ProgramData\chocolatey\bin'
-            if (Test-Path $chocoBin) {
-                $currentPath = [Environment]::GetEnvironmentVariable('PATH', 'Process')
-                if ($currentPath -notmatch [regex]::Escape($chocoBin)) {
-                    [Environment]::SetEnvironmentVariable('PATH', "$currentPath;$chocoBin", 'Process')
-                    $env:PATH = "$env:PATH;$chocoBin"
-                }
-            }
+    $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 
-            if (Get-Command choco -ErrorAction SilentlyContinue) {
-                Write-GuiLog "Chocolatey installed." -Type Ok
-            } else {
-                Write-GuiLog "Chocolatey installed but not in PATH. Restart terminal." -Type Warn
-                return $false
+    if (-not $isAdmin) {
+        Write-GuiLog "Chocolatey requires administrator privileges to install to the default path." -Type Warn
+        Write-GuiLog "Install manually as Administrator or run this installer as Admin." -Type Info
+        return $false
+    }
+
+    Write-GuiLog "Installing Chocolatey..." -Type Step
+    try {
+        Set-ExecutionPolicy Bypass -Scope Process -Force -ErrorAction Stop
+        if ($PSVersionTable.PSVersion.Major -lt 6) {
+            [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+        }
+        $chocoInstall = Invoke-WebRequest -Uri 'https://community.chocolatey.org/install.ps1' -UseBasicParsing -ErrorAction Stop
+        Invoke-Expression $chocoInstall.Content
+
+        $chocoBin = 'C:\ProgramData\chocolatey\bin'
+        if (Test-Path $chocoBin) {
+            $currentPath = [Environment]::GetEnvironmentVariable('PATH', 'Process')
+            if ($currentPath -notmatch [regex]::Escape($chocoBin)) {
+                [Environment]::SetEnvironmentVariable('PATH', "$currentPath;$chocoBin", 'Process')
+                $env:PATH = "$env:PATH;$chocoBin"
             }
-        } catch {
-            Write-GuiLog "Chocolatey install failed: $($_.Exception.Message)" -Type Warn
+        }
+
+        if (Get-Command choco -ErrorAction SilentlyContinue) {
+            Write-GuiLog "Chocolatey installed." -Type Ok
+        } else {
+            Write-GuiLog "Chocolatey installed but not in PATH. Restart terminal." -Type Warn
             return $false
         }
-    } else {
-        Write-GuiLog "Chocolatey already installed: $($existing.Source)" -Type Ok
+    } catch {
+        Write-GuiLog "Chocolatey install failed: $($_.Exception.Message)" -Type Warn
+        return $false
     }
 
     foreach ($source in $Sources) {
