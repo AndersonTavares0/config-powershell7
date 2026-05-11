@@ -66,9 +66,12 @@ function Get-FileFromUrl {
         }
         Invoke-WebRequest -Uri $Url -OutFile $OutFile -ErrorAction Stop
         if (Test-Path $OutFile -ErrorAction SilentlyContinue) {
-            $size = (Get-Item $OutFile -ErrorAction SilentlyContinue).Length
-            Write-GuiLog "Downloaded $([Math]::Round($size / 1KB, 1)) KB" -Type Ok
-            return $true
+            $fileItem = Get-Item $OutFile -ErrorAction SilentlyContinue
+            if ($fileItem) {
+                $size = $fileItem.Length
+                Write-GuiLog "Downloaded $([Math]::Round($size / 1KB, 1)) KB" -Type Ok
+                return $true
+            }
         }
         Write-GuiLog "Downloaded file not found: $OutFile" -Type Fail
         return $false

@@ -313,6 +313,118 @@ try {
 }
 
 # ══════════════════════════════════════════════════════════════
+# TEST SUITE: DEPS — Set-WindowsTerminalFont
+# ══════════════════════════════════════════════════════════════
+Write-Host "`nTesting Set-WindowsTerminalFont..." -ForegroundColor Yellow
+
+$fontTestDir = Join-Path $env:TEMP "test-wt-font-$(Get-Random)"
+
+try {
+    New-MockDir $fontTestDir
+
+    # Test 1: Updates font in valid settings.json
+    $settings1 = @'
+{
+    "profiles": {
+        "defaults": {
+            "font": { "face": "Cascadia Code", "size": 11 }
+        },
+        "list": [
+            { "guid": "...", "name": "PowerShell", "font": { "face": "Cascadia Code", "size": 11 } }
+        ]
+    }
+}
+'@
+    $path1 = Join-Path $fontTestDir "settings1.json"
+    New-MockFile $path1 $settings1
+    Set-WindowsTerminalFont -SettingsPath $path1
+    $result1 = Get-Content $path1 -Raw | ConvertFrom-Json
+    Assert-Equal -Expected "FiraCode Nerd Font" -Actual $result1.profiles.defaults.font.face -TestName "Set-WindowsTerminalFont updates defaults font"
+
+    # Test 2: Handles empty font object ({} with no 'face' property) — StrictMode crash guard
+    $settings2 = @'
+{
+    "profiles": {
+        "defaults": {
+            "font": {}
+        },
+        "list": [
+            { "guid": "...", "name": "PowerShell" }
+        ]
+    }
+}
+'@
+    $path2 = Join-Path $fontTestDir "settings2.json"
+    New-MockFile $path2 $settings2
+    try {
+        Set-WindowsTerminalFont -SettingsPath $path2
+        $result2 = Get-Content $path2 -Raw | ConvertFrom-Json
+        Assert-Equal -Expected "FiraCode Nerd Font" -Actual $result2.profiles.defaults.font.face -TestName "Set-WindowsTerminalFont handles empty font object"
+    } catch {
+        Test-Result -Name "Set-WindowsTerminalFont handles empty font object" -Passed $false -Message "Crash on empty font: $($_.Exception.Message)"
+    }
+
+    # Test 3: Handles missing profiles section gracefully
+    $settings3 = '{}'
+    $path3 = Join-Path $fontTestDir "settings3.json"
+    New-MockFile $path3 $settings3
+    Set-WindowsTerminalFont -SettingsPath $path3
+    Assert-True -Condition (Test-Path $path3) -TestName "Set-WindowsTerminalFont does not corrupt file on missing profiles"
+
+    # Test 4: Skips when already configured
+    $settings4 = @'
+{
+    "profiles": {
+        "defaults": {
+            "font": { "face": "FiraCode Nerd Font", "size": 11 }
+        }
+    }
+}
+'@
+    $path4 = Join-Path $fontTestDir "settings4.json"
+    New-MockFile $path4 $settings4
+    Set-WindowsTerminalFont -SettingsPath $path4
+    $result4 = Get-Content $path4 -Raw | ConvertFrom-Json
+    Assert-Equal -Expected "FiraCode Nerd Font" -Actual $result4.profiles.defaults.font.face -TestName "Set-WindowsTerminalFont skips when already configured"
+
+    # Test 5: Updates per-profile font as well
+    $settings5 = @'
+{
+    "profiles": {
+        "defaults": {},
+        "list": [
+            { "guid": "a", "name": "PowerShell" },
+            { "guid": "b", "name": "cmd" }
+        ]
+    }
+}
+'@
+    $path5 = Join-Path $fontTestDir "settings5.json"
+    New-MockFile $path5 $settings5
+    Set-WindowsTerminalFont -SettingsPath $path5
+    $result5 = Get-Content $path5 -Raw | ConvertFrom-Json
+    Assert-Equal -Expected "FiraCode Nerd Font" -Actual $result5.profiles.list[0].font.face -TestName "Set-WindowsTerminalFont updates profile without font"
+    Assert-Equal -Expected "FiraCode Nerd Font" -Actual $result5.profiles.list[1].font.face -TestName "Set-WindowsTerminalFont updates second profile"
+
+} finally {
+    Remove-MockDir $fontTestDir
+}
+
+# ══════════════════════════════════════════════════════════════
+# TEST SUITE: DEPS — Install-Chocolatey admin check
+# ══════════════════════════════════════════════════════════════
+Write-Host "`nTesting Install-Chocolatey admin detection..." -ForegroundColor Yellow
+
+# Test: Non-admin returns false without crashing
+$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+if (-not $isAdmin) {
+    $result = Install-Chocolatey
+    Assert-False -Condition $result -TestName "Install-Chocolatey returns false when not admin"
+} else {
+    Test-Skip -Name "Install-Chocolatey admin check" -Reason "Running as admin — cannot test non-admin path"
+}
+
+# ══════════════════════════════════════════════════════════════
 # TEST SUITE: SYNTAX — All setup modules parse cleanly
 # ══════════════════════════════════════════════════════════════
 Write-Host "`nTesting Setup Module Syntax..." -ForegroundColor Yellow

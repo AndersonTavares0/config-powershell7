@@ -26,7 +26,7 @@ function Start-ProfileInstall {
         if ($InstallGit)    { $totalSteps++ }
         if ($InstallOMP)    { $totalSteps++ }
         if ($InstallZoxide) { $totalSteps++ }
-        if ($InstallFont)   { $totalSteps++ }
+        if ($InstallFont)   { $totalSteps += 2 }
         if ($InstallModules) { $totalSteps++ }
         $totalSteps++
         if ($InstallAlacritty)   { $totalSteps++ }
@@ -75,6 +75,9 @@ function Start-ProfileInstall {
             $step++
             Write-GuiLog "[$step/$totalSteps] Checking FiraCode Nerd Font..." -Type Step
             $null = Install-NerdFont
+            $step++
+            Write-GuiLog "[$step/$totalSteps] Configuring Windows Terminal font..." -Type Step
+            Set-WindowsTerminalFont
         }
 
         if ($InstallModules) {
