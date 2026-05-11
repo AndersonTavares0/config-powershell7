@@ -11,7 +11,7 @@
 - **psreadline** is its own module (`modules/psreadline/`), not nested under `system/`
 - **Platform detection split**: `lib/platform.ps1` is for standalone scripts (install/uninstall/tests); modules use inline detection in `config.ps1` via `$script:Config`
 - **Shared libs** in `lib/`: `platform.ps1` (detection), `ux-helpers.ps1` (Write-Ok/Warn/Fail/Info/Step), `profile-paths.ps1` (Get-TargetProfilePath)
-- **Plugin boot cache** (`modules/cache/cache.ps1`): TTL-based (60 min), skips `Get-Command` and SHA256 on hot path (~5ms). Cache file at `$HOME\.cache_pwsh_plugins.ps1` (Windows) or `$XDG_CACHE_HOME/pwsh/plugins_cache.ps1` (Linux)
+- **Plugin boot cache** (`modules/cache/cache.ps1`): TTL-based (24h), skips `Get-Command` and `Get-FileHash` on hot path (~5ms cache validation, ~120ms OMP init execution). Uses `LastWriteTime` + file size (not SHA256) for change detection. Cache file at `$HOME\.cache_pwsh_plugins.ps1` (Windows) or `$XDG_CACHE_HOME/pwsh/plugins_cache.ps1` (Linux)
 
 ## Conventions
 

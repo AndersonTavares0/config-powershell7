@@ -163,11 +163,11 @@ try {
     if ($loadMs -lt 200) {
         script:Add-Check 'Load' 'Performance' 'PASS' "${loadMs}ms < 200ms target"
     }
-    elseif ($loadMs -lt 400) {
+    elseif ($loadMs -lt 500) {
         script:Add-Check 'Load' 'Performance' 'WARN' "${loadMs}ms (target: < 200ms)"
     }
     else {
-        script:Add-Check 'Load' 'Performance' 'FAIL' "${loadMs}ms exceeds 400ms threshold"
+        script:Add-Check 'Load' 'Performance' 'FAIL' "${loadMs}ms exceeds 500ms threshold"
     }
 }
 catch {

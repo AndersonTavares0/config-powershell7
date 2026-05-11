@@ -73,5 +73,6 @@ $script:Config = [PSCustomObject]@{
     ThemePath   = (script:Resolve-ThemePath -IsLinuxOrMac $isLinuxOrMac)
 
     # Cache TTL em minutos (pular recálculo de fingerprint se cache é recente)
-    CacheTTLMinutes = 60
+    # 24h = reduz cold path de ~hora em hora para ~uma vez ao dia
+    CacheTTLMinutes = 1440
 }

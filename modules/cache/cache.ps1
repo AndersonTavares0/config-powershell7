@@ -2,13 +2,18 @@
 $ErrorActionPreference = 'Stop'
 
 # ── 2. PLUGINS & CACHE v2 ────────────────────────────────────
-# Cache com TTL (Time-To-Live): evita recálculo de fingerprint SHA256
+# Cache com TTL (Time-To-Live): evita recálculo de fingerprint
 # se o arquivo de cache foi atualizado recentemente.
+#
+# Fingerprint usa LastWriteTime + tamanho do arquivo (mais rápido
+# que SHA256) para detectar mudanças no tema e binários.
 #
 # Formato do header do cache:
 #   # fp:<hash> ts:<unix_epoch>
 #
-# Hot path (cache válido + TTL ok): ~5ms — sem Get-Command, sem Get-FileHash.
+# Hot path (cache válido + TTL ok): ~5ms para validar cache,
+# ~120ms para dot-source (executa init do oh-my-posh).
+# Cold path (TTL expirado): ~210ms + dot-source.
 
 # Nomes em inglês + alias, convenção unificada
 function Clear-PluginCache {
@@ -26,9 +31,8 @@ function Import-TerminalIcons {
 }
 Set-Alias icons Import-TerminalIcons
 
-# SHA256 encapsulado em try/finally: garante Dispose() mesmo em falha.
-# fingerprint inclui versão dos binários via VersionInfo, não apenas caminho
-# Inclui hash do conteúdo do tema para detecção profunda de mudanças
+# Fingerprint inclui caminho + versão dos binários e LastWriteTime + tamanho
+# do arquivo de tema para detectar mudanças sem SHA256 (muito mais rápido).
 function script:Get-PluginFingerprint {
     param([object]$zcmd, [object]$ocmd)
 
@@ -39,40 +43,45 @@ function script:Get-PluginFingerprint {
     if ($zcmd) {
         $parts += $zcmd.Source
         try {
-            $zVersion = (Get-Item $zcmd.Source -ErrorAction SilentlyContinue).VersionInfo.FileVersion
+            $zItem = Get-Item $zcmd.Source -ErrorAction SilentlyContinue
+            $zVersion = if ($zItem) { $zItem.VersionInfo.FileVersion } else { $null }
             $parts += if ($zVersion) { $zVersion } else { 'unknown' }
+            # Inclui LastWriteTime do binário para detectar atualizações
+            $parts += if ($zItem) { $zItem.LastWriteTimeUtc.Ticks.ToString() } else { '0' }
         } catch {
-            $parts += 'unknown'
+            $parts += 'unknown'; $parts += '0'
         }
     }
 
     if ($ocmd) {
         $parts += $ocmd.Source
         try {
-            $oVersion = (Get-Item $ocmd.Source -ErrorAction SilentlyContinue).VersionInfo.FileVersion
+            $oItem = Get-Item $ocmd.Source -ErrorAction SilentlyContinue
+            $oVersion = if ($oItem) { $oItem.VersionInfo.FileVersion } else { $null }
             $parts += if ($oVersion) { $oVersion } else { 'unknown' }
+            $parts += if ($oItem) { $oItem.LastWriteTimeUtc.Ticks.ToString() } else { '0' }
         } catch {
-            $parts += 'unknown'
+            $parts += 'unknown'; $parts += '0'
         }
     }
 
     $parts += $script:Config.ThemePath
     $parts += [int](Test-Path $script:Config.ThemePath)
 
-    # Include theme content hash if exists for deeper change detection
+    # Usa LastWriteTime + Length no lugar de SHA256: detecta mudanças
+    # sem o custo de hash criptográfico (~0ms vs ~43ms)
     if (Test-Path $script:Config.ThemePath) {
         try {
-            $themeHash = (Get-FileHash $script:Config.ThemePath -Algorithm SHA256 -ErrorAction SilentlyContinue).Hash
-            $parts += if ($themeHash) { $themeHash } else { 'nohash' }
+            $themeInfo = Get-Item $script:Config.ThemePath -ErrorAction SilentlyContinue
+            if ($themeInfo) {
+                $parts += "$($themeInfo.Length):$($themeInfo.LastWriteTimeUtc.Ticks)"
+            }
         } catch {
-            $parts += 'nohash'
+            $parts += 'nofile'
         }
     }
 
-    $bytes    = [System.Text.Encoding]::UTF8.GetBytes($parts -join '|')
-    $sha256   = [System.Security.Cryptography.SHA256]::Create()
-    try       { [System.BitConverter]::ToString($sha256.ComputeHash($bytes)) -replace '-', '' }
-    finally   { $sha256.Dispose() }
+    $parts -join '|'
 }
 
 # Lógica de rebuild extraída: testável, nomeada, sem bloco `& {}` anônimo
