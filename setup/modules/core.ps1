@@ -13,7 +13,7 @@ if (-not (Get-Variable -Name 'IsWin' -Scope Script -ErrorAction SilentlyContinue
     }
 }
 
-$script:RepoOwner  = 'ander'
+$script:RepoOwner  = 'AndersonTavares0'
 $script:RepoName   = 'config-powershell7'
 $script:RepoBranch = 'main'
 $script:RepoZipUrl = "https://github.com/$script:RepoOwner/$script:RepoName/archive/refs/heads/$script:RepoBranch.zip"
