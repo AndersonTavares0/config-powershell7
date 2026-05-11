@@ -8,7 +8,7 @@ This repository contains a custom PowerShell profile (`Microsoft.PowerShell_prof
 
 ## Features
 
-- **TTL Plugin Cache** — 60-minute Time-To-Live for Zoxide and Oh My Posh; hot path skips `Get-Command` and SHA256 entirely (~5ms)
+- **TTL Plugin Cache** — 24-hour Time-To-Live for Zoxide and Oh My Posh; hot path skips `Get-Command` and `Get-FileHash` entirely (~5ms validation + ~120ms OMP init execution)
 - **Quick navigation** — aliases for directories and filesystem movement
 - **Utility functions** — Unix-like equivalents (`touch`, `which`, `grep`, `head`, `tail`, `sed`)
 - **Git shortcuts** — full Git workflow with functions and aliases (conditional on git availability)
@@ -132,13 +132,13 @@ sudo !!
 
 ### TTL Plugin Cache System
 
-The profile avoids reloading Zoxide and Oh My Posh from scratch every session by using a cache file with a 60-minute Time-To-Live.
+The profile avoids reloading Zoxide and Oh My Posh from scratch every session by using a cache file with a 24-hour Time-To-Live.
 
 **How it works:**
 
 1. On startup, reads the first line of the cache file (`# fp:<hash> ts:<unix_epoch>`).
-2. If TTL is still valid (< 60 min), loads the cache directly — **skips `Get-Command` and SHA256 entirely** (~5ms hot path).
-3. If TTL has expired, recalculates the SHA256 fingerprint. If unchanged, only updates the timestamp (no rebuild needed).
+2. If TTL is still valid (< 24h), loads the cache directly — **skips `Get-Command` and `Get-FileHash` entirely** (~5ms hot path validation, then ~120ms for OMP init script execution via dot-source).
+3. If TTL has expired, recalculates the fingerprint using `LastWriteTime` + file size (not SHA256). If unchanged, only updates the timestamp (no rebuild needed).
 4. If fingerprint differs (tools updated, theme changed), regenerates the cache.
 
 **Estimated savings:** ~200–300ms per session when the cache is valid (depending on `Get-Command` and plugin init costs).
@@ -182,15 +182,25 @@ config-powershell7/
 ├── Microsoft.PowerShell_profile.ps1    # Main Loader
 ├── install.ps1                 # Automated installation script
 ├── uninstall.ps1               # Safe uninstallation script
-├── install.cmd                 # Double-click installer (Windows)
+├── install.cmd                 # Double-click GUI launcher (calls setup/)
 ├── uninstall.cmd               # Double-click uninstaller (Windows)
+├── setup.ps1                   # Entry point for new GUI/CLI installer
+├── setup/                      # Modular GUI installer
+│   └── modules/                # Installer sub-modules
+│       ├── core.ps1            # Platform detection, constants, Write-GuiLog
+│       ├── deps.ps1            # Dependency installers
+│       ├── profile.ps1         # Profile link management
+│       ├── orchestrator.ps1    # Install/uninstall orchestration
+│       ├── gui.ps1             # WPF XAML UI with runspaces
+│       └── cli.ps1             # Terminal menu fallback
 ├── lib/                        # Shared Utilities
 │   ├── platform.ps1            # Cross-platform detection + elevation check
 │   ├── ux-helpers.ps1          # Console output (Write-Ok, Write-Warn, etc.)
 │   └── profile-paths.ps1       # Profile path resolution
 ├── tests/                      # Test suites (custom framework)
-│   ├── Test-ProfileInstallation.ps1    # Post-install health check
-│   └── Microsoft.PowerShell_profile.Tests.ps1  # Unit tests (custom framework)
+│   ├── Setup.Tests.ps1                 # 32 TDD tests for setup modules
+│   ├── Test-ProfileInstallation.ps1    # 64 post-install health checks
+│   └── Microsoft.PowerShell_profile.Tests.ps1  # Behavioral integration tests
 └── modules/
     ├── config/
     │   └── config.ps1                  # Centralized configuration (critical — loaded first)
@@ -244,30 +254,34 @@ Avoid the startup cost of `zoxide init powershell` and `oh-my-posh init pwsh` on
 
 **Cache format (header line):**
 ```
-# fp:<sha256_hash> ts:<unix_timestamp>
+# fp:<fingerprint> ts:<unix_timestamp>
 ```
+
+The fingerprint is a pipe-separated string (not SHA256) for fast generation.
 
 **TTL flow (`Initialize-PluginCache`):**
 
-1. **Cache exists + TTL valid (< 60 min):** Load cache directly — **~5ms hot path** (no `Get-Command`, no SHA256).
+1. **Cache exists + TTL valid (< 24h):** Load cache directly — **~5ms hot path validation** (no `Get-Command`, no `Get-FileHash`), then ~120ms to dot-source cache (executes OMP init.ps1).
 2. **Cache exists + TTL expired:** Recalculate fingerprint. If unchanged, only update timestamp. If changed, rebuild cache.
-3. **No cache:** Full rebuild (Get-Command zoxide + oh-my-posh, SHA256 fingerprint, StringBuilder generation).
+3. **No cache:** Full rebuild (Get-Command zoxide + oh-my-posh, LastWriteTime fingerprint, StringBuilder generation).
 
 **Fingerprint (`Get-PluginFingerprint`):**
 
-The fingerprint is derived from binary paths, file versions (via `VersionInfo`), theme path, theme existence, and theme content hash (SHA256). Any change (tool update, theme switch, theme edit) invalidates the cache.
+The fingerprint is derived from binary paths, file versions (via `VersionInfo`), `LastWriteTime` of binaries, theme path, theme existence, and theme `LastWriteTime` + file size (not SHA256). Any change (tool update, theme switch, theme edit) invalidates the cache.
 
 ```powershell
 $parts = @(
     $zcmd.Source                     # zoxide binary path
     $zcmd.VersionInfo.FileVersion    # zoxide version
+    $zcmd.LastWriteTimeUtc.Ticks     # zoxide binary LastWriteTime
     $ocmd.Source                     # oh-my-posh binary path
     $ocmd.VersionInfo.FileVersion    # oh-my-posh version
+    $ocmd.LastWriteTimeUtc.Ticks     # oh-my-posh binary LastWriteTime
     $script:Config.ThemePath         # theme file path
     [int](Test-Path $ThemePath)      # theme existence
-    (Get-FileHash $ThemePath -Algorithm SHA256).Hash   # theme content hash
+    "$($theme.Length):$($theme.LastWriteTimeUtc.Ticks)"  # theme info (no SHA256 ~0ms)
 )
-# SHA256 with guaranteed Dispose via try/finally
+$parts -join '|'                     # plain string, no crypto hash
 ```
 
 **Regeneration (`Update-PluginCache`):**
@@ -486,7 +500,7 @@ Critical functions use `[CmdletBinding()]` with `$PSCmdlet.WriteError()` for str
 
 ### Guaranteed Dispose
 
-The SHA256 object in `Get-PluginFingerprint` uses `try/finally` to guarantee `Dispose()` even on exception, preventing unmanaged resource leaks.
+The SHA256 object in the original `Get-PluginFingerprint` used `try/finally` to guarantee `Dispose()` even on exception. Current implementation uses plain string concatenation (no unmanaged resources).
 
 ### Boot summary in scriptblock
 
@@ -529,18 +543,18 @@ The profile requires `RemoteSigned` or higher at `CurrentUser` scope. Downloaded
 ### Reference measurements
 
 | Scenario | Expected boot time |
-|---|---|
-| With Oh My Posh + Zoxide, valid cache (TTL hot path) | < 150ms |
-| With Oh My Posh + Zoxide, TTL expired, fingerprint unchanged | < 200ms |
-| With Oh My Posh + Zoxide, cache miss (full rebuild) | < 400ms |
+|---|---|---|
+| With Oh My Posh + Zoxide, valid cache (TTL hot path) | < 150ms (~5ms validation + ~120ms OMP init.ps1) |
+| With Oh My Posh + Zoxide, TTL expired, fingerprint unchanged | < 200ms (timestamp touch only) |
+| With Oh My Posh + Zoxide, cache miss (full rebuild) | < 500ms (cold: zoxide + OMP init + dot-source) |
 
 ### Applied techniques
 
 | Technique | Where | Impact |
 |---|---|---|
-| TTL cache with hot path | cache.ps1 (`Initialize-PluginCache`) | ~5ms when valid (skips `Get-Command` and SHA256 entirely) |
-| Incremental SHA256 fingerprint with versions | `Get-PluginFingerprint` | Invalidates cache on tool updates |
-| Theme content hash in fingerprint | `Get-PluginFingerprint` | Invalidates on theme edits |
+| TTL cache with hot path | cache.ps1 (`Initialize-PluginCache`) | ~5ms validation when valid (skips `Get-Command` and `Get-FileHash` entirely) |
+| LastWriteTime fingerprint | `Get-PluginFingerprint` | Invalidates cache on tool/theme changes using `LastWriteTime` + size (~0ms vs SHA256 ~43ms) |
+| File size + timestamp in fingerprint | `Get-PluginFingerprint` | Invalidates on theme edits without SHA256 overhead |
 | `StringBuilder` for cache generation | `Update-PluginCache` | Avoids string concatenation in loop |
 | `StringBuilder` in `Copy-ToClipboard` | text_utils.ps1 | Efficiency in long pipelines |
 | Single-line cache read | `Initialize-PluginCache` (`-TotalCount 1`) | Avoids reading entire file for TTL check |
@@ -557,10 +571,11 @@ The profile requires `RemoteSigned` or higher at `CurrentUser` scope. Downloaded
 
 ## Automated Testing and CI
 
-### Two Test Suites
+### Three Test Suites
 
 | Test Suite | Framework | Use |
 |---|---|---|
+| `tests/Setup.Tests.ps1` | Custom | TDD suite for setup modules — 32 assertions across 6 modules |
 | `tests/Test-ProfileInstallation.ps1` | Custom | Post-install health check — 64 checks across 6 categories |
 | `tests/Microsoft.PowerShell_profile.Tests.ps1` | Custom | Behavioral integration — navigation, file ops, error handling |
 
