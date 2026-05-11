@@ -27,6 +27,11 @@ param()
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+# TLS 1.2 enforcement for PS 5.1 (GitHub requires it)
+if ($PSVersionTable.PSVersion.Major -lt 6) {
+    [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+}
+
 # Platform check
 if ($PSVersionTable.PSVersion.Major -ge 6) {
     $isWin = $IsWindows
@@ -36,7 +41,7 @@ if ($PSVersionTable.PSVersion.Major -ge 6) {
 
 if (-not $isWin) {
     Write-Host "This installer is for Windows only. For Linux, use install.ps1." -ForegroundColor Red
-    exit 1
+    return
 }
 
 # Constants
@@ -90,7 +95,7 @@ if (-not $repoPath) {
         Write-Host "Repository downloaded to: $repoPath" -ForegroundColor Green
     } catch {
         Write-Host "Failed to download repository: $($_.Exception.Message)" -ForegroundColor Red
-        exit 1
+        return
     }
 }
 
@@ -98,7 +103,7 @@ if (-not $repoPath) {
 $setupEntryPoint = Join-Path $repoPath 'setup\setup.ps1'
 if (-not (Test-Path $setupEntryPoint)) {
     Write-Host "Setup directory not found. The repository may be outdated." -ForegroundColor Red
-    exit 1
+    return
 }
 
 . $setupEntryPoint -RepoPath $repoPath
