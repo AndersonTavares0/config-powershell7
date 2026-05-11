@@ -1,13 +1,13 @@
 @echo off
 :: ──────────────────────────────────────────────────────────────
-:: install.cmd — Double-click wrapper for install.ps1
-:: Detects pwsh (PowerShell 7+) or falls back to powershell.exe
+:: install.cmd — Double-click GUI installer for PowerShell Profile
+:: Opens the interactive WPF setup window
 :: ──────────────────────────────────────────────────────────────
-title PowerShell Profile Installer
+title PowerShell Profile Setup
 
 where pwsh >nul 2>nul
 if %errorlevel% equ 0 (
-    pwsh -NoProfile -ExecutionPolicy Bypass -File "%~dp0install.ps1" -NonInteractive
+    pwsh -NoProfile -ExecutionPolicy Bypass -File "%~dp0setup.ps1"
 ) else (
-    powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0install.ps1" -NonInteractive
+    powershell -NoProfile -ExecutionPolicy Bypass -File "%~dp0setup.ps1"
 )
