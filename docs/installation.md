@@ -58,6 +58,12 @@ cd config-powershell7
 
 ### Step 3: Automated Installation (Zero-UAC)
 
+> **One-line remote install (recommended):**
+> ```powershell
+> irm https://github.com/AndersonTavares0/config-powershell7/raw/main/setup.ps1 | iex
+> ```
+> This downloads the repository, launches the WPF GUI installer, and lets you choose install or remove — no clone required.
+
 > **Windows:** Double-click `install.cmd` to launch the WPF GUI installer.
 > **CI/headless:** Use `.\install.ps1 -NonInteractive` or the CLI entry point `.\setup.ps1`.
 

@@ -196,7 +196,7 @@ function Show-Gui {
             <TextBlock Text="Invoke via irm: "
                        FontSize="10" Foreground="#6C7086"
                        VerticalAlignment="Center"/>
-            <TextBlock Text="irm ...setup.ps1 | iex"
+            <TextBlock Text="irm https://github.com/AndersonTavares0/config-powershell7/raw/main/setup.ps1 | iex"
                        FontSize="10" Foreground="#585B70"
                        FontFamily="Consolas"
                        VerticalAlignment="Center"/>

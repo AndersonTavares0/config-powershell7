@@ -7,7 +7,7 @@
     Oh My Posh, Zoxide, Nerd Font, PS modules) and configures the profile.
 
     Invoke remotely (no clone needed):
-        irm https://raw.githubusercontent.com/ander/config-powershell7/main/setup.ps1 | iex
+        irm https://github.com/AndersonTavares0/config-powershell7/raw/main/setup.ps1 | iex
 
     Or run locally:
         .\setup.ps1
@@ -40,7 +40,7 @@ if (-not $isWin) {
 }
 
 # Constants
-$repoOwner  = 'ander'
+$repoOwner  = 'AndersonTavares0'
 $repoName   = 'config-powershell7'
 $repoBranch = 'main'
 $repoZipUrl = "https://github.com/$repoOwner/$repoName/archive/refs/heads/$repoBranch.zip"

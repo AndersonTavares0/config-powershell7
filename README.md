@@ -75,11 +75,17 @@ config-powershell7/
 
 ## Quick Start
 
-**Option A — WPF GUI (Windows):**
+**Option A — One-line remote install (recommended):**
+
+```powershell
+irm https://github.com/AndersonTavares0/config-powershell7/raw/main/setup.ps1 | iex
+```
+
+**Option B — WPF GUI (Windows):**
 
 Clone the repo and double-click `install.cmd`.
 
-**Option B — Terminal:**
+**Option C — Terminal:**
 
 ```powershell
 git clone https://github.com/AndersonTavares0/config-powershell7.git
@@ -87,7 +93,7 @@ cd config-powershell7
 .\setup.ps1
 ```
 
-**Option C — Headless (CI):**
+**Option D — Headless (CI):**
 
 ```powershell
 .\install.ps1 -NonInteractive
