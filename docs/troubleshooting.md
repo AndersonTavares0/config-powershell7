@@ -87,7 +87,31 @@ Clear-Cache
 
 ## Tests
 
-The project includes three test suites:
+The project includes four test/benchmark suites:
+
+### 0. Profile Boot Benchmark
+
+`tests/benchmark.ps1` — Spawns 5+ fresh `pwsh -NoProfile` processes, measures each module load time individually, and reports per-module breakdown + average/min/max boot times.
+
+```powershell
+.\tests\benchmark.ps1          # default: 5 runs
+.\tests\benchmark.ps1 -Runs 10  # 10 runs for better signal
+```
+
+#### Sample output
+
+```
+Config    71.7 ms
+Cache    343.4 ms
+Nav         2.0 ms
+Git         1.8 ms
+System      4.7 ms
+PSReadLine 18.0 ms
+TextUtils   2.3 ms
+Total     443.9 ms
+
+Media: 414ms  Min: 398.7ms  Max: 443.9ms
+```
 
 ### 1. Setup Module Tests (TDD)
 
@@ -178,6 +202,7 @@ The pipeline copies profile + modules to `$PROFILE` path and runs the custom tes
 - `tests/Setup.Tests.ps1` uses a custom TDD framework (functions: `Test-Result`, `Test-Skip`, `Assert-True`, `Assert-Equal`, `Assert-NotNull`, `Assert-False`) with 32 assertions across 6 modules.
 - `tests/Test-ProfileInstallation.ps1` implements a custom test framework (functions: `Test-Result`, `Test-Skip`, `Assert-True`, `Assert-Equal`, etc.) optimized for diagnostic output. 64 checks.
 - `tests/Microsoft.PowerShell_profile.Tests.ps1` uses the same custom framework for behavioral integration tests (navigation, file ops, text processing).
+- `tests/benchmark.ps1` uses `[Diagnostics.Stopwatch]` for precise micro-timing across fresh `pwsh -NoProfile` process invocations.
 
 ### Test Strategy
 
@@ -214,14 +239,20 @@ The test files dynamically verify `$env:__PROFILE_LOADED` and evaluate the profi
 - **Cache TTL is time-based (24h)** — cache is invalidated by fingerprint change OR TTL expiration, whichever comes first
 - **`sed` does literal replacement** — no regex support; uses `String.Replace()` literal, unlike Unix `sed`
 - **`sed` has 50MB size limit** — larger files are rejected for DoS protection
-- **OMP hot path bottleneck (~120ms)** — the `oh-my-posh init` output calls a 25KB `init.ps1` that creates a dynamic module via `New-Module -ScriptBlock { ... } | Import-Module -Global`. This is intrinsic to oh-my-posh and cannot be optimized without modifying OMP internals or lazy-loading the prompt.
+- **OMP hot path bottleneck (~150ms)** — the `oh-my-posh init` output calls a 25KB `init.ps1` (667 lines) that creates a dynamic module via `New-Module -ScriptBlock { ... }`. zoxide adds ~30ms for its init functions. Combined, Cache module dominates ~77% of total boot time (~340ms of ~420ms).
 
-### Possible improvements (without changing current behavior)
+### Improvements applied
+
+- **Inline config paths** — `CachePath` and `ThemePath` resolved inline in config.ps1 (no function definition + parameter binding overhead) — saves ~10ms on Windows boot
+- **Boot benchmark** — `tests/benchmark.ps1` provides data-driven measurement of each module
+
+### Possible improvements (not yet implemented)
 
 - Expose `-TimeoutSec` as a parameter in `pubip`
 - Support regex in `sed` via `-Regex` parameter
 - Add `-WhatIf` to `sed` to preview changes before applying
+- Lazy-load OMP on first prompt to save ~150ms boot time
 
 ---
 
-*Revision: 05/2026 — Compatible with PS 5.1+ / PS Core 7+ / Windows 10+ / Linux / macOS*
+*Revision: 05/2026 (v2 — Config inline paths, benchmark tool) — Compatible with PS 5.1+ / PS Core 7+ / Windows 10+ / Linux / macOS*

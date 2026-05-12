@@ -13,7 +13,7 @@
 
 ## Key Technical Features
 
-- **Extreme Performance**: Optimized boot sequence with TTL-based plugin cache (24h). Hot path skips `Get-Command` and `Get-FileHash` entirely (~5ms cache validation + ~120ms OMP init). Fingerprint uses `LastWriteTime` + file size (not SHA256) for change detection. Boot time color-coded: 🟢 Green < 300ms, 🟡 Yellow < 600ms, 🔴 Red > 600ms.
+- **Extreme Performance**: Optimized boot sequence with TTL-based plugin cache (24h). Hot path skips `Get-Command` and `Get-FileHash` entirely (~5ms cache validation + ~120ms OMP init + ~30ms zoxide init). Config paths resolved inline (no function overhead). Fingerprint uses `LastWriteTime` + file size (not SHA256) for change detection. Boot time color-coded: 🟢 Green < 300ms, 🟡 Yellow < 600ms, 🔴 Red > 600ms. [Benchmark real: ~420ms média](tests/benchmark.ps1).
 - **TTL Cache System**: Third-party plugins (`oh-my-posh`, `zoxide`) are cached with a 24-hour Time-To-Live. Cache header includes fingerprint + Unix timestamp; when TTL is valid, `Get-Command` and fingerprint recalculation are skipped entirely. Fingerprint uses file `LastWriteTime` + size for fast change detection (~0ms vs SHA256's ~43ms).
 - **WPF GUI Installer**: Interactive Windows installer with progress bar, synchronized logging, and terminal menu fallback for non-interactive/CI environments. Installs PS7, Git, Oh My Posh, Zoxide, Nerd Font, Alacritty, Chocolatey, Scoop — all from one unified setup.
 - **Zero-Elevation Installer**: No symlinks, no UAC prompts. The installer writes a lightweight `$PROFILE` file that dot-sources the repository via `$env:__PROFILE_REPO_ROOT`, ensuring 100% path resolution without Administrator privileges.
@@ -63,8 +63,9 @@ config-powershell7/
 │   ├── system/                 # System/Network utilities + sudo
 │   ├── psreadline/             # PSReadLine configuration + keybindings
 │   └── text_utils/             # Unix-like tools (grep, tail, sed, touch)
-├── tests/                      # Test Suites (custom framework)
-│   ├── Test-ProfileInstallation.ps1    # 64 post-install checks
+├── tests/                      # Test Suites + Benchmarks (custom framework)
+│   ├── benchmark.ps1                    # Profile boot timing benchmark (5+ runs, fresh processes)
+│   ├── Test-ProfileInstallation.ps1     # 64 post-install checks
 │   ├── Microsoft.PowerShell_profile.Tests.ps1  # Behavioral integration tests
 │   └── Setup.Tests.ps1                 # 32 TDD tests for setup modules
 └── graphify-out/               # Knowledge graph (queryable via /graphify)
