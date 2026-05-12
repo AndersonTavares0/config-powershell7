@@ -7,7 +7,8 @@ modules/*/obj/
 *.tmp
 *.temp
 *.diff
-test_*.ps1
+test_*
+!tests/
 
 # Logs
 *.log
@@ -60,3 +61,12 @@ htmlcov/
 # Graphify temporary and output files
 .graphify_*
 graphify-out/
+
+# Planning/GSD workflow state (internal)
+.planning/
+
+# Machine-specific module override
+modules/99-local.ps1
+
+# PowerShell auto-generated formats
+*.ps1xml

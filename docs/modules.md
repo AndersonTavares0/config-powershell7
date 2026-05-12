@@ -8,7 +8,8 @@ This repository contains a custom PowerShell profile (`Microsoft.PowerShell_prof
 
 ## Features
 
-- **TTL Plugin Cache** — 24-hour Time-To-Live for Zoxide and Oh My Posh; hot path skips `Get-Command` and `Get-FileHash` entirely (~5ms validation + ~120ms OMP init execution)
+- **TTL Plugin Cache** — 24-hour Time-To-Live for Zoxide and Oh My Posh; hot path skips `Get-Command` and `Get-FileHash` entirely (~5ms validation + ~120ms OMP init + ~30ms zoxide init)
+- **Inline Config Paths** — Cache and theme paths resolved inline on Windows (no function definition + parameter binding overhead)
 - **Quick navigation** — aliases for directories and filesystem movement
 - **Utility functions** — Unix-like equivalents (`touch`, `which`, `grep`, `head`, `tail`, `sed`)
 - **Git shortcuts** — full Git workflow with functions and aliases (conditional on git availability)
@@ -25,7 +26,7 @@ This repository contains a custom PowerShell profile (`Microsoft.PowerShell_prof
 When opening a new PowerShell session, the profile loads automatically and displays a boot summary:
 
 ```
-PS 7.4.2 · OMP:atomic · Zoxide [85ms]
+PS 7.6.1 · OMP:default · Zoxide [420ms]
 ```
 
 The line shows: PS version, loaded modules, startup time color-coded (green < 300ms, yellow < 600ms, red > 600ms). Admin sessions append `[ADMIN]`.
@@ -141,7 +142,9 @@ The profile avoids reloading Zoxide and Oh My Posh from scratch every session by
 3. If TTL has expired, recalculates the fingerprint using `LastWriteTime` + file size (not SHA256). If unchanged, only updates the timestamp (no rebuild needed).
 4. If fingerprint differs (tools updated, theme changed), regenerates the cache.
 
-**Estimated savings:** ~200–300ms per session when the cache is valid (depending on `Get-Command` and plugin init costs).
+**Estimated savings:** ~200–300ms per session when the cache is valid (depending on `Get-Command` and plugin init costs).  
+**Benchmark (5 runs, fresh processes):** ~420ms average (77% Cache/OMP, 17% Config, 4% PSReadLine, 2% others).  
+Run `.\tests\benchmark.ps1` to measure your actual boot times.
 
 ### PSReadLine
 
@@ -151,8 +154,8 @@ Configured with smart history (no duplicates, up to 5,000 entries), arrow key na
 
 At the end of loading, the profile displays the total boot time and loaded modules, color-coded:
 
-- 🟢 Green: < 300ms (fast hot path, no OMP)
-- 🟡 Yellow: 300–600ms (typical cold boot with OMP + zoxide)
+- 🟢 Green: < 300ms (fast hot path, minimal plugins)
+- 🟡 Yellow: 300–600ms (typical boot with OMP + zoxide — ~420ms benchmarked average)
 - 🔴 Red: > 600ms (cache miss or slow disk)
 
 ---
@@ -197,13 +200,14 @@ config-powershell7/
 │   ├── platform.ps1            # Cross-platform detection + elevation check
 │   ├── ux-helpers.ps1          # Console output (Write-Ok, Write-Warn, etc.)
 │   └── profile-paths.ps1       # Profile path resolution
-├── tests/                      # Test suites (custom framework)
+├── tests/                      # Test suites + benchmarks (custom framework)
+│   ├── benchmark.ps1                    # Profile boot timing benchmark (5+ runs in fresh pwsh processes)
 │   ├── Setup.Tests.ps1                 # 32 TDD tests for setup modules
 │   ├── Test-ProfileInstallation.ps1    # 64 post-install health checks
 │   └── Microsoft.PowerShell_profile.Tests.ps1  # Behavioral integration tests
 └── modules/
     ├── config/
-    │   └── config.ps1                  # Centralized configuration (critical — loaded first)
+    │   └── config.ps1                  # Centralized configuration (critical — loaded first, paths inline)
     ├── cache/
     │   └── cache.ps1                   # TTL cache: Zoxide, Oh-My-Posh, Terminal-Icons
     ├── navigation/
@@ -482,7 +486,7 @@ All variables shared between functions use explicit `$script:`, preventing leaka
 
 ### `script:`-scoped functions
 
-Internal functions (`Get-PluginFingerprint`, `Update-PluginCache`, `Initialize-PluginCache`, `Get-WindowsSystemInfo`, `Get-LinuxSystemInfo`, `Get-MacSystemInfo`, `Test-InteractiveSession`) are declared as `function script:...`, making them invisible to end users and limiting their scope to the module.
+Internal functions (`Get-PluginFingerprint`, `Update-PluginCache`, `Initialize-PluginCache`, `Get-WindowsSystemInfo`, `Get-LinuxSystemInfo`, `Get-MacSystemInfo`, `Test-InteractiveSession`) are declared as `function script:...`, making them invisible to end users and limiting their scope to the module. Config paths (`CachePath`, `ThemePath`) are resolved inline on Windows — no function overhead.
 
 ### Structured error handling
 
@@ -500,7 +504,7 @@ Critical functions use `[CmdletBinding()]` with `$PSCmdlet.WriteError()` for str
 
 ### Guaranteed Dispose
 
-The SHA256 object in the original `Get-PluginFingerprint` used `try/finally` to guarantee `Dispose()` even on exception. Current implementation uses plain string concatenation (no unmanaged resources).
+No unmanaged resources in `Get-PluginFingerprint` — fingerprint uses `LastWriteTime` + file size string concatenation, no SHA256 or crypto objects that require `Dispose()`.
 
 ### Boot summary in scriptblock
 
@@ -544,9 +548,11 @@ The profile requires `RemoteSigned` or higher at `CurrentUser` scope. Downloaded
 
 | Scenario | Expected boot time |
 |---|---|---|
-| With Oh My Posh + Zoxide, valid cache (TTL hot path) | < 150ms (~5ms validation + ~120ms OMP init.ps1) |
-| With Oh My Posh + Zoxide, TTL expired, fingerprint unchanged | < 200ms (timestamp touch only) |
-| With Oh My Posh + Zoxide, cache miss (full rebuild) | < 500ms (cold: zoxide + OMP init + dot-source) |
+| With Oh My Posh + Zoxide, valid cache (TTL hot path) | ~420ms (~5ms validation + ~120ms OMP init + ~30ms zoxide + ~75ms Config + rest) |
+| With Oh My Posh + Zoxide, TTL expired, fingerprint unchanged | ~450ms (timestamp touch, same OMP/zoxide init) |
+| With Oh My Posh + Zoxide, cache miss (full rebuild) | ~650ms (cold: Get-Command + zoxide + OMP init + dot-source) |
+
+> ⚠️ Real benchmark data (5 runs, fresh pwsh processes): **414ms average** (min 398ms, max 444ms). Cache module dominates at ~340ms (77% of boot). Run `.\tests\benchmark.ps1` for current measurements.
 
 ### Applied techniques
 
@@ -564,6 +570,7 @@ The profile requires `RemoteSigned` or higher at `CurrentUser` scope. Downloaded
 | 5-min TTL on `pubip` | system.ps1 | Avoids network calls in same session |
 | Early return before `Get-Command` | cache.ps1 (`Initialize-PluginCache` hot path) | Saves 40–100ms by deferring `Get-Command zoxide`/`oh-my-posh` to cold path |
 | Navigation lazy-init (`docs`, `dtop`) | navigation.ps1 | Saves 2–6ms by deferring `[Environment]::GetFolderPath` to first call |
+| Inline config paths (no functions) | config.ps1 | Eliminates function definition + parameter binding overhead on Windows (~10ms saved, cleaner code) |
 
 ---
 
@@ -575,6 +582,7 @@ The profile requires `RemoteSigned` or higher at `CurrentUser` scope. Downloaded
 
 | Test Suite | Framework | Use |
 |---|---|---|
+| `tests/benchmark.ps1` | Custom | Profile boot timing benchmark — spawns fresh pwsh processes, measures each module, 5+ runs |
 | `tests/Setup.Tests.ps1` | Custom | TDD suite for setup modules — 32 assertions across 6 modules |
 | `tests/Test-ProfileInstallation.ps1` | Custom | Post-install health check — 64 checks across 6 categories |
 | `tests/Microsoft.PowerShell_profile.Tests.ps1` | Custom | Behavioral integration — navigation, file ops, error handling |
