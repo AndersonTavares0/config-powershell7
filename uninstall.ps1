@@ -23,7 +23,12 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-# ── SHARED LIBS ──────────────────────────────────────────────
+# ── SHARED LIBS ─────────────────────────────────────────────
+# Unblock downloaded files first (covers ZIP download scenario)
+if ($script:IsWin) {
+    Get-ChildItem -Path $PSScriptRoot -Filter '*.ps1' -Recurse -ErrorAction SilentlyContinue |
+        Unblock-File -ErrorAction SilentlyContinue
+}
 . (Join-Path $PSScriptRoot 'lib/platform.ps1')
 . (Join-Path $PSScriptRoot 'lib/ux-helpers.ps1')
 . (Join-Path $PSScriptRoot 'lib/profile-paths.ps1')

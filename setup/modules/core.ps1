@@ -116,6 +116,12 @@ function Download-Repo {
         Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
         Remove-Item $extractDir -Recurse -Force -ErrorAction SilentlyContinue
 
+        # Unblock downloaded files to avoid ExecutionPolicy errors
+        Write-GuiLog "Unblocking script files..." -Type Step
+        Get-ChildItem -Path $TargetDir -Filter '*.ps1' -Recurse -ErrorAction SilentlyContinue |
+            Unblock-File -ErrorAction SilentlyContinue
+        Write-GuiLog "Files unblocked." -Type Ok
+
         if (Test-Path (Join-Path $TargetDir 'Microsoft.PowerShell_profile.ps1') -ErrorAction SilentlyContinue) {
             Write-GuiLog "Repository ready at: $TargetDir" -Type Ok
             return $true

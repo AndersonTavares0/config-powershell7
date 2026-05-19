@@ -25,6 +25,26 @@ $script:BootTimer = [System.Diagnostics.Stopwatch]::StartNew()
 # $env:__PROFILE_REPO_ROOT com o caminho correto antes do dot-source.
 $script:ProfileRoot = if ($env:__PROFILE_REPO_ROOT) { $env:__PROFILE_REPO_ROOT } else { $PSScriptRoot }
 
+# ── PLATFORM DETECTION (inline, before config.ps1 loads) ─────
+if ($PSVersionTable.PSVersion.Major -ge 6) {
+    $script:IsWin = $IsWindows
+    $script:IsLnx = $IsLinux
+    $script:IsMac = $IsMacOS
+} else {
+    $script:IsWin = $true
+    $script:IsLnx = $false
+    $script:IsMac = $false
+}
+
+# ── UNBLOCK DOWNLOADED FILES (Windows only) ──────────────────
+# Remove Zone.Identifier from ZIP downloads to avoid ExecutionPolicy errors.
+# Runs once per session via env var guard.
+if ($script:IsWin -and -not $env:__PROFILE_UNBLOCKED) {
+    Get-ChildItem -Path $script:ProfileRoot -Filter '*.ps1' -Recurse -ErrorAction SilentlyContinue |
+        Unblock-File -ErrorAction SilentlyContinue
+    $env:__PROFILE_UNBLOCKED = '1'
+}
+
 # ── LISTA DE MÓDULOS CARREGADOS (consumida pelo cache) ───────
 $script:StartupModules = [System.Collections.Generic.List[string]]::new()
 
@@ -79,3 +99,8 @@ $color = if ($bootMs -lt 300) { 'Green' } elseif ($bootMs -lt 600) { 'Yellow' } 
 
 Write-Host "PS $($PSVersionTable.PSVersion)${moduleList}${adminTag}" -ForegroundColor Cyan -NoNewline
 Write-Host " [${bootMs}ms]" -ForegroundColor $color
+
+# ── DEFAULT WORKING DIRECTORY ─────────────────────────────────
+# Garante que o terminal sempre inicie no HOME, nunca em System32
+# (comportamento padrão do Windows quando executado como Admin)
+Set-Location $HOME

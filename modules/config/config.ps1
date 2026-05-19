@@ -7,14 +7,17 @@ $ErrorActionPreference = 'Stop'
 
 # Detecção cross-platform inline — lib/platform.ps1 é para scripts standalone,
 # módulos do profile devem ser autossuficientes (sem dependência de diretório lib/).
-if ($PSVersionTable.PSVersion.Major -ge 6) {
-    $script:IsWin = $IsWindows
-    $script:IsLnx = $IsLinux
-    $script:IsMac = $IsMacOS
-} else {
-    $script:IsWin = $true
-    $script:IsLnx = $false
-    $script:IsMac = $false
+# Profile já define $script:IsWin antes de carregar config.ps1; fallback para standalone.
+if (-not (Get-Variable -Name 'IsWin' -Scope Script -ErrorAction SilentlyContinue)) {
+    if ($PSVersionTable.PSVersion.Major -ge 6) {
+        $script:IsWin = $IsWindows
+        $script:IsLnx = $IsLinux
+        $script:IsMac = $IsMacOS
+    } else {
+        $script:IsWin = $true
+        $script:IsLnx = $false
+        $script:IsMac = $false
+    }
 }
 
 if ($script:IsWin) {
