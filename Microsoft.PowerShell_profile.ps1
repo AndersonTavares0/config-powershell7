@@ -38,10 +38,17 @@ if ($PSVersionTable.PSVersion.Major -ge 6) {
 
 # ── UNBLOCK DOWNLOADED FILES (Windows only) ──────────────────
 # Remove Zone.Identifier from ZIP downloads to avoid ExecutionPolicy errors.
-# Runs once per session via env var guard.
-if ($script:IsWin -and -not $env:__PROFILE_UNBLOCKED) {
-    Get-ChildItem -Path $script:ProfileRoot -Filter '*.ps1' -Recurse -ErrorAction SilentlyContinue |
-        Unblock-File -ErrorAction SilentlyContinue
+# Skipped in CI (no Zone.Identifier on checkout) and after first run.
+if ($script:IsWin -and -not $env:__PROFILE_UNBLOCKED -and -not $env:CI) {
+    try {
+        $sampleFile = Get-ChildItem -Path $script:ProfileRoot -Filter '*.ps1' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($sampleFile -and $sampleFile.GetIsZoneIdentifier()) {
+            Get-ChildItem -Path $script:ProfileRoot -Filter '*.ps1' -Recurse -ErrorAction SilentlyContinue |
+                Unblock-File -ErrorAction SilentlyContinue
+        }
+    } catch {
+        # GetIsZoneIdentifier may not be available on all PS versions; skip check
+    }
     $env:__PROFILE_UNBLOCKED = '1'
 }
 
