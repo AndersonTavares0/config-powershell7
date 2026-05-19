@@ -49,7 +49,7 @@ $repoOwner  = 'AndersonTavares0'
 $repoName   = 'config-powershell7'
 $repoBranch = 'main'
 $repoZipUrl = "https://github.com/$repoOwner/$repoName/archive/refs/heads/$repoBranch.zip"
-$repoDefaultDir = Join-Path $HOME $repoName
+$repoDefaultDir = Join-Path ([Environment]::GetFolderPath('MyDocuments')) $repoName
 
 # Resolve repo path
 function Resolve-RepoPath {
@@ -64,6 +64,49 @@ function Resolve-RepoPath {
 }
 
 $repoPath = Resolve-RepoPath
+
+# Detect temporary locations where users commonly extract ZIPs
+$tempLocations = @(
+    [Environment]::GetFolderPath('Desktop'),
+    [Environment]::GetFolderPath('MyDocuments'),
+    [Environment]::GetFolderPath('Downloads'),
+    $env:TEMP,
+    $env:TMP
+) | Where-Object { $_ }
+
+function Test-IsTempLocation {
+    param([string]$Path)
+    foreach ($temp in $tempLocations) {
+        if ($Path -like "$temp*") { return $true }
+    }
+    return $false
+}
+
+# If running from a temporary location, copy to permanent install dir
+if ($repoPath -and (Test-IsTempLocation $repoPath)) {
+    Write-Host "Detected temporary install location. Copying to permanent directory..." -ForegroundColor Yellow
+    $permanentPath = $repoDefaultDir
+    
+    try {
+        if (Test-Path $permanentPath) {
+            Remove-Item $permanentPath -Recurse -Force -ErrorAction Stop
+        }
+        Copy-Item -Path "$repoPath\*" -Destination $permanentPath -Recurse -Force -ErrorAction Stop
+        Write-Host "Files copied to: $permanentPath" -ForegroundColor Green
+        $repoPath = $permanentPath
+    } catch {
+        Write-Host "Failed to copy to permanent location: $($_.Exception.Message)" -ForegroundColor Red
+        Write-Host "Continuing with temporary location (profile may break if folder is deleted)." -ForegroundColor Yellow
+    }
+}
+
+# Unblock files in existing repo (covers git clone or manual copy)
+if ($repoPath) {
+    Write-Host "Unblocking script files..." -ForegroundColor Cyan
+    Get-ChildItem -Path $repoPath -Filter '*.ps1' -Recurse -ErrorAction SilentlyContinue |
+        Unblock-File -ErrorAction SilentlyContinue
+    Write-Host "Files unblocked." -ForegroundColor Green
+}
 
 # Download repo if not found
 if (-not $repoPath) {
@@ -91,6 +134,12 @@ if (-not $repoPath) {
 
         Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
         Remove-Item $extractDir -Recurse -Force -ErrorAction SilentlyContinue
+
+        # Unblock downloaded files to avoid ExecutionPolicy errors
+        Write-Host "Unblocking script files..." -ForegroundColor Cyan
+        Get-ChildItem -Path $repoPath -Filter '*.ps1' -Recurse -ErrorAction SilentlyContinue |
+            Unblock-File -ErrorAction SilentlyContinue
+        Write-Host "Files unblocked." -ForegroundColor Green
 
         Write-Host "Repository downloaded to: $repoPath" -ForegroundColor Green
     } catch {
