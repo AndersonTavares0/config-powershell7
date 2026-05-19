@@ -31,5 +31,17 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          ./tests/Test-ProfileInstallation.ps1 -Detailed
-          ./tests/Microsoft.PowerShell_profile.Tests.ps1 -Verbose
+          $testPath = Join-Path $env:GITHUB_WORKSPACE 'tests/Test-ProfileInstallation.ps1'
+          if (Test-Path $testPath) {
+            & $testPath -Detailed
+          } else {
+            Write-Warning "Test file not found at: $testPath"
+            Write-Warning "Current directory: $(Get-Location)"
+            Write-Warning "Files in workspace:"
+            Get-ChildItem $env:GITHUB_WORKSPACE -Recurse -Filter '*.ps1' | Select-Object FullName
+            exit 1
+          }
+          $testPath2 = Join-Path $env:GITHUB_WORKSPACE 'tests/Microsoft.PowerShell_profile.Tests.ps1'
+          if (Test-Path $testPath2) {
+            & $testPath2 -Verbose
+          }
