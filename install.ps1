@@ -4,8 +4,7 @@ param(
     [switch]$NonInteractive
 )
 
-Set-StrictMode -Version Latest
-$ErrorActionPreference = 'Stop'
+$ErrorActionPreference = 'Continue'
 
 # ═══════════════════════════════════════════════════════════════
 # CONFIGURAÇÕES
@@ -13,6 +12,7 @@ $ErrorActionPreference = 'Stop'
 $RepoOwner = 'AndersonTavares0'
 $RepoName  = 'config-powershell7'
 $RepoZip   = "https://github.com/$RepoOwner/$RepoName/archive/refs/heads/main.zip"
+$ScriptUrl = "https://raw.githubusercontent.com/$RepoOwner/$RepoName/main/install.ps1"
 
 # Caminhos dinâmicos — NEVER use $HOME\Documents (blindado contra OneDrive)
 $DocsDir      = [Environment]::GetFolderPath('MyDocuments')
@@ -37,7 +37,7 @@ function Write-Fail  { Write-Host "[FAIL] $args" -ForegroundColor Red }
 function Write-Step  { Write-Host "`n[>>>] $args" -ForegroundColor Cyan }
 function Write-Info  { Write-Host "[--] $args" -ForegroundColor Gray }
 
-# Variáveis globais para o sumário — evitam StrictMode crash se funções falharem
+# Variáveis globais para o sumário — evitam crash se funções falharem
 $targetProfile = $null
 $erros = 0
 
@@ -56,9 +56,16 @@ if (-not (Test-IsAdministrator)) {
     Write-Step "Reiniciando como Administrador..."
 
     try {
+        # Salva em arquivo temporário para evitar problemas com iex
+        $tempScript = Join-Path $env:TEMP "config-pwsh7-install.ps1"
+        if ($PSVersionTable.PSVersion.Major -lt 6) {
+            [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+        }
+        Invoke-WebRequest -Uri $ScriptUrl -OutFile $tempScript -ErrorAction Stop
+
         $psi = New-Object System.Diagnostics.ProcessStartInfo
         $psi.FileName = 'powershell.exe'
-        $psi.Arguments = "-NoProfile -ExecutionPolicy Bypass -Command `"iex ((New-Object Net.WebClient).DownloadString('https://raw.githubusercontent.com/$RepoOwner/$RepoName/main/install.ps1'))`""
+        $psi.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$tempScript`""
         $psi.Verb = 'RunAs'
         $psi.UseShellExecute = $true
         if (-not [System.Diagnostics.Process]::Start($psi)) {
