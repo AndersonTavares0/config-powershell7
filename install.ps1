@@ -37,6 +37,10 @@ function Write-Fail  { Write-Host "[FAIL] $args" -ForegroundColor Red }
 function Write-Step  { Write-Host "`n[>>>] $args" -ForegroundColor Cyan }
 function Write-Info  { Write-Host "[--] $args" -ForegroundColor Gray }
 
+# Variáveis globais para o sumário — evitam StrictMode crash se funções falharem
+$targetProfile = $null
+$erros = 0
+
 # ═══════════════════════════════════════════════════════════════
 # 1. ELEVAÇÃO DE PRIVILÉGIO
 # ═══════════════════════════════════════════════════════════════
@@ -281,7 +285,7 @@ function Install-TemaOhMyPosh {
         try {
             $raw = Get-Content $themePath -Raw -ErrorAction SilentlyContinue
             if ($raw -and $raw.Length -gt 100) { Write-OK "Tema OMP já existe."; return $true }
-        } catch { }
+        } catch { Write-Warn "Erro ao verificar tema OMP: $($_.Exception.Message)" }
     }
 
     if (-not (Test-Path $OmpThemeDir)) { New-Item -ItemType Directory -Path $OmpThemeDir -Force | Out-Null }
@@ -407,7 +411,6 @@ $passos = @(
     @{ Nome = 'Linkar profile';         Script = { Install-LinkProfile } }
 )
 
-$erros = 0
 for ($i = 0; $i -lt $passos.Count; $i++) {
     Write-Step "[$($i+7)/$($passos.Count+7)] $($passos[$i].Nome)"
     try { & $passos[$i].Script } catch { Write-Fail "$($passos[$i].Nome) falhou: $($_.Exception.Message)"; $erros++ }
