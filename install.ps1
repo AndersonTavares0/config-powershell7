@@ -125,7 +125,7 @@ function Install-WingetPackage {
             return $false
         }
     } catch {
-        Write-Warn "Falha ao instalar $Nome: $($_.Exception.Message)"
+        Write-Warn "Falha ao instalar ${Nome}: $($_.Exception.Message)"
         return $false
     }
 }
