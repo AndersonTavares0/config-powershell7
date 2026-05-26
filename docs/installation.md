@@ -30,7 +30,28 @@ The profile uses a modular architecture for maintainability and organization. Th
 
 ## Installation
 
-### Prerequisites
+### One-Line Remote Install (recomendado)
+
+```powershell
+irm https://raw.githubusercontent.com/AndersonTavares0/config-powershell7/main/install.ps1 | iex
+```
+
+O script baixa e executa o instalador universal que:
+
+1. **Eleva para Administrador** automaticamente (UAC)
+2. **Instala dependências via WinGet** — PowerShell 7, Git, Oh My Posh, Zoxide, Alacritty
+3. **Baixa o repositório** para `[Environment]::GetFolderPath('MyDocuments')\config-powershell7`
+4. **Instala a FiraCode Nerd Font** via Shell API do Windows
+5. **Configura o Alacritty** com tema Tokyo Night + FiraCode
+6. **Configura o Windows Terminal** com FiraCode como fonte padrão
+7. **Baixa o tema atomic.omp.json** para Oh My Posh
+8. **Linka o profile** via dot-source
+
+> Caminhos dinâmicos com `[Environment]::GetFolderPath` — funciona com OneDrive ativado.
+> Idempotente — pode rodar várias vezes sem quebrar.
+> Tudo em blocos Try-Catch com mensagens em português.
+
+### Prerequisites (instalação manual)
 
 | Component | Installation | Required |
 |---|---|---|
@@ -56,14 +77,20 @@ git clone https://github.com/AndersonTavares0/config-powershell7.git
 cd config-powershell7
 ```
 
-### Step 3: Automated Installation (Zero-UAC)
+### Step 3: Automated Installation
 
+> **Remote (recomendado):** `irm https://.../install.ps1 | iex`  
 > **Windows:** Double-click `install.cmd` to launch the WPF GUI installer.  
-> **CI/headless:** Use `.\install.ps1 -NonInteractive` or the CLI entry point `.\setup.ps1`.
+> **CI/headless:** Use `.\install.ps1` or `.\setup.ps1`.
 
-The installer writes a lightweight `$PROFILE` file that dot-sources the repository profile via `$env:__PROFILE_REPO_ROOT`. No symlinks, no Administrator elevation required.
+The installer writes a lightweight `$PROFILE` file that dot-sources the repository profile via `$env:__PROFILE_REPO_ROOT`. No symlinks.
 
-**WPF GUI (Windows — recommended):**
+**Remote install (qualquer máquina):**
+```powershell
+irm https://raw.githubusercontent.com/AndersonTavares0/config-powershell7/main/install.ps1 | iex
+```
+
+**WPF GUI (Windows):**
 ```powershell
 .\setup.ps1
 # or double-click install.cmd
@@ -85,6 +112,12 @@ The installer performs these steps:
 3. **Backup** — if an existing non-ours profile exists, backs it up with a unique timestamp
 4. **Profile link** — writes the dot-source profile file to `$PROFILE`
 5. **Cache setup** — generates TTL cache on first load
+
+### install.cmd (batch/PowerShell híbrido)
+
+O `install.cmd` funciona de duas formas:
+- **Duplo clique** — executa como batch, chama PowerShell e baixa o `install.ps1` da internet
+- **`irm install.cmd | iex`** — o conteúdo é interpretado como PowerShell, baixando e executando o `install.ps1`
 
 ---
 

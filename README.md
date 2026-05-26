@@ -11,10 +11,19 @@
 ![PSReadLine](https://img.shields.io/badge/Input-PSReadLine-darkgreen?logo=powershell)
 ![License](https://img.shields.io/badge/License-MIT-lightgrey)
 
+## One-Line Install
+
+```powershell
+irm https://raw.githubusercontent.com/AndersonTavares0/config-powershell7/main/install.ps1 | iex
+```
+
+Elevação automática para Administrador, WinGet silencioso, caminhos blindados contra OneDrive, idempotente.
+
 ## Key Technical Features
 
 - **Extreme Performance**: Optimized boot sequence with TTL-based plugin cache (24h). Hot path skips `Get-Command` and `Get-FileHash` entirely (~5ms cache validation + ~120ms OMP init + ~30ms zoxide init). Config paths resolved inline (no function overhead). Fingerprint uses `LastWriteTime` + file size (not SHA256) for change detection. Boot time color-coded: 🟢 Green < 300ms, 🟡 Yellow < 600ms, 🔴 Red > 600ms. [Benchmark real: ~420ms média](tests/benchmark.ps1).
 - **TTL Cache System**: Third-party plugins (`oh-my-posh`, `zoxide`) are cached with a 24-hour Time-To-Live. Cache header includes fingerprint + Unix timestamp; when TTL is valid, `Get-Command` and fingerprint recalculation are skipped entirely. Fingerprint uses file `LastWriteTime` + size for fast change detection (~0ms vs SHA256's ~43ms).
+- **Universal Installer**: Auto-elevação para Admin, WinGet com `--silent --accept-source-agreements --accept-package-agreements`, caminhos dinâmicos via `[Environment]::GetFolderPath` (blindado contra OneDrive), idempotente (pode rodar múltiplas vezes).
 - **WPF GUI Installer**: Interactive Windows installer with progress bar, synchronized logging, and terminal menu fallback for non-interactive/CI environments. Installs PS7, Git, Oh My Posh, Zoxide, Nerd Font, Alacritty, Chocolatey, Scoop — all from one unified setup.
 - **Zero-Elevation Installer**: No symlinks, no UAC prompts. The installer writes a lightweight `$PROFILE` file that dot-sources the repository via `$env:__PROFILE_REPO_ROOT`, ensuring 100% path resolution without Administrator privileges.
 - **Strict-Mode Compliant**: Entire codebase passes `Set-StrictMode -Version Latest` — zero uninitialized variables, no hidden scoping bugs. Code Quality Guide enforced: no bare `catch {}`, no silent failures. Globals migrated to environment variables (`$env:__PROFILE_LOADED`, `$env:__PROFILE_REPO_ROOT`).
@@ -37,11 +46,11 @@ The profile is structured into strict modular components for isolation and fault
 config-powershell7/
 ├── .github/workflows/          # CI/CD (GitHub Actions) — 1 pipeline
 ├── Microsoft.PowerShell_profile.ps1 # Entrypoint Profile (Loader)
-├── install.ps1                 # Legacy CLI installer (preserved for CI)
+├── install.ps1                 # Universal installer (irm | iex, admin elevation, winget, idempotent)
 ├── uninstall.ps1               # Safe Uninstaller (backup + cache cleanup)
-├── install.cmd                 # Double-click GUI launcher (calls setup/)
+├── install.cmd                 # Bootstrap launcher (batch/PowerShell hybrid — double-click or irm | iex)
 ├── uninstall.cmd               # Double-click uninstaller (Windows)
-├── setup.ps1                   # Entry point for new GUI/CLI installer
+├── setup.ps1                   # Entry point for WPF GUI installer
 ├── setup/                      # Modular GUI installer
 │   ├── setup.ps1               # Module loader/dispatcher (GUI or CLI)
 │   └── modules/                # Installer sub-modules
@@ -77,11 +86,19 @@ config-powershell7/
 
 ## Quick Start
 
-**Option A — WPF GUI (Windows):**
+**Option A — Remote (recommended):**
+
+```powershell
+irm https://raw.githubusercontent.com/AndersonTavares0/config-powershell7/main/install.ps1 | iex
+```
+
+> Eleva para Admin automaticamente, instala tudo via WinGet e configura o profile.
+
+**Option B — WPF GUI (Windows):**
 
 > Clone the repo and double-click `install.cmd`.
 
-**Option B — Terminal:**
+**Option C — Terminal:**
 
 ```powershell
 git clone https://github.com/AndersonTavares0/config-powershell7.git
@@ -89,7 +106,7 @@ cd config-powershell7
 .\setup.ps1
 ```
 
-**Option C — Headless (CI):**
+**Option D — Headless (CI):**
 
 ```powershell
 .\install.ps1 -NonInteractive
