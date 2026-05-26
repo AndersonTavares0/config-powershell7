@@ -70,16 +70,11 @@ function Install-Zoxide {
 }
 
 function Install-NerdFont {
-    $fontRegistryPath = 'HKCU:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts'
-    try {
-        $regKey = Get-ItemProperty -Path $fontRegistryPath -ErrorAction Stop
-        $existingFonts = $regKey.PSObject.Properties.Name | Where-Object { $_ -match 'FiraCode.*Nerd' }
-        if ($existingFonts) {
-            Write-GuiLog "FiraCode Nerd Font already installed ($($existingFonts.Count) variant(s))." -Type Ok
-            return $true
-        }
-    } catch {
-        Write-GuiLog "Could not read font registry: $($_.Exception.Message)" -Type Warn
+    Add-Type -AssemblyName System.Drawing -ErrorAction SilentlyContinue
+    $existingFamilies = [System.Drawing.FontFamily]::Families | Where-Object { $_.Name -match 'FiraCode Nerd' }
+    if ($existingFamilies) {
+        Write-GuiLog "FiraCode Nerd Font already installed ($($existingFamilies.Count) variant(s))." -Type Ok
+        return $true
     }
 
     Write-GuiLog "Installing FiraCode Nerd Font..." -Type Step
@@ -99,25 +94,14 @@ function Install-NerdFont {
         Add-Type -AssemblyName System.IO.Compression.FileSystem
         [System.IO.Compression.ZipFile]::ExtractToDirectory($fontZip, $fontDir)
 
-        $destDir = Join-Path $env:LOCALAPPDATA 'Microsoft\Windows\Fonts'
-        if (-not (Test-Path $destDir)) {
-            New-Item -ItemType Directory -Path $destDir -Force | Out-Null
-        }
+        Add-Type -AssemblyName System.Windows.Forms
+        $shell = New-Object -ComObject Shell.Application
+        $fontsFolder = $shell.Namespace(0x14)
 
         $installedCount = 0
         foreach ($fontFile in (Get-ChildItem $fontDir -Filter '*.ttf' -Recurse)) {
             try {
-                $dest = Join-Path $destDir $fontFile.Name
-                $copyName = $fontFile.Name
-                $idx = 1
-                while (Test-Path $dest -ErrorAction SilentlyContinue) {
-                    $copyName = "$($fontFile.BaseName)_$idx$($fontFile.Extension)"
-                    $dest = Join-Path $destDir $copyName
-                    $idx++
-                }
-                Copy-Item $fontFile.FullName $dest -Force -ErrorAction Stop
-                $null = New-ItemProperty -Path $fontRegistryPath `
-                    -Name $fontFile.BaseName -Value $copyName -PropertyType String -Force -ErrorAction SilentlyContinue
+                $fontsFolder.CopyHere($fontFile.FullName, 0x14)
                 $installedCount++
             } catch {
                 Write-GuiLog "Could not install font $($fontFile.Name): $($_.Exception.Message)" -Type Warn
