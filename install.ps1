@@ -37,7 +37,7 @@ function Write-Fail  { Write-Host "[FAIL] $args" -ForegroundColor Red }
 function Write-Step  { Write-Host "`n[>>>] $args" -ForegroundColor Cyan }
 function Write-Info  { Write-Host "[--] $args" -ForegroundColor Gray }
 
-# Variáveis globais para o sumário — evitam crash se funções falharem
+# Variáveis globais para o sumário — evitam StrictMode crash se funções falharem
 $targetProfile = $null
 $erros = 0
 
