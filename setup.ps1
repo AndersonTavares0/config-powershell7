@@ -69,7 +69,7 @@ $repoPath = Resolve-RepoPath
 $tempLocations = @(
     [Environment]::GetFolderPath('Desktop'),
     [Environment]::GetFolderPath('MyDocuments'),
-    [Environment]::GetFolderPath('Downloads'),
+    "$([Environment]::GetFolderPath('UserProfile'))\Downloads",
     $env:TEMP,
     $env:TMP
 ) | Where-Object { $_ }
