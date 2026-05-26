@@ -1,6 +1,8 @@
 ﻿#Requires -Version 5.1
-[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '')]
-param()
+param(
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '')]
+    [switch]$NonInteractive
+)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
