@@ -10,11 +10,21 @@ $ErrorActionPreference = 'Stop'
 # ═══════════════════════════════════════════════════════════════
 $RepoOwner = 'AndersonTavares0'
 $RepoName  = 'config-powershell7'
-$RepoUrl   = "https://github.com/$RepoOwner/$RepoName/archive/refs/heads/main.zip"
+$RepoZip   = "https://github.com/$RepoOwner/$RepoName/archive/refs/heads/main.zip"
 
-# Usa [Environment]::GetFolderPath — funciona com OneDrive e caminhos customizados
-$DocsPath = [Environment]::GetFolderPath('MyDocuments')
-$PermanentDir = Join-Path $DocsPath $RepoName
+# Caminhos dinâmicos — NEVER use $HOME\Documents (blindado contra OneDrive)
+$DocsDir      = [Environment]::GetFolderPath('MyDocuments')
+$PermanentDir = Join-Path $DocsDir $RepoName
+$AppDataDir   = [Environment]::GetFolderPath('ApplicationData')
+$AlacrittyDir = Join-Path $AppDataDir 'alacritty'
+$OmpThemeDir  = Join-Path ([Environment]::GetFolderPath('UserProfile')) '.poshthemes'
+$UserFontDir  = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'Microsoft\Windows\Fonts'
+
+$WinTermPaths = @(
+    "$([Environment]::GetFolderPath('LocalApplicationData'))\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json"
+    "$([Environment]::GetFolderPath('LocalApplicationData'))\Packages\Microsoft.WindowsTerminalPreview_8wekyb3d8bbwe\LocalState\settings.json"
+    "$([Environment]::GetFolderPath('LocalApplicationData'))\Microsoft\Windows Terminal\settings.json"
+)
 
 # ═══════════════════════════════════════════════════════════════
 # FUNÇÕES DE LOG
@@ -31,8 +41,8 @@ function Write-Info  { Write-Host "[--] $args" -ForegroundColor Gray }
 function Test-IsAdministrator {
     if ($PSVersionTable.PSVersion.Major -ge 6 -and $IsLinux) { return $false }
     $id = [System.Security.Principal.WindowsIdentity]::GetCurrent()
-    $principal = New-Object System.Security.Principal.WindowsPrincipal($id)
-    return $principal.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)
+    $p  = New-Object System.Security.Principal.WindowsPrincipal($id)
+    return $p.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)
 }
 
 if (-not (Test-IsAdministrator)) {
@@ -40,14 +50,14 @@ if (-not (Test-IsAdministrator)) {
     Write-Step "Reiniciando como Administrador..."
 
     try {
-        $scriptPath = if ($PSCommandPath) { $PSCommandPath } else { "$PSScriptRoot\install.ps1" }
         $psi = New-Object System.Diagnostics.ProcessStartInfo
         $psi.FileName = 'powershell.exe'
-        $psi.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$scriptPath`""
+        $psi.Arguments = "-NoProfile -ExecutionPolicy Bypass -Command `"iex ((New-Object Net.WebClient).DownloadString('https://raw.githubusercontent.com/$RepoOwner/$RepoName/main/install.ps1'))`""
         $psi.Verb = 'RunAs'
         $psi.UseShellExecute = $true
-        $proc = [System.Diagnostics.Process]::Start($psi)
-        if (-not $proc) { throw "Falha ao iniciar processo elevado." }
+        if (-not [System.Diagnostics.Process]::Start($psi)) {
+            throw "Falha ao iniciar processo elevado."
+        }
         exit 0
     } catch {
         Write-Fail "Não foi possível elevar privilégios: $($_.Exception.Message)"
@@ -59,71 +69,97 @@ if (-not (Test-IsAdministrator)) {
 Write-OK "Executando como Administrador."
 
 # ═══════════════════════════════════════════════════════════════
-# 2. DETECÇÃO DE PLATAFORMA (caminhos dinâmicos)
+# 2. UTILITÁRIOS
 # ═══════════════════════════════════════════════════════════════
-$script:IsWin = if ($PSVersionTable.PSVersion.Major -ge 6) { $IsWindows } else { $true }
+function Install-Winget {
+    try {
+        $winget = Get-Command winget -ErrorAction SlientlyContinue
+        if (-not $winget) { throw "WinGet não encontrado." }
+        return $winget.Source
+    } catch {
+        Write-Step "Instalando WinGet..."
+        $url = 'https://aka.ms/getwinget'
+        $msi = Join-Path $env:TEMP 'Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle'
+        try {
+            if ($PSVersionTable.PSVersion.Major -lt 6) {
+                [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+            }
+            Invoke-WebRequest -Uri $url -OutFile $msi -ErrorAction Stop
+            Add-AppxPackage -Path $msi -ErrorAction Stop
+            Write-OK "WinGet instalado."
+            return 'winget'
+        } catch {
+            throw "Falha ao instalar WinGet. Baixe manualmente em: https://aka.ms/getwinget"
+        }
+    }
+}
 
-# Caminhos dinâmicos — NEVER use $HOME\Documents
-$script:UserFontsDir  = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'Microsoft\Windows\Fonts'
-$script:AppDataDir    = [Environment]::GetFolderPath('ApplicationData')
-$script:AlacrittyDir  = Join-Path $script:AppDataDir 'alacritty'
-$script:ChocoFontReg  = 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts'
-$script:UserFontReg   = 'HKCU:\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts'
-$script:WinTermPaths  = @(
-    "$([Environment]::GetFolderPath('LocalApplicationData'))\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json"
-    "$([Environment]::GetFolderPath('LocalApplicationData'))\Packages\Microsoft.WindowsTerminalPreview_8wekyb3d8bbwe\LocalState\settings.json"
-    "$([Environment]::GetFolderPath('LocalApplicationData'))\Microsoft\Windows Terminal\settings.json"
-)
+function Install-WingetPackage {
+    param([string]$Id, [string]$Nome)
 
-# ═══════════════════════════════════════════════════════════════
-# 3. FUNÇÕES PRINCIPAIS (idempotentes)
-# ═══════════════════════════════════════════════════════════════
+    $existe = Get-Command ($Nome -replace '\..*', '').ToLower() -ErrorAction SilentlyContinue
+    if ($existe) {
+        Write-OK "$Nome já instalado: $($existe.Source)"
+        return $true
+    }
 
-function Install-Repositorio {
-    <#
-    .DESCRIÇÃO
-        Baixa o repositório para a pasta Documentos (se não existir)
-        e retorna o caminho. Idempotente: se já existe, apenas retorna.
-    #>
-    $repoProfilePath = Join-Path $PermanentDir 'Microsoft.PowerShell_profile.ps1'
+    Write-Step "Instalando $Nome via WinGet..."
+    try {
+        $proc = Start-Process -FilePath 'winget' -ArgumentList @(
+            'install', "--id=$Id",
+            '--silent',
+            '--accept-source-agreements',
+            '--accept-package-agreements'
+        ) -Wait -PassThru -NoNewWindow
 
-    if ((Test-Path $repoProfilePath) -and (Test-Path (Join-Path $PermanentDir 'modules')) -and (Test-Path (Join-Path $PermanentDir 'setup'))) {
+        if ($proc.ExitCode -eq 0) {
+            Write-OK "$Nome instalado com sucesso."
+            return $true
+        } elseif ($proc.ExitCode -eq -1978335189) {
+            Write-OK "$Nome já estava instalado."
+            return $true
+        } else {
+            Write-Warn "WinGet retornou código $($proc.ExitCode) para $Nome."
+            return $false
+        }
+    } catch {
+        Write-Warn "Falha ao instalar $Nome: $($_.Exception.Message)"
+        return $false
+    }
+}
+
+function Download-ComRepositorio {
+    $profilePath = Join-Path $PermanentDir 'Microsoft.PowerShell_profile.ps1'
+    if ((Test-Path $profilePath) -and (Test-Path (Join-Path $PermanentDir 'modules'))) {
         Write-OK "Repositório já existe em: $PermanentDir"
         return $PermanentDir
     }
 
-    Write-Step "Baixando repositório de $RepoOwner/$RepoName ..."
+    Write-Step "Baixando repositório $RepoOwner/$RepoName ..."
     $zipPath = Join-Path $env:TEMP "$RepoName.zip"
-    $extractDir = Join-Path $env:TEMP "$RepoName-extract"
+    $tempDir = Join-Path $env:TEMP "$RepoName-extract"
 
     try {
         if ($PSVersionTable.PSVersion.Major -lt 6) {
             [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
         }
-
-        Invoke-WebRequest -Uri $RepoUrl -OutFile $zipPath -ErrorAction Stop
-        Write-OK "Download concluído ($([Math]::Round((Get-Item $zipPath).Length / 1KB, 1)) KB)."
-    } catch {
-        throw "Falha ao baixar o repositório — verifique sua conexão com a internet. Detalhes: $($_.Exception.Message)"
-    }
+        Invoke-WebRequest -Uri $RepoZip -OutFile $zipPath -ErrorAction Stop
+    } catch { throw "Falha ao baixar repositório — verifique sua internet. $($_.Exception.Message)" }
 
     try {
-        if (Test-Path $extractDir) { Remove-Item $extractDir -Recurse -Force }
+        if (Test-Path $tempDir) { Remove-Item $tempDir -Recurse -Force }
         if (Test-Path $PermanentDir) { Remove-Item $PermanentDir -Recurse -Force }
 
-        New-Item -ItemType Directory -Path $extractDir -Force | Out-Null
-
+        New-Item -ItemType Directory -Path $tempDir -Force | Out-Null
         Add-Type -AssemblyName System.IO.Compression.FileSystem
-        [System.IO.Compression.ZipFile]::ExtractToDirectory($zipPath, $extractDir)
+        [System.IO.Compression.ZipFile]::ExtractToDirectory($zipPath, $tempDir)
 
-        $innerDir = Get-ChildItem $extractDir -Directory | Select-Object -First 1
-        if (-not $innerDir) { throw "Nenhuma pasta encontrada dentro do arquivo ZIP." }
+        $inner = Get-ChildItem $tempDir -Directory | Select-Object -First 1
+        if (-not $inner) { throw "ZIP vazio ou inválido." }
 
-        Move-Item $innerDir.FullName $PermanentDir -Force
-
-        # Remove lixo
+        Move-Item $inner.FullName $PermanentDir -Force
         Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
-        Remove-Item $extractDir -Recurse -Force -ErrorAction SilentlyContinue
+        Remove-Item $tempDir -Recurse -Force -ErrorAction SilentlyContinue
 
         # Desbloqueia arquivos baixados
         Get-ChildItem $PermanentDir -Filter '*.ps1' -Recurse -ErrorAction SilentlyContinue |
@@ -131,102 +167,63 @@ function Install-Repositorio {
 
         Write-OK "Repositório instalado em: $PermanentDir"
         return $PermanentDir
-    } catch {
-        throw "Falha ao extrair o repositório. Detalhes: $($_.Exception.Message)"
-    }
+    } catch { throw "Falha ao extrair repositório. $($_.Exception.Message)" }
 }
 
 function Install-FonteNerd {
-    <#
-    .DESCRIÇÃO
-        Instala a FiraCode Nerd Font via Shell API do Windows.
-        Idempotente: verifica se já existe antes de baixar.
-    #>
-
     Add-Type -AssemblyName System.Drawing -ErrorAction SilentlyContinue
-    $fontesExistentes = [System.Drawing.FontFamily]::Families | Where-Object { $_.Name -match 'FiraCode Nerd' }
-    if ($fontesExistentes) {
-        Write-OK "FiraCode Nerd Font já instalada ($($fontesExistentes.Count) variante(s))."
+    if ([System.Drawing.FontFamily]::Families | Where-Object { $_.Name -match 'FiraCode Nerd' }) {
+        Write-OK "FiraCode Nerd Font já instalada."
         return $true
     }
 
     Write-Step "Instalando FiraCode Nerd Font..."
-    $fontZipUrl = 'https://github.com/ryanoasis/nerd-fonts/releases/download/v3.3.0/FiraCode.zip'
-    $fontZip = Join-Path $env:TEMP 'FiraCode-NerdFont.zip'
-    $fontDir = Join-Path $env:TEMP 'FiraCode-NerdFont'
+    $url = 'https://github.com/ryanoasis/nerd-fonts/releases/download/v3.3.0/FiraCode.zip'
+    $zip = Join-Path $env:TEMP 'FiraCode-NerdFont.zip'
+    $dir = Join-Path $env:TEMP 'FiraCode-NerdFont'
 
     try {
         if ($PSVersionTable.PSVersion.Major -lt 6) {
             [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
         }
-        Invoke-WebRequest -Uri $fontZipUrl -OutFile $fontZip -ErrorAction Stop
-    } catch {
-        throw "Falha ao baixar a FiraCode Nerd Font — verifique sua conexão. Detalhes: $($_.Exception.Message)"
-    }
+        Invoke-WebRequest -Uri $url -OutFile $zip -ErrorAction Stop
+    } catch { throw "Falha ao baixar fonte — verifique sua internet. $($_.Exception.Message)" }
 
     try {
-        if (Test-Path $fontDir) { Remove-Item $fontDir -Recurse -Force -ErrorAction SilentlyContinue }
-        New-Item -ItemType Directory -Path $fontDir -Force | Out-Null
-
+        if (Test-Path $dir) { Remove-Item $dir -Recurse -Force }
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
         Add-Type -AssemblyName System.IO.Compression.FileSystem
-        [System.IO.Compression.ZipFile]::ExtractToDirectory($fontZip, $fontDir)
+        [System.IO.Compression.ZipFile]::ExtractToDirectory($zip, $dir)
 
-        # Garante que a pasta de fontes do usuário existe
-        if (-not (Test-Path $script:UserFontsDir)) {
-            New-Item -ItemType Directory -Path $script:UserFontsDir -Force | Out-Null
-        }
+        if (-not (Test-Path $UserFontDir)) { New-Item -ItemType Directory -Path $UserFontDir -Force | Out-Null }
 
-        # Usa Shell API em vez de New-ItemProperty (evita erro de nome de registro)
-        Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue
         $shell = New-Object -ComObject Shell.Application
-        $fontsFolder = $shell.Namespace(0x14)
-
-        $instaladas = 0
-        foreach ($fonte in (Get-ChildItem $fontDir -Filter '*.ttf' -Recurse)) {
-            try {
-                $fontsFolder.CopyHere($fonte.FullName, 0x14)
-                $instaladas++
-            } catch {
-                Write-Warn "Não foi possível instalar $($fonte.Name): $($_.Exception.Message)"
-            }
+        $fonts = $shell.Namespace(0x14)
+        $count = 0
+        foreach ($f in (Get-ChildItem $dir -Filter '*.ttf' -Recurse)) {
+            try { $fonts.CopyHere($f.FullName, 0x14); $count++ } catch { }
         }
+        Remove-Item $zip -Force -ErrorAction SilentlyContinue
+        Remove-Item $dir -Recurse -Force -ErrorAction SilentlyContinue
 
-        Remove-Item $fontZip -Force -ErrorAction SilentlyContinue
-        Remove-Item $fontDir -Recurse -Force -ErrorAction SilentlyContinue
-
-        if ($instaladas -gt 0) {
-            Write-OK "FiraCode Nerd Font instalada ($instaladas variantes)."
-            return $true
-        } else {
-            Write-Warn "Nenhuma fonte foi instalada."
-            return $false
-        }
-    } catch {
-        throw "Falha ao instalar as fontes. Detalhes: $($_.Exception.Message)"
-    }
+        if ($count -gt 0) { Write-OK "FiraCode Nerd Font instalada ($count variantes)."; return $true }
+        Write-Warn "Nenhuma fonte foi instalada."
+        return $false
+    } catch { throw "Falha ao instalar fontes. $($_.Exception.Message)" }
 }
 
 function Install-ConfigAlacritty {
-    <#
-    .DESCRIÇÃO
-        Cria/configura o arquivo alacritty.toml.
-        Idempotente: faz backup do existente antes de sobrescrever.
-    #>
-
-    $configPath = Join-Path $script:AlacrittyDir 'alacritty.toml'
-
-    if (-not (Test-Path $script:AlacrittyDir)) {
-        New-Item -ItemType Directory -Path $script:AlacrittyDir -Force | Out-Null
-    }
+    $configPath = Join-Path $AlacrittyDir 'alacritty.toml'
+    if (-not (Test-Path $AlacrittyDir)) { New-Item -ItemType Directory -Path $AlacrittyDir -Force | Out-Null }
 
     if (Test-Path $configPath) {
-        $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-        $backup = "$configPath.bak-$timestamp"
-        Copy-Item $configPath $backup -Force
-        Write-Info "Backup do Alacritty existente criado: $backup"
+        $bak = "$configPath.bak-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+        Copy-Item $configPath $bak -Force
+        Write-Info "Backup do Alacritty: $bak"
     }
 
-    $configContent = @'
+    try {
+        Set-Content -Path $configPath -Value @'
 [terminal.shell]
 program = "pwsh.exe"
 args = ["-NoLogo"]
@@ -268,163 +265,95 @@ blue    = "#7aa2f7"
 magenta = "#bb9af7"
 cyan    = "#7dcfff"
 white   = "#c0caf5"
-'@
+'@ -Encoding UTF8 -Force
 
-    try {
-        Set-Content -Path $configPath -Value $configContent -Encoding UTF8 -Force
-        Write-OK "Alacritty configurado em: $configPath"
+        Write-OK "Alacritty configurado: $configPath"
         return $true
-    } catch {
-        throw "Falha ao escrever config do Alacritty. Detalhes: $($_.Exception.Message)"
-    }
+    } catch { throw "Falha ao escrever config do Alacritty. $($_.Exception.Message)" }
 }
 
 function Install-TemaOhMyPosh {
-    <#
-    .DESCRIÇÃO
-        Baixa o tema atomic.omp.json para $HOME\.poshthemes.
-        Idempotente: se já existe e é válido, pula.
-    #>
-
-    $themeDir = Join-Path ([Environment]::GetFolderPath('UserProfile')) '.poshthemes'
-    $themePath = Join-Path $themeDir 'atomic.omp.json'
+    $themePath = Join-Path $OmpThemeDir 'atomic.omp.json'
 
     if (Test-Path $themePath) {
         try {
             $raw = Get-Content $themePath -Raw -ErrorAction SilentlyContinue
-            if ($raw -and $raw.Length -gt 100) {
-                Write-OK "Tema Oh My Posh já existe: $themePath"
-                return $true
-            }
+            if ($raw -and $raw.Length -gt 100) { Write-OK "Tema OMP já existe."; return $true }
         } catch { }
     }
 
-    if (-not (Test-Path $themeDir)) {
-        New-Item -ItemType Directory -Path $themeDir -Force | Out-Null
-    }
-
-    $temaUrl = 'https://raw.githubusercontent.com/JanDeDobbeleer/oh-my-posh/main/themes/atomic.omp.json'
+    if (-not (Test-Path $OmpThemeDir)) { New-Item -ItemType Directory -Path $OmpThemeDir -Force | Out-Null }
 
     try {
         if ($PSVersionTable.PSVersion.Major -lt 6) {
             [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
         }
-        Invoke-WebRequest -Uri $temaUrl -OutFile $themePath -ErrorAction Stop
-        Write-OK "Tema Oh My Posh baixado para: $themePath"
+        Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/JanDeDobbeleer/oh-my-posh/main/themes/atomic.omp.json' -OutFile $themePath -ErrorAction Stop
+        Write-OK "Tema OMP baixado: $themePath"
         return $true
     } catch {
         Write-Warn "Não foi possível baixar o tema OMP: $($_.Exception.Message)"
-        Write-Info "O Oh My Posh usará o tema padrão. Instale manualmente com: oh-my-posh config export --config $themePath"
         return $false
     }
 }
 
 function Install-ConfigWindowsTerminal {
-    <#
-    .DESCRIÇÃO
-        Define FiraCode Nerd Font como fonte padrão no Windows Terminal.
-        Idempotente: verifica se já está configurado.
-    #>
-
-    $settingsPath = $script:WinTermPaths | Where-Object { Test-Path $_ -PathType Leaf } | Select-Object -First 1
-    if (-not $settingsPath) {
-        Write-Info "Windows Terminal não encontrado. Pulando configuração de fonte."
-        return $false
-    }
+    $settingsPath = $WinTermPaths | Where-Object { Test-Path $_ -PathType Leaf } | Select-Object -First 1
+    if (-not $settingsPath) { Write-Info "Windows Terminal não encontrado. Pulando."; return $false }
 
     try {
         $settings = Get-Content $settingsPath -Raw -Encoding UTF8 | ConvertFrom-Json
-        $fontName = 'FiraCode Nerd Font'
-
         if (-not $settings.profiles) { return $false }
 
+        $fontName = 'FiraCode Nerd Font'
         if (-not $settings.profiles.defaults) {
             $settings.profiles | Add-Member -Name 'defaults' -Value @{} -MemberType NoteProperty -Force
         }
-        $fontProp = $settings.profiles.defaults.PSObject.Properties['font']
-        $fontObj = if ($fontProp) { $fontProp.Value } else { $null }
+        $fontObj = if ($settings.profiles.defaults.PSObject.Properties['font']) { $settings.profiles.defaults.font } else { $null }
         if (-not $fontObj) {
             $fontObj = [PSCustomObject]@{}
             $settings.profiles.defaults | Add-Member -Name 'font' -Value $fontObj -MemberType NoteProperty -Force
         }
-
-        $faceProp = $fontObj.PSObject.Properties['face']
-        if ($faceProp -and $faceProp.Value -eq $fontName) {
-            Write-OK "Windows Terminal já usa $fontName."
-            return $true
-        }
+        if ($fontObj.face -eq $fontName) { Write-OK "WT já usa $fontName."; return $true }
 
         $fontObj | Add-Member -Name 'face' -Value $fontName -MemberType NoteProperty -Force
-
-        # Aplica também em cada perfil individual
-        $profileList = $settings.profiles.PSObject.Properties['list']
-        if ($profileList -and $profileList.Value) {
-            foreach ($perfil in $profileList.Value) {
-                $pfFontProp = $perfil.PSObject.Properties['font']
-                $pfFont = if ($pfFontProp) { $pfFontProp.Value } else { $null }
-                if (-not $pfFont) {
-                    $pfFont = [PSCustomObject]@{}
-                    $perfil | Add-Member -Name 'font' -Value $pfFont -MemberType NoteProperty -Force
-                }
-                $pfFont | Add-Member -Name 'face' -Value $fontName -MemberType NoteProperty -Force
-            }
-        }
-
         $settings | ConvertTo-Json -Depth 10 | Set-Content $settingsPath -Encoding UTF8 -Force
-        Write-OK "Fonte do Windows Terminal alterada para: $fontName"
+        Write-OK "Fonte do WT alterada para: $fontName"
         return $true
-    } catch {
-        Write-Warn "Não foi possível configurar a fonte do Windows Terminal: $($_.Exception.Message)"
-        return $false
-    }
+    } catch { Write-Warn "Falha ao configurar WT: $($_.Exception.Message)"; return $false }
 }
 
 function Install-LinkProfile {
-    <#
-    .DESCRIÇÃO
-        Cria o link dot-source no $PROFILE apontando para o repositório.
-        Idempotente: se já linkado corretamente, pula.
-    #>
-
     $targetProfile = if ($PROFILE -is [string] -and $PROFILE) { $PROFILE } else { $PROFILE.CurrentUserCurrentHost }
-    $targetDir = Split-Path $targetProfile -Parent
-    $sourceProfile = Join-Path $PermanentDir 'Microsoft.PowerShell_profile.ps1'
+    $targetDir  = Split-Path $targetProfile -Parent
+    $source     = Join-Path $PermanentDir 'Microsoft.PowerShell_profile.ps1'
 
-    if (-not (Test-Path $sourceProfile)) {
-        throw "Arquivo de profile não encontrado no repositório: $sourceProfile"
-    }
+    if (-not (Test-Path $source)) { throw "Profile não encontrado no repositório: $source" }
 
     if (Test-Path $targetProfile) {
-        $content = Get-Content $targetProfile -Raw -ErrorAction SilentlyContinue
-        if ($content -match '\. "[^"]*Microsoft\.PowerShell_profile\.ps1"') {
-            Write-OK "Profile já está linkado corretamente."
+        $c = Get-Content $targetProfile -Raw -ErrorAction SilentlyContinue
+        if ($c -match '\. "[^"]*Microsoft\.PowerShell_profile\.ps1"') {
+            Write-OK "Profile já linkado corretamente."
             return $true
         }
-
-        $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-        $backupPath = "$targetProfile.bak-$timestamp"
-        if (Test-Path $backupPath) { $backupPath = "$targetProfile.bak-$timestamp-$(Get-Random)" }
-        Copy-Item $targetProfile $backupPath -Force
-        Write-Info "Backup do profile existente: $backupPath"
+        $bak = "$targetProfile.bak-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+        if (Test-Path $bak) { $bak = "$targetProfile.bak-$(Get-Date -Format 'yyyyMMdd-HHmmss')-$(Get-Random)" }
+        Copy-Item $targetProfile $bak -Force
+        Write-Info "Backup do profile: $bak"
         Remove-Item $targetProfile -Force
     }
 
-    if (-not (Test-Path $targetDir)) {
-        New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
-    }
+    if (-not (Test-Path $targetDir)) { New-Item -ItemType Directory -Force -Path $targetDir | Out-Null }
 
     try {
-        $linkContent = "# Generated by config-powershell7 installer`n`$env:__PROFILE_REPO_ROOT = `"$PermanentDir`"`n. `"$sourceProfile`""
-        Set-Content -Path $targetProfile -Value $linkContent -Encoding UTF8 -Force
-        Write-OK "Profile linkado com sucesso: $targetProfile"
+        Set-Content -Path $targetProfile -Value "# Generated by config-powershell7 installer`n`$env:__PROFILE_REPO_ROOT = `"$PermanentDir`"`n. `"$source`"" -Encoding UTF8 -Force
+        Write-OK "Profile linkado: $targetProfile"
         return $true
-    } catch {
-        throw "Falha ao criar link do profile. Detalhes: $($_.Exception.Message)"
-    }
+    } catch { throw "Falha ao linkar profile. $($_.Exception.Message)" }
 }
 
 # ═══════════════════════════════════════════════════════════════
-# 4. ORQUESTRAÇÃO PRINCIPAL
+# 3. ORQUESTRAÇÃO
 # ═══════════════════════════════════════════════════════════════
 Write-Host @"
 
@@ -434,47 +363,72 @@ Write-Host @"
 
 "@ -ForegroundColor Cyan
 
-$erros = 0
+# Força TLS 1.2 para PS 5.1
+if ($PSVersionTable.PSVersion.Major -lt 6) {
+    [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+}
+
+# Passo 0: WinGet
+$wingetPath = Get-Command winget -ErrorAction SilentlyContinue
+if (-not $wingetPath) {
+    Write-Step "[0/9] Instalando WinGet..."
+    $wingetPath = Install-Winget
+} else {
+    Write-OK "WinGet disponível: $($wingetPath.Source)"
+}
+
+# Passo 1: PowerShell 7
+Install-WingetPackage -Id 'Microsoft.PowerShell' -Nome 'PowerShell 7'
+
+# Passo 2: Git
+Install-WingetPackage -Id 'Git.Git' -Nome 'Git'
+
+# Passo 3: Oh My Posh
+Install-WingetPackage -Id 'JanDeDobbeleer.OhMyPosh' -Nome 'Oh My Posh'
+
+# Passo 4: Zoxide
+Install-WingetPackage -Id 'ajeetdsouza.zoxide' -Nome 'Zoxide'
+
+# Passo 5: Alacritty
+Install-WingetPackage -Id 'Alacritty.Alacritty' -Nome 'Alacritty'
+
+# Passo 6: Repositório
+Install-WingetPackage -Id 'Microsoft.PowerShell' -Nome 'PowerShell 7'
+
+# Passo 7: Fontes + Configs
 $passos = @(
-    { Install-Repositorio }
-    { Install-FonteNerd }
-    { Install-ConfigAlacritty }
-    { Install-ConfigWindowsTerminal }
-    { Install-TemaOhMyPosh }
-    { Install-LinkProfile }
+    @{ Nome = 'Baixar repositório';     Script = { Download-ComRepositorio } }
+    @{ Nome = 'Instalar FiraCode Font'; Script = { Install-FonteNerd } }
+    @{ Nome = 'Configurar Alacritty';   Script = { Install-ConfigAlacritty } }
+    @{ Nome = 'Configurar WT';          Script = { Install-ConfigWindowsTerminal } }
+    @{ Nome = 'Baixar tema OMP';        Script = { Install-TemaOhMyPosh } }
+    @{ Nome = 'Linkar profile';         Script = { Install-LinkProfile } }
 )
 
+$erros = 0
 for ($i = 0; $i -lt $passos.Count; $i++) {
-    $nome = $passos[$i].ToString().Split('.')[-1].Replace(' ', '').Replace('}', '')
-    Write-Step "[$($i+1)/$($passos.Count)] $nome"
-    try {
-        & $passos[$i]
-    } catch {
-        Write-Fail "Erro em $nome : $($_.Exception.Message)"
-        $erros++
-    }
+    Write-Step "[$($i+7)/$($passos.Count+7)] $($passos[$i].Nome)"
+    try { & $passos[$i].Script } catch { Write-Fail "$($passos[$i].Nome) falhou: $($_.Exception.Message)"; $erros++ }
 }
 
 # ═══════════════════════════════════════════════════════════════
-# 5. SUMÁRIO
+# 4. SUMÁRIO
 # ═══════════════════════════════════════════════════════════════
 Write-Host @"
-
   ╔══════════════════════════════════════════════╗
 "@ -ForegroundColor Cyan
 
 if ($erros -eq 0) {
     Write-Host "  ║   Instalação concluída com sucesso!        ║" -ForegroundColor Green
 } else {
-    Write-Host "  ║   Instalação concluída com $erros erro(s).      ║" -ForegroundColor Yellow
+    Write-Host "  ║   Concluído com $erros erro(s).                ║" -ForegroundColor Yellow
 }
 
 Write-Host @"
   ╚══════════════════════════════════════════════╝
 
-  Reinicie o terminal para aplicar as mudanças.
-
   Repositório: $PermanentDir
-  Profile:     $PROFILE
+  Profile:     $targetProfile
 
+  Reinicie o terminal para aplicar as mudanças.
 "@ -ForegroundColor Cyan
