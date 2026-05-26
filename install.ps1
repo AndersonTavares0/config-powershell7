@@ -50,12 +50,11 @@ function Test-IsAdministrator {
     return $p.IsInRole([System.Security.Principal.WindowsBuiltInRole]::Administrator)
 }
 
+# Tenta elevar para Admin, mas NÃO bloqueia se falhar
+# A maioria das operações (fontes, configs, profile) funciona sem admin
 if (-not (Test-IsAdministrator)) {
-    Write-Warn "Este script precisa ser executado como Administrador."
-    Write-Step "Reiniciando como Administrador..."
-
+    Write-Step "Tentando elevação para Administrador..."
     try {
-        # Salva em arquivo temporário para evitar problemas com iex
         $tempScript = Join-Path $env:TEMP "config-pwsh7-install.ps1"
         if ($PSVersionTable.PSVersion.Major -lt 6) {
             [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
@@ -67,14 +66,12 @@ if (-not (Test-IsAdministrator)) {
         $psi.Arguments = "-NoProfile -ExecutionPolicy Bypass -File `"$tempScript`""
         $psi.Verb = 'RunAs'
         $psi.UseShellExecute = $true
-        if (-not [System.Diagnostics.Process]::Start($psi)) {
-            throw "Falha ao iniciar processo elevado."
-        }
-        exit 0
+        $proc = [System.Diagnostics.Process]::Start($psi)
+        if ($proc) { exit 0 }
+        throw "Processo não iniciado."
     } catch {
-        Write-Fail "Não foi possível elevar privilégios: $($_.Exception.Message)"
-        Write-Info "Execute manualmente como Administrador e tente novamente."
-        exit 1
+        Write-Warn "Elevação falhou: $($_.Exception.Message)"
+        Write-Info "Continuando sem admin — algumas instalações podem requerer permissão manual."
     }
 }
 
