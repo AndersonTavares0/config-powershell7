@@ -1,8 +1,14 @@
-#Requires -Version 5.1
 param(
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '')]
     [switch]$NonInteractive
 )
+
+# Verificação manual de versão — resiliente a BOM via irm|iex
+# (#Requires falha quando BOM gruda no '#Requires')
+if ($PSVersionTable.PSVersion.Major -lt 5 -or ($PSVersionTable.PSVersion.Major -eq 5 -and $PSVersionTable.PSVersion.Minor -lt 1)) {
+    Write-Error "PowerShell 5.1+ required. Current: $($PSVersionTable.PSVersion)"
+    exit 1
+}
 
 $ErrorActionPreference = 'Continue'
 

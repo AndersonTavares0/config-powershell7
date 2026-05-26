@@ -6,13 +6,14 @@ echo.
 echo  Baixando instalador...
 echo.
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-  "$script = Invoke-RestMethod 'https://raw.githubusercontent.com/AndersonTavares0/config-powershell7/main/install.ps1';" ^
-  "Invoke-Expression $script"
+  "$c = (irm 'https://raw.githubusercontent.com/AndersonTavares0/config-powershell7/main/install.ps1'); ^
+   $c = $c -replace '^\uFEFF',''; ^
+   iex $c"
 echo.
 echo  Concluido. Pressione qualquer tecla para sair...
 pause >nul
 exit /b
 #>
 # PowerShell code aqui (executado quando via irm | iex)
-$script = Invoke-RestMethod 'https://raw.githubusercontent.com/AndersonTavares0/config-powershell7/main/install.ps1'
-Invoke-Expression $script
+$c = (Invoke-RestMethod 'https://raw.githubusercontent.com/AndersonTavares0/config-powershell7/main/install.ps1') -replace '^\uFEFF',''
+Invoke-Expression $c
