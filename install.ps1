@@ -75,7 +75,7 @@ Write-OK "Executando como Administrador."
 # ═══════════════════════════════════════════════════════════════
 function Install-Winget {
     try {
-        $winget = Get-Command winget -ErrorAction SlientlyContinue
+        $winget = Get-Command winget -ErrorAction SilentlyContinue
         if (-not $winget) { throw "WinGet não encontrado." }
         return $winget.Source
     } catch {
@@ -203,7 +203,7 @@ function Install-FonteNerd {
         $fonts = $shell.Namespace(0x14)
         $count = 0
         foreach ($f in (Get-ChildItem $dir -Filter '*.ttf' -Recurse)) {
-            try { $fonts.CopyHere($f.FullName, 0x14); $count++ } catch { }
+            try { $fonts.CopyHere($f.FullName, 0x14); $count++ } catch { Write-Warn "Falha ao instalar $($f.Name): $($_.Exception.Message)" }
         }
         Remove-Item $zip -Force -ErrorAction SilentlyContinue
         Remove-Item $dir -Recurse -Force -ErrorAction SilentlyContinue
