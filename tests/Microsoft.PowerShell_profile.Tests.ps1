@@ -245,7 +245,7 @@ try {
     if (Get-Command Set-DefaultWorkingDirectory -ErrorAction SilentlyContinue) {
         Test-Result -Name "Set-DefaultWorkingDirectory function exists" -Passed $true -Message ""
 
-        $normalDir = Join-Path $env:TEMP "profile_start_normal_$(Get-Random)"
+        $normalDir = Join-Path $HOME "profile_start_normal_$(Get-Random)"
         New-Item -ItemType Directory -Force -Path $normalDir | Out-Null
         $normalDir = (Resolve-Path $normalDir).Path
         Set-Location $normalDir
@@ -257,7 +257,7 @@ try {
         if ($script:Config.IsWindows -and $env:WINDIR) {
             $oldStartDirectory = $script:Config.StartDirectory
             $oldEnvStartDirectory = $env:POWERSHELL_START_DIR
-            $targetDir = Join-Path $env:TEMP "profile_start_target_$(Get-Random)"
+            $targetDir = Join-Path $HOME "profile_start_target_$(Get-Random)"
             New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
             $targetDir = (Resolve-Path $targetDir).Path
             try {
@@ -267,7 +267,7 @@ try {
                 Set-DefaultWorkingDirectory
                 Assert-Equal -Expected $targetDir -Actual (Get-Location).Path -TestName "Set-DefaultWorkingDirectory uses configured start directory"
 
-                $script:Config.StartDirectory = Join-Path $env:TEMP "profile_start_missing_$(Get-Random)"
+                $script:Config.StartDirectory = Join-Path $HOME "profile_start_missing_$(Get-Random)"
                 Set-Location (Join-Path $env:WINDIR 'System32')
                 Set-DefaultWorkingDirectory
                 Assert-Equal -Expected $HOME -Actual (Get-Location).Path -TestName "Set-DefaultWorkingDirectory falls back to HOME"
