@@ -11,6 +11,14 @@ $ErrorActionPreference = 'Stop'
 $script:DocsPath = $null
 $script:DesktopPath = $null
 
+function script:Resolve-ProfileStartDirectory {
+    if ($script:Config.StartDirectory -and (Test-Path $script:Config.StartDirectory -PathType Container)) {
+        return (Resolve-Path $script:Config.StartDirectory).Path
+    }
+
+    return $HOME
+}
+
 function script:Resolve-NavPath {
     param([ValidateSet('Docs', 'Desktop')][string]$Which)
     if ($script:Config.IsWindows) {
@@ -34,6 +42,47 @@ function up   { Set-Location ..                  }
 function up2  { Set-Location ../..              }
 function la   { Get-ChildItem        | Format-Table -AutoSize }
 function ll   { Get-ChildItem -Force | Format-Table -AutoSize }
+
+function Set-DefaultWorkingDirectory {
+    if (-not $script:Config.IsWindows) { return }
+
+    $currentPath = (Get-Location).Path.TrimEnd('\')
+    $windowsRoot = if ($env:WINDIR) { $env:WINDIR } else { $env:SystemRoot }
+    if (-not $windowsRoot) { return }
+
+    $badStartupDirs = @(
+        (Join-Path $windowsRoot 'System32').TrimEnd('\'),
+        (Join-Path $windowsRoot 'SysWOW64').TrimEnd('\')
+    )
+
+    if ($badStartupDirs -contains $currentPath) {
+        Set-Location (script:Resolve-ProfileStartDirectory)
+    }
+}
+
+function Get-ProfileStartDirectory {
+    script:Resolve-ProfileStartDirectory
+}
+
+function Set-ProfileStartDirectory {
+    param([Parameter(Mandatory)][string]$Path)
+
+    if (-not (Test-Path $Path -PathType Container)) {
+        Write-Error "Diretorio invalido: $Path"
+        return
+    }
+
+    $resolvedPath = (Resolve-Path $Path).Path
+    [Environment]::SetEnvironmentVariable('POWERSHELL_START_DIR', $resolvedPath, 'User')
+    $env:POWERSHELL_START_DIR = $resolvedPath
+    $script:Config.StartDirectory = $resolvedPath
+}
+
+function Clear-ProfileStartDirectory {
+    [Environment]::SetEnvironmentVariable('POWERSHELL_START_DIR', $null, 'User')
+    Remove-Item Env:\POWERSHELL_START_DIR -ErrorAction SilentlyContinue
+    $script:Config.StartDirectory = $null
+}
 
 # Parametro via param() formal - permite tab completion e -WhatIf futuro
 function mkcd {

@@ -101,6 +101,9 @@ if (Test-Path $profilePath) {
     if ($content -match "\. `"[^`"]*Microsoft\.PowerShell_profile\.ps1`"") {
         script:Add-Check 'Profile' 'Type' 'PASS' 'Profile dot-sources the config'
     }
+    elseif ($content -match 'POWERSHELL PROFILE' -and $content -match 'modules/config/config\.ps1') {
+        script:Add-Check 'Profile' 'Type' 'PASS' 'Repository profile copied directly'
+    }
     else {
         script:Add-Check 'Profile' 'Type' 'WARN' 'Profile does not seem to dot-source the repository config'
     }
@@ -185,6 +188,7 @@ if (-not $Quiet) { Write-Host "  Functions & Aliases" -ForegroundColor Cyan }
 $coreFunctions = @(
     'Clear-PluginCache', 'Import-TerminalIcons',
     'docs', 'dtop', 'home', 'up', 'up2', 'la', 'll', 'mkcd', 'nf',
+    'Set-DefaultWorkingDirectory', 'Get-ProfileStartDirectory', 'Set-ProfileStartDirectory', 'Clear-ProfileStartDirectory',
     'touch', 'which', 'unzip', 'head', 'tail', 'grep', 'Copy-ToClipboard', 'pst', 'sed',
     'pkill', 'pgrep', 'flushdns', 'df', 'pubip', 'sysinfo', 'sudo'
 )
