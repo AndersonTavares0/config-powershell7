@@ -108,6 +108,8 @@ Write-Host "PS $($PSVersionTable.PSVersion)${moduleList}${adminTag}" -Foreground
 Write-Host " [${bootMs}ms]" -ForegroundColor $color
 
 # ── DEFAULT WORKING DIRECTORY ─────────────────────────────────
-# Garante que o terminal sempre inicie no HOME, nunca em System32
-# (comportamento padrão do Windows quando executado como Admin)
-Set-Location $HOME
+# Preserva o diretório escolhido pelo terminal; só corrige diretórios ruins
+# como System32/SysWOW64 em sessões elevadas do Windows.
+if (Get-Command Set-DefaultWorkingDirectory -ErrorAction SilentlyContinue) {
+    Set-DefaultWorkingDirectory
+}

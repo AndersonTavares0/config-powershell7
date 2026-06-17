@@ -61,5 +61,6 @@ $script:Config = [PSCustomObject]@{
     PSMajor     = $psMajor
     CachePath   = $cachePath
     ThemePath   = $themePath
+    StartDirectory = $env:POWERSHELL_START_DIR
     CacheTTLMinutes = 1440
 }

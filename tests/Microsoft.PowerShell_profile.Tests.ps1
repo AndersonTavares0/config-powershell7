@@ -242,6 +242,55 @@ try {
         Test-Result -Name "home function exists" -Passed $false -Message "Function not defined"
     }
 
+    if (Get-Command Set-DefaultWorkingDirectory -ErrorAction SilentlyContinue) {
+        Test-Result -Name "Set-DefaultWorkingDirectory function exists" -Passed $true -Message ""
+
+        $normalDir = Join-Path $env:TEMP "profile_start_normal_$(Get-Random)"
+        New-Item -ItemType Directory -Force -Path $normalDir | Out-Null
+        Set-Location $normalDir
+        Set-DefaultWorkingDirectory
+        Assert-Equal -Expected $normalDir -Actual (Get-Location).Path -TestName "Set-DefaultWorkingDirectory preserves normal directory"
+        Set-Location $originalLocation
+        Remove-Item $normalDir -Force -ErrorAction SilentlyContinue
+
+        if ($script:Config.IsWindows -and $env:WINDIR) {
+            $oldStartDirectory = $script:Config.StartDirectory
+            $oldEnvStartDirectory = $env:POWERSHELL_START_DIR
+            $targetDir = Join-Path $env:TEMP "profile_start_target_$(Get-Random)"
+            New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
+            try {
+                $script:Config.StartDirectory = $targetDir
+                $env:POWERSHELL_START_DIR = $targetDir
+                Set-Location (Join-Path $env:WINDIR 'System32')
+                Set-DefaultWorkingDirectory
+                Assert-Equal -Expected $targetDir -Actual (Get-Location).Path -TestName "Set-DefaultWorkingDirectory uses configured start directory"
+
+                $script:Config.StartDirectory = Join-Path $env:TEMP "profile_start_missing_$(Get-Random)"
+                Set-Location (Join-Path $env:WINDIR 'System32')
+                Set-DefaultWorkingDirectory
+                Assert-Equal -Expected $HOME -Actual (Get-Location).Path -TestName "Set-DefaultWorkingDirectory falls back to HOME"
+            } finally {
+                Set-Location $originalLocation
+                $script:Config.StartDirectory = $oldStartDirectory
+                if ($oldEnvStartDirectory) { $env:POWERSHELL_START_DIR = $oldEnvStartDirectory }
+                else { Remove-Item Env:\POWERSHELL_START_DIR -ErrorAction SilentlyContinue }
+                Remove-Item $targetDir -Force -ErrorAction SilentlyContinue
+            }
+        } else {
+            Test-Skip -Name "Set-DefaultWorkingDirectory redirects System32" -Reason "Windows-only behavior"
+        }
+    }
+    else {
+        Test-Result -Name "Set-DefaultWorkingDirectory function exists" -Passed $false -Message "Function not defined"
+    }
+
+    if (Get-Command Get-ProfileStartDirectory -ErrorAction SilentlyContinue) {
+        Assert-NotNull -Value (Get-ProfileStartDirectory) -TestName "Get-ProfileStartDirectory returns a path"
+    }
+    else {
+        Test-Result -Name "Get-ProfileStartDirectory function exists" -Passed $false -Message "Function not defined"
+    }
+
     if (Get-Command up -ErrorAction SilentlyContinue) {
         $parent = (Get-Item $originalLocation).Parent.FullName
         up

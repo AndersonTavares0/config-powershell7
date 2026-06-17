@@ -60,6 +60,9 @@ All aliases available in the profile:
 | `up2` | Go up two levels (`cd ..\..`) | `up2` |
 | `la` | List files (excluding hidden) in table | `la` |
 | `ll` | List files (including hidden) in table | `ll` |
+| `Get-ProfileStartDirectory` | Show configured startup fallback directory | `Get-ProfileStartDirectory` |
+| `Set-ProfileStartDirectory <path>` | Persist startup fallback via `POWERSHELL_START_DIR` | `Set-ProfileStartDirectory "$HOME"` |
+| `Clear-ProfileStartDirectory` | Remove startup fallback override | `Clear-ProfileStartDirectory` |
 | `mkcd <path>` | Create directory and enter it | `mkcd projects\new` |
 | `nf <file>` | Create empty file | `nf config.json` |
 
@@ -236,12 +239,13 @@ The execution order when opening a new session:
 5. Loads config module (critical — must succeed, return on failure).
 6. Loads remaining modules in try/catch (non-critical — failure in one does not block others):
    ├── cache/cache.ps1:       TTL check → hot path or rebuild → dot-source cache.
-   ├── navigation/navigation.ps1: Directory shortcuts (docs, dtop, up, mkcd).
+   ├── navigation/navigation.ps1: Directory shortcuts (docs, dtop, up, mkcd) and startup fallback.
    ├── git/git.ps1:           Git functions (only if git is in PATH).
    ├── system/system.ps1:     Platform-aware system utilities + sudo.
    ├── psreadline/psreadline.ps1: Terminal, history, keybindings.
    └── text_utils/text_utils.ps1: File manipulation (touch, sed, grep).
 7. Stopwatch stops and boot summary is displayed.
+8. Current directory is preserved unless Windows opened the shell in `System32`/`SysWOW64`; in that case the profile changes to `POWERSHELL_START_DIR` if valid, otherwise `$HOME`.
 ```
 
 > The function and alias definitions (step 6) are nearly instantaneous. The real boot cost is in the plugin initialization (`cache.ps1`).

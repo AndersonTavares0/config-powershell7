@@ -127,3 +127,13 @@ cd config-powershell7
 - **Oh My Posh** (optional — prompt theming)
 - **Zoxide** (optional — smart directory navigation)
 - **Terminal-Icons** (optional — file icons in listings)
+
+## Startup Directory
+
+The profile preserves the terminal's current working directory by default. On Windows, if an elevated shell opens in `System32` or `SysWOW64`, it redirects to `POWERSHELL_START_DIR` when valid, otherwise to `$HOME`.
+
+```powershell
+Set-ProfileStartDirectory "$HOME"
+Get-ProfileStartDirectory
+Clear-ProfileStartDirectory
+```
