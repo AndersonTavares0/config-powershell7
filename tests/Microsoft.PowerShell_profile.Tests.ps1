@@ -247,6 +247,7 @@ try {
 
         $normalDir = Join-Path $env:TEMP "profile_start_normal_$(Get-Random)"
         New-Item -ItemType Directory -Force -Path $normalDir | Out-Null
+        $normalDir = (Resolve-Path $normalDir).Path
         Set-Location $normalDir
         Set-DefaultWorkingDirectory
         Assert-Equal -Expected $normalDir -Actual (Get-Location).Path -TestName "Set-DefaultWorkingDirectory preserves normal directory"
@@ -258,6 +259,7 @@ try {
             $oldEnvStartDirectory = $env:POWERSHELL_START_DIR
             $targetDir = Join-Path $env:TEMP "profile_start_target_$(Get-Random)"
             New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
+            $targetDir = (Resolve-Path $targetDir).Path
             try {
                 $script:Config.StartDirectory = $targetDir
                 $env:POWERSHELL_START_DIR = $targetDir
