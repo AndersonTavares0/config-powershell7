@@ -309,6 +309,106 @@ catch {
 Set-Location $originalLocation
 
 # ══════════════════════════════════════════════════════════════
+# TEST SUITE: SYSTEM32 STARTUP GUARD (inline, profile-independent)
+# ══════════════════════════════════════════════════════════════
+Write-Host "`nTesting System32 Startup Guard..." -ForegroundColor Yellow
+try {
+    $sys32GuardDir = $originalLocation
+    $sys32WinGuard = if ($PSVersionTable.PSVersion.Major -ge 6) { $IsWindows } else { $true }
+    $sys32Wr = $env:WINDIR
+
+    # Test 1: Normal directory is preserved
+    $sys32NormalDir = Join-Path $HOME "sys32guard_normal_$(Get-Random)"
+    New-Item -ItemType Directory -Force -Path $sys32NormalDir | Out-Null
+    $sys32NormalDir = (Resolve-Path $sys32NormalDir).Path
+    Set-Location $sys32NormalDir
+
+    if ($sys32WinGuard -and $sys32Wr) {
+        $sys32Cur = (Get-Location).Path.TrimEnd('\')
+        $sys32Bad = @((Join-Path $sys32Wr 'System32').TrimEnd('\'),
+                      (Join-Path $sys32Wr 'SysWOW64').TrimEnd('\'))
+        if (-not ($sys32Bad -contains $sys32Cur)) {
+            Test-Result -Name "Guard preserves normal directory" -Passed $true -Message ""
+        } else {
+            Test-Result -Name "Guard preserves normal directory" -Passed $false -Message "Guard redirected from normal dir $sys32Cur"
+        }
+    } else {
+        Test-Result -Name "Guard preserves normal directory" -Passed $true -Message "Non-Windows — skipped"
+    }
+    Set-Location $originalLocation
+    Remove-Item $sys32NormalDir -Force -ErrorAction SilentlyContinue
+
+    # Test 2: System32 redirects to $HOME
+    if ($sys32WinGuard -and $sys32Wr) {
+        Set-Location (Join-Path $sys32Wr 'System32')
+        $sys32Cur = (Get-Location).Path.TrimEnd('\')
+        $sys32Bad = @((Join-Path $sys32Wr 'System32').TrimEnd('\'),
+                      (Join-Path $sys32Wr 'SysWOW64').TrimEnd('\'))
+        if ($sys32Bad -contains $sys32Cur) {
+            $sys32Dir = if ($env:POWERSHELL_START_DIR -and (Test-Path $env:POWERSHELL_START_DIR -PathType Container)) {
+                $env:POWERSHELL_START_DIR
+            } else { $HOME }
+            $null = Set-Location $sys32Dir 2>$null
+            Assert-Equal -Expected $HOME -Actual (Get-Location).Path -TestName "Guard redirects System32 to HOME"
+        } else {
+            Test-Result -Name "Guard redirects System32 to HOME" -Passed $false -Message "Could not enter System32"
+        }
+        Set-Location $originalLocation
+    } else {
+        Test-Skip -Name "Guard redirects System32 to HOME" -Reason "Windows-only behavior"
+    }
+
+    # Test 3: SysWOW64 also redirects
+    if ($sys32WinGuard -and $sys32Wr -and (Test-Path (Join-Path $sys32Wr 'SysWOW64'))) {
+        Set-Location (Join-Path $sys32Wr 'SysWOW64')
+        $sys32Cur = (Get-Location).Path.TrimEnd('\')
+        $sys32Bad = @((Join-Path $sys32Wr 'System32').TrimEnd('\'),
+                      (Join-Path $sys32Wr 'SysWOW64').TrimEnd('\'))
+        if ($sys32Bad -contains $sys32Cur) {
+            $sys32Dir = if ($env:POWERSHELL_START_DIR -and (Test-Path $env:POWERSHELL_START_DIR -PathType Container)) {
+                $env:POWERSHELL_START_DIR
+            } else { $HOME }
+            $null = Set-Location $sys32Dir 2>$null
+            Assert-Equal -Expected $HOME -Actual (Get-Location).Path -TestName "Guard redirects SysWOW64 to HOME"
+        }
+        Set-Location $originalLocation
+    } else {
+        Test-Skip -Name "Guard redirects SysWOW64 to HOME" -Reason "SysWOW64 not found or non-Windows"
+    }
+
+    # Test 4: Respects $env:POWERSHELL_START_DIR
+    if ($sys32WinGuard -and $sys32Wr) {
+        $sys32TargetDir = Join-Path $HOME "sys32guard_target_$(Get-Random)"
+        New-Item -ItemType Directory -Force -Path $sys32TargetDir | Out-Null
+        $sys32TargetDir = (Resolve-Path $sys32TargetDir).Path
+        $oldStartEnv = $env:POWERSHELL_START_DIR
+        try {
+            $env:POWERSHELL_START_DIR = $sys32TargetDir
+            Set-Location (Join-Path $sys32Wr 'System32')
+            $sys32Cur = (Get-Location).Path.TrimEnd('\')
+            $sys32Bad = @((Join-Path $sys32Wr 'System32').TrimEnd('\'),
+                          (Join-Path $sys32Wr 'SysWOW64').TrimEnd('\'))
+            if ($sys32Bad -contains $sys32Cur) {
+                $sys32Dir = if ($env:POWERSHELL_START_DIR -and (Test-Path $env:POWERSHELL_START_DIR -PathType Container)) {
+                    $env:POWERSHELL_START_DIR
+                } else { $HOME }
+                $null = Set-Location $sys32Dir 2>$null
+                Assert-Equal -Expected $sys32TargetDir -Actual (Get-Location).Path -TestName "Guard respects POWERSHELL_START_DIR"
+            }
+        } finally {
+            $env:POWERSHELL_START_DIR = $oldStartEnv
+            Set-Location $originalLocation
+            Remove-Item $sys32TargetDir -Force -ErrorAction SilentlyContinue
+        }
+    } else {
+        Test-Skip -Name "Guard respects POWERSHELL_START_DIR" -Reason "Windows-only behavior"
+    }
+} catch {
+    Test-Result -Name "System32 Startup Guard tests" -Passed $false -Message $_.Exception.Message
+}
+Set-Location $originalLocation
+
+# ══════════════════════════════════════════════════════════════
 # TEST SUITE: FILE OPERATIONS
 # ══════════════════════════════════════════════════════════════
 Write-Host "`nTesting File Operations..." -ForegroundColor Yellow
