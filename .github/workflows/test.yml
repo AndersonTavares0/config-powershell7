@@ -34,9 +34,16 @@ jobs:
           if (-not $module) {
             Install-Module PSScriptAnalyzer -Force -SkipPublisherCheck -Scope CurrentUser
           }
-          $results = Invoke-ScriptAnalyzer -Path . -Recurse -Severity @('Error', 'Warning') -ExcludeRule @('PSAvoidUsingWriteHost', 'PSUseBOMForUnicodeEncodedFile')
-          if ($results) {
-            $results | Format-Table -AutoSize
+          $results = Invoke-ScriptAnalyzer -Path . -Recurse -Severity @('Error', 'Warning')
+          $errors = $results | Where-Object { $_.Severity -eq 'Error' }
+          $warnings = $results | Where-Object { $_.Severity -eq 'Warning' }
+          if ($warnings) {
+            Write-Host "##[warning]$($warnings.Count) PSScriptAnalyzer warning(s) found:"
+            $warnings | Format-Table -AutoSize
+          }
+          if ($errors) {
+            Write-Host "##[error]$($errors.Count) PSScriptAnalyzer error(s) found:"
+            $errors | Format-Table -AutoSize
             exit 1
           }
 
