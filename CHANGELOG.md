@@ -5,8 +5,21 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- SECURITY.md com link para GitHub Private Vulnerability Reporting
+- CONTRIBUTING.md com guia mínimo para contribuidores
+- .editorconfig para padronização cross-editor
+- .gitattributes para normalização de line endings
+- Badge de CI dinâmico no README (estado real do build)
+- Branch protection ativada na main (PR + CI obrigatórios)
 - System32/SysWOW64 startup guard — redirect independente de módulos,
   executa antes do config.ps1 para proteger sessões Admin
+
+### Changed
+- LICENSE: adicionado copyright holder (Anderson Tavares, 2026)
+- PR template: corrigido caminho dos testes (tab → `.\tests\`)
+- CI: adicionado PSScriptAnalyzer (erros bloqueiam, warnings informativos)
+- AGENTS.md: removidas seções stale, adicionado PR/release workflow
+  e tabela de governance files
 
 ### Fixed
 - install.ps1: removido passo duplicado de instalação do PowerShell 7
