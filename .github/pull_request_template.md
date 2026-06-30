@@ -17,9 +17,9 @@
 
 ## Validation
 
-- [ ] `.	ests\Microsoft.PowerShell_profile.Tests.ps1 -Verbose`
-- [ ] `.	ests\Test-ProfileInstallation.ps1 -Detailed`
-- [ ] `.	ests\Setup.Tests.ps1 -Verbose`
+- [ ] `.\tests\Microsoft.PowerShell_profile.Tests.ps1 -Verbose`
+- [ ] `.\tests\Test-ProfileInstallation.ps1 -Detailed`
+- [ ] `.\tests\Setup.Tests.ps1 -Verbose`
 - [ ] Manual validation completed
 - [ ] Not applicable
 
