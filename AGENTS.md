@@ -34,7 +34,15 @@
 # Uninstall:                     .\uninstall.ps1
 # Remote one-liner:              irm https://github.com/AndersonTavares0/config-powershell7/raw/main/setup.ps1 | iex
 # Post-source diagnostic:        Test-ProfileInstallation
+# Release (tag + GitHub Release): git tag -a v<versao> -m "mensagem" && git push origin v<versao> && gh release create v<versao> --title "v<versao>" --notes-file CHANGELOG.md
 ```
+
+## PR Workflow
+
+- **PR template obrigatório**: todo PR deve usar `.github/pull_request_template.md` — preencher todos os campos, não criar body do zero
+- **Branch protection**: `main` exige PR + CI passando — sem push direto
+- **CHANGELOG.md**: atualizar em todo PR que adiciona, modifica ou remove comportamento
+- **Conventional Commits**: `feat:`, `fix:`, `docs:`, `refactor:`, `test:`, `chore:`, `ci:`
 
 ## Tests
 
@@ -47,29 +55,14 @@ Custom framework (not Pester) — functions: `Test-Result`, `Test-Skip`, `Assert
 .\tests\benchmark.ps1 -Runs 10                            # Profile boot timing (fresh pwsh processes)
 ```
 
-CI (`.github/workflows/test.yml`) copies profile + modules to `$PROFILE` path, runs all 3 suites on push/PR to `main`. Windows-only runner.
+CI (`.github/workflows/test.yml`) roda em push/PR na `main`: setup profile → PSScriptAnalyzer → unit tests. Windows-only runner. PSScriptAnalyzer: **erros bloqueiam CI, warnings são informativos** (~184 warnings preexistentes ignorados).
 
-## GSD Workflow
+## Governance files
 
-Project planning lives in `.planning/`. Standard GSD loop for each phase:
-
-```
-/gsd-plan-phase <N>       # plan → research → verify
-/gsd-execute-phase <N>    # execute all plans in phase
-/gsd-discuss-phase <N>    # gather context before planning
-/gsd-progress              # check status, advance workflow
-```
-
-**Current phase:** Phase 1 (Defensive Hardening) — Fix PSReadLine history bloat, UTF-8 encoding guard, atomic cache writes, Reload-Profile function.
-
-**Config:** YOLO mode (auto-approve), coarse granularity (5 phases), parallel execution.
-
-**Roadmap:** 5 phases, 29 v1 requirements total.
-
-## Knowledge Graph
-
-`graphify-out/` contains a local knowledge graph (gitignored — not present after fresh clone). Regenerate with:
-
-```
-/graphify
-```
+| File | Location | Purpose |
+|---|---|---|
+| `SECURITY.md` | root | Vulnerability reporting via PVR |
+| `CONTRIBUTING.md` | `.github/` | Minimal contributor guide |
+| `CHANGELOG.md` | root | Version history (update per PR) |
+| `.editorconfig` | root | Editor-agnostic formatting |
+| `.gitattributes` | root | Line ending normalization |
