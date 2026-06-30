@@ -36,6 +36,27 @@ if ($PSVersionTable.PSVersion.Major -ge 6) {
     $script:IsMac = $false
 }
 
+# ── SYSTEM32 STARTUP GUARD ────────────────────────────────────
+# Redireciona System32/SysWOW64 no startup para $HOME ou
+# $env:POWERSHELL_START_DIR. Executa antes de config.ps1 para
+# proteger sessões elevadas (Admin) mesmo com falha de módulos.
+if ($script:IsWin) {
+    $cur = (Get-Location).Path.TrimEnd('\')
+    $wr = if ($env:WINDIR) { $env:WINDIR } else { $env:SystemRoot }
+    if ($wr) {
+        $bad = @(
+            (Join-Path $wr 'System32').TrimEnd('\'),
+            (Join-Path $wr 'SysWOW64').TrimEnd('\')
+        )
+        if ($bad -contains $cur) {
+            $dir = if ($env:POWERSHELL_START_DIR -and (Test-Path $env:POWERSHELL_START_DIR -PathType Container)) {
+                $env:POWERSHELL_START_DIR
+            } else { $HOME }
+            $null = Set-Location $dir 2>$null
+        }
+    }
+}
+
 # ── UNBLOCK DOWNLOADED FILES (Windows only) ──────────────────
 # Remove Zone.Identifier from ZIP downloads to avoid ExecutionPolicy errors.
 # Skipped in CI (no Zone.Identifier on checkout) and after first run.
