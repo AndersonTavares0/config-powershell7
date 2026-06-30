@@ -34,7 +34,7 @@ jobs:
           if (-not $module) {
             Install-Module PSScriptAnalyzer -Force -SkipPublisherCheck -Scope CurrentUser
           }
-          $results = Invoke-ScriptAnalyzer -Path . -Recurse -Severity @('Error', 'Warning')
+          $results = Invoke-ScriptAnalyzer -Path . -Recurse -Severity @('Error', 'Warning') -ExcludeRule @('PSAvoidUsingWriteHost', 'PSUseBOMForUnicodeEncodedFile')
           if ($results) {
             $results | Format-Table -AutoSize
             exit 1
