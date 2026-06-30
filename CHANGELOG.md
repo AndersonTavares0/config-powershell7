@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Added
+- System32/SysWOW64 startup guard — redirect independente de módulos,
+  executa antes do config.ps1 para proteger sessões Admin
+
+### Fixed
+- install.ps1: removido passo duplicado de instalação do PowerShell 7
+- install.ps1: `$targetProfile` agora exibe caminho correto no sumário
+- install.ps1: detecção de executáveis via `-CommandName` explícito
+  (substitui regex frágil que quebrava para `oh-my-posh` e `pwsh`)
+
 ## [v0.1] — 2026-07
 
 ### Added
