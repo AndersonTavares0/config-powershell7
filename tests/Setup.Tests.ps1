@@ -106,12 +106,14 @@ Write-Host "========================================`n" -ForegroundColor Cyan
 
 $setupDir = Join-Path $PSScriptRoot '../setup'
 $modulesDir = Join-Path $setupDir 'modules'
+$repoRoot = Join-Path $PSScriptRoot '..'
 
 if (-not (Test-Path $modulesDir)) {
     Write-Host "Setup modules not found at $modulesDir" -ForegroundColor Red
     exit 1
 }
 
+. (Join-Path $repoRoot 'lib/executable.ps1')
 . (Join-Path $modulesDir 'core.ps1')
 . (Join-Path $modulesDir 'deps.ps1')
 . (Join-Path $modulesDir 'profile.ps1')

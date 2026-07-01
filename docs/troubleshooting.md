@@ -230,7 +230,7 @@ The test files dynamically verify `$env:__PROFILE_LOADED` and evaluate the profi
 - **`gss` instead of `gs`** — avoids collision with `Get-Service` in PS 5.1
 - **`sudo !!`** — QoL feature robustly implemented using PS history
 - **TTL cache (24h)** — hot path skips `Get-Command` and `Get-FileHash` entirely; fingerprint recalculation only when TTL expires; uses `LastWriteTime` + size for fast change detection
-- **Cross-platform `sudo`** — Windows elevation via `Start-Process -Verb RunAs`, Linux/macOS via native `/usr/bin/sudo`
+- **Cross-platform `sudo`** — Windows elevation via `Start-Process -Verb RunAs`, Linux/macOS via native `sudo`
 
 ### Observations
 

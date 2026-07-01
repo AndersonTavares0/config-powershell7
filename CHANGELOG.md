@@ -15,6 +15,14 @@ All notable changes to this project will be documented in this file.
   (substitui regex frágil que quebrava para `oh-my-posh` e `pwsh`)
 - Cache de plugins invalidado imediatamente ao trocar tema, mesmo
   dentro da janela TTL (issue #46)
+- system.ps1: caminhos hardcoded `/usr/bin/*` substituídos por
+  `Get-Command` com nome simples (compatível com macOS ARM, Linux
+  não-standard)
+- setup/modules/deps.ps1: detecção de executáveis centralizada via
+  `Get-Executable` com exibição de versão
+- install.ps1: sumário final exibe versão de cada ferramenta instalada
+- setup/modules/orchestrator.ps1: sumário final exibe versão de cada
+  ferramenta instalada
 
 ## [v0.1] — 2026-07
 
