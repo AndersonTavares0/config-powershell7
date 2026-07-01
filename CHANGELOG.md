@@ -2,6 +2,12 @@
 
 All notable changes to this project will be documented in this file.
 
+## [Unreleased]
+
+### Fixed
+- Cache de plugins invalidado imediatamente ao trocar tema, mesmo
+  dentro da janela TTL (issue #46)
+
 ## [v0.1] — 2026-07
 
 ### Added
