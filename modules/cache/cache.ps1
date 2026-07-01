@@ -31,6 +31,26 @@ function Import-TerminalIcons {
 }
 Set-Alias icons Import-TerminalIcons
 
+# Retorna fingerprint apenas do tema: path + exists flag +
+# (opcional) Length:LastWriteTimeTicks. Usada no hot path para
+# validar que o tema não mudou dentro da janela TTL.
+function script:Get-ThemeFingerprint {
+    $result = @()
+    $result += $script:Config.ThemePath
+    $result += [int](Test-Path $script:Config.ThemePath)
+    if (Test-Path $script:Config.ThemePath) {
+        try {
+            $info = Get-Item $script:Config.ThemePath -ErrorAction SilentlyContinue
+            if ($info) {
+                $result += "$($info.Length):$($info.LastWriteTimeUtc.Ticks)"
+            }
+        } catch {
+            $result += 'nofile'
+        }
+    }
+    $result
+}
+
 # Fingerprint inclui caminho + versão dos binários e LastWriteTime + tamanho
 # do arquivo de tema para detectar mudanças sem SHA256 (muito mais rápido).
 function script:Get-PluginFingerprint {
@@ -65,22 +85,7 @@ function script:Get-PluginFingerprint {
         }
     }
 
-    $parts += $script:Config.ThemePath
-    $parts += [int](Test-Path $script:Config.ThemePath)
-
-    # Usa LastWriteTime + Length no lugar de SHA256: detecta mudanças
-    # sem o custo de hash criptográfico (~0ms vs ~43ms)
-    if (Test-Path $script:Config.ThemePath) {
-        try {
-            $themeInfo = Get-Item $script:Config.ThemePath -ErrorAction SilentlyContinue
-            if ($themeInfo) {
-                $parts += "$($themeInfo.Length):$($themeInfo.LastWriteTimeUtc.Ticks)"
-            }
-        } catch {
-            $parts += 'nofile'
-        }
-    }
-
+    $parts += script:Get-ThemeFingerprint
     $parts -join '|'
 }
 
@@ -127,28 +132,33 @@ function script:Update-PluginCache {
 
 # ── LÓGICA DE INICIALIZAÇÃO COM TTL ──────────────────────────
 # Encapsulada em função para evitar poluição do scope $script:
-# 1. Se cache existe e TTL não expirou → dot-source direto (HOT PATH: ~5ms)
-# 2. Se cache existe mas TTL expirou  → recalcular fingerprint, rebuild se diferente
-# 3. Se cache não existe              → rebuild completo
+# 1. Se cache existe, TTL válido e tema inalterado → dot-source direto (HOT PATH: ~5ms)
+# 2. Se cache existe mas TTL expirou              → recalcular fingerprint, rebuild se diferente
+# 3. Se cache existe, TTL válido mas tema mudou   → rebuild imediato (invalidação forçada)
+# 4. Se cache não existe                          → rebuild completo
 
 function script:Initialize-PluginCache {
     $cachedFP = $null
 
-    # HOT PATH: cache válido com TTL ok — sem Get-Command, sem fingerprint
+    # HOT PATH: cache válido com TTL ok — valida só fingerprint do tema (~0ms)
     if (Test-Path $script:Config.CachePath) {
         $firstLine = Get-Content $script:Config.CachePath -TotalCount 1 -ErrorAction SilentlyContinue
         if ($firstLine -match '^# fp:(\S+)\s+ts:(\d+)$') {
             $cachedTS = [long]$Matches[2]
+            $cachedFP = $Matches[1]
             $nowTS    = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
             $ageMin   = ($nowTS - $cachedTS) / 60
 
             if ($ageMin -lt $script:Config.CacheTTLMinutes) {
-                # TTL válido: early return — dispensa Get-Command, Get-FileHash e zoxide/omp init
-                . $script:Config.CachePath
-                return
+                # TTL válido — valida fingerprint do tema antes do early return
+                $themeEnding = (script:Get-ThemeFingerprint) -join '|'
+                if ($cachedFP.EndsWith($themeEnding)) {
+                    . $script:Config.CachePath
+                    return
+                }
+                # Theme changed — cai no cold path (cachedFP preservado)
             }
-            # TTL expirado: armazena fingerprint para comparação no cold path
-            $cachedFP = $Matches[1]
+            # TTL expirado ou tema alterado — cachedFP já setado
         }
     }
 

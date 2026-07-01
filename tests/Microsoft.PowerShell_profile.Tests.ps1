@@ -116,9 +116,9 @@ catch {
 Write-Host "`nTesting Performance..." -ForegroundColor Yellow
 
 # Test P1: Cold boot should stay bounded, but CI startup can vary significantly.
-Test-Result -Name "Cold boot < 2000ms (measured: ${bootMs}ms)" `
+Test-Result -Name "Cold boot -lt 2000ms (measured: ${bootMs}ms)" `
     -Passed ($bootMs -lt 2000) `
-    -Message "Cold boot took ${bootMs}ms, target < 2000ms for CI"
+    -Message "Cold boot took ${bootMs}ms, target -lt 2000ms for CI"
 
 # Test P2: Second boot (cache hit) should be faster
 $secondTimer = [System.Diagnostics.Stopwatch]::StartNew()
@@ -127,7 +127,7 @@ try {
     . $PROFILE
     $secondTimer.Stop()
     $secondMs = [math]::Round($secondTimer.Elapsed.TotalMilliseconds, 0)
-    Test-Result -Name "Second boot (cache hit) < 400ms (measured: ${secondMs}ms)" `
+    Test-Result -Name "Second boot (cache hit) -lt 400ms (measured: ${secondMs}ms)" `
         -Passed ($secondMs -lt 400) `
         -Message "Second boot took ${secondMs}ms"
 }
@@ -207,6 +207,58 @@ if (Get-Command icons -ErrorAction SilentlyContinue) {
 }
 else {
     Test-Result -Name "icons alias exists" -Passed $false -Message "Alias not defined"
+}
+
+# ══════════════════════════════════════════════════════════════
+# TEST SUITE: CACHE INVALIDATION ON THEME CHANGE
+# ══════════════════════════════════════════════════════════════
+Write-Host "`nTesting Cache Invalidation on Theme Change..." -ForegroundColor Yellow
+
+if ($null -ne $script:Config -and (Get-Command oh-my-posh -ErrorAction SilentlyContinue)) {
+    $testDir      = Join-Path $HOME ".pwsh_test_themeinv_$(Get-Random)"
+    $themeA       = Join-Path $testDir "themeA.omp.json"
+    $themeB       = Join-Path $testDir "themeB.omp.json"
+    $originalPath = $script:Config.ThemePath
+    $originalTTL  = $script:Config.CacheTTLMinutes
+
+    New-Item -ItemType Directory -Force -Path $testDir | Out-Null
+    try {
+        Set-Content -Path $themeA -Value '{"name":"themeA"}' -Encoding UTF8
+        Set-Content -Path $themeB -Value '{"name":"themeB"}' -Encoding UTF8
+        $script:Config.CacheTTLMinutes = 1440
+
+        # Test I1: Cache header contém tema A após rebuild
+        $script:Config.ThemePath = $themeA
+        Clear-PluginCache
+        Initialize-PluginCache
+        $headerA = Get-Content $script:Config.CachePath -TotalCount 1 -ErrorAction SilentlyContinue
+        $hasThemeA = $headerA -match [regex]::Escape("$themeA")
+        Assert-True -Condition $hasThemeA -TestName "Cache created with Theme A"
+
+        # Test I2: Troca para tema B, TTL válido → cache reconstruído
+        $script:Config.ThemePath = $themeB
+        Initialize-PluginCache
+        $headerB = Get-Content $script:Config.CachePath -TotalCount 1 -ErrorAction SilentlyContinue
+        $hasThemeB = $headerB -match [regex]::Escape("$themeB")
+        Assert-True -Condition $hasThemeB -TestName "Cache rebuilt after theme change within TTL"
+
+        # Test I3: Tema deletado, TTL válido → cache reconstruído com fallback
+        $script:Config.ThemePath = $themeA
+        Initialize-PluginCache
+        Remove-Item $themeA -Force
+        Initialize-PluginCache
+        $headerC = Get-Content $script:Config.CachePath -TotalCount 1 -ErrorAction SilentlyContinue
+        $hasFallback = $headerC -match [regex]::Escape("$themeA|0")
+        Assert-True -Condition $hasFallback -TestName "Cache rebuilt after theme deleted"
+    }
+    finally {
+        $script:Config.ThemePath = $originalPath
+        $script:Config.CacheTTLMinutes = $originalTTL
+        Remove-Item $testDir -Force -Recurse -ErrorAction SilentlyContinue
+    }
+}
+else {
+    Test-Skip -Name "Cache invalidation tests" -Reason "Config null or oh-my-posh not installed"
 }
 
 # ══════════════════════════════════════════════════════════════
