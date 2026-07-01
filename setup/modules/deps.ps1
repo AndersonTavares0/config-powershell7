@@ -29,41 +29,40 @@ function Install-WingetPackage {
 }
 
 function Install-PowerShell7 {
-    $existing = Get-Command pwsh -ErrorAction SilentlyContinue
+    $existing = Get-Executable -Name 'pwsh'
     if ($existing) {
-        try {
-            $version = & pwsh -NoProfile -Command '$PSVersionTable.PSVersion.ToString()' 2>$null
-            Write-GuiLog "PowerShell 7 already installed: $version" -Type Ok
-        } catch {
-            Write-GuiLog "PowerShell 7 already installed." -Type Ok
-        }
+        $verStr = if ($existing.Version) { " $($existing.Version)" } else { '' }
+        Write-GuiLog "PowerShell 7 already installed: $($existing.Path)$verStr" -Type Ok
         return $true
     }
     return Install-WingetPackage -Id 'Microsoft.PowerShell' -DisplayName 'PowerShell 7'
 }
 
 function Install-Git {
-    $existing = Get-Command git -ErrorAction SilentlyContinue
+    $existing = Get-Executable -Name 'git'
     if ($existing) {
-        Write-GuiLog "Git already installed: $($existing.Source)" -Type Ok
+        $verStr = if ($existing.Version) { " $($existing.Version)" } else { '' }
+        Write-GuiLog "Git already installed: $($existing.Path)$verStr" -Type Ok
         return $true
     }
     return Install-WingetPackage -Id 'Git.Git' -DisplayName 'Git'
 }
 
 function Install-OhMyPosh {
-    $existing = Get-Command oh-my-posh -ErrorAction SilentlyContinue
+    $existing = Get-Executable -Name 'oh-my-posh'
     if ($existing) {
-        Write-GuiLog "Oh My Posh already installed: $($existing.Source)" -Type Ok
+        $verStr = if ($existing.Version) { " $($existing.Version)" } else { '' }
+        Write-GuiLog "Oh My Posh already installed: $($existing.Path)$verStr" -Type Ok
         return $true
     }
     return Install-WingetPackage -Id 'JanDeDobbeleer.OhMyPosh' -DisplayName 'Oh My Posh'
 }
 
 function Install-Zoxide {
-    $existing = Get-Command zoxide -ErrorAction SilentlyContinue
+    $existing = Get-Executable -Name 'zoxide'
     if ($existing) {
-        Write-GuiLog "Zoxide already installed: $($existing.Source)" -Type Ok
+        $verStr = if ($existing.Version) { " $($existing.Version)" } else { '' }
+        Write-GuiLog "Zoxide already installed: $($existing.Path)$verStr" -Type Ok
         return $true
     }
     return Install-WingetPackage -Id 'ajeetdsouza.zoxide' -DisplayName 'Zoxide'
@@ -332,11 +331,12 @@ args = ["-NoLogo"]
 }
 
 function Install-Alacritty {
-    $existing = Get-Command alacritty -ErrorAction SilentlyContinue
+    $existing = Get-Executable -Name 'alacritty'
     if (-not $existing) {
         $null = Install-WingetPackage -Id 'Alacritty.Alacritty' -DisplayName 'Alacritty'
     } else {
-        Write-GuiLog "Alacritty already installed: $($existing.Source)" -Type Ok
+        $verStr = if ($existing.Version) { " $($existing.Version)" } else { '' }
+        Write-GuiLog "Alacritty already installed: $($existing.Path)$verStr" -Type Ok
     }
 
     if (Get-Command alacritty -ErrorAction SilentlyContinue) {
@@ -413,7 +413,7 @@ function Install-Chocolatey {
 function Install-Scoop {
     param([string[]]$Buckets = @())
 
-    $existing = Get-Command scoop -ErrorAction SilentlyContinue
+    $existing = Get-Executable -Name 'scoop'
     if (-not $existing) {
         Write-GuiLog "Installing Scoop..." -Type Step
         try {
@@ -444,7 +444,8 @@ function Install-Scoop {
             return $false
         }
     } else {
-        Write-GuiLog "Scoop already installed: $($existing.Source)" -Type Ok
+        $verStr = if ($existing.Version) { " $($existing.Version)" } else { '' }
+        Write-GuiLog "Scoop already installed: $($existing.Path)$verStr" -Type Ok
     }
 
     foreach ($bucket in $Buckets) {

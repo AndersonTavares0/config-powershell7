@@ -116,6 +116,20 @@ function Start-ProfileInstall {
         Write-GuiLog "Profile:  $(Get-ProfilePath)" -Type Info
         Write-GuiLog "Repo:     $RepoPath" -Type Info
         Write-GuiLog '' -Type Info
+
+        $tools = @('pwsh', 'git', 'oh-my-posh', 'zoxide')
+        $versions = @()
+        foreach ($tool in $tools) {
+            $e = Get-Executable -Name $tool
+            if ($e -and $e.Version) {
+                $versions += "$($e.Name) $($e.Version)"
+            }
+        }
+        if ($versions.Count -gt 0) {
+            Write-GuiLog ($versions -join ' · ') -Type Info
+            Write-GuiLog '' -Type Info
+        }
+
         Write-GuiLog 'Restart your terminal to apply all changes!' -Type Ok
 
         $sync = Get-Variable -Name SyncHash -Scope Script -ValueOnly -ErrorAction SilentlyContinue

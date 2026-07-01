@@ -422,12 +422,12 @@ Initialized via TTL cache. `Update-PluginCache` checks availability with `Get-Co
 ### System
 
 **`pkill`**
-- Cross-platform: uses `Stop-Process` on Windows, native `/usr/bin/pkill -f` on Linux/macOS
+- Cross-platform: uses `Stop-Process` on Windows, native `pkill -f` on Linux/macOS
 - Supports `-WhatIf` via `SupportsShouldProcess`
 - Structured `ErrorRecord` on failure
 
 **`pgrep`**
-- Cross-platform: uses `Where-Object` filter on Windows, native `/usr/bin/pgrep -f` on Linux/macOS
+- Cross-platform: uses `Where-Object` filter on Windows, native `pgrep -f` on Linux/macOS
 - On Windows: uses `Where-Object { $_.ProcessName -like "*$Name*" }` because `Get-Process -Name` does not accept mid-string wildcards
 - Displays: Id, ProcessName, CPU, Mem(MB) formatted
 - Structured `ErrorRecord` on failure
@@ -471,7 +471,7 @@ Initialized via TTL cache. `Update-PluginCache` checks availability with `Get-Co
 ### Sudo
 
 **`sudo`**
-- Cross-platform: detects Linux/macOS and delegates to native `/usr/bin/sudo` if available
+- Cross-platform: detects Linux/macOS and delegates to native `sudo` if available
 - Windows: `Start-Process -Verb RunAs` with UAC elevation
 - Detects `!!` as a special argument and replaces it with the last history command (`Get-History -Count 1`)
 - Windows: selects `pwsh` (PS 7+) or `powershell` (PS 5.1) based on `$script:Config.PSMajor`

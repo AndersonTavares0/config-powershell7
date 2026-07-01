@@ -108,7 +108,9 @@ function Install-WingetPackage {
 
     $existe = Get-Command $CommandName -ErrorAction SilentlyContinue
     if ($existe) {
-        Write-OK "$Nome já instalado: $($existe.Source)"
+        $ver = & $CommandName --version 2>$null
+        $verStr = if ($ver) { " [$($ver.Trim())]" } else { '' }
+        Write-OK "$Nome já instalado: $($existe.Source)$verStr"
         return $true
     }
 
@@ -435,6 +437,27 @@ Write-Host @"
 
   Repositório: $PermanentDir
   Profile:     $targetProfile
+
+  Ferramentas instaladas:
+"@ -ForegroundColor Cyan
+
+$tools = @(
+    @{ Name = 'PowerShell 7'; Cmd = 'pwsh' }
+    @{ Name = 'Git'; Cmd = 'git' }
+    @{ Name = 'Oh My Posh'; Cmd = 'oh-my-posh' }
+    @{ Name = 'Zoxide'; Cmd = 'zoxide' }
+)
+
+foreach ($t in $tools) {
+    $cmd = Get-Command $t.Cmd -ErrorAction SilentlyContinue
+    if ($cmd) {
+        $ver = & $t.Cmd --version 2>$null
+        $verStr = if ($ver) { " [$($ver.Trim())]" } else { '' }
+        Write-Host "  $($t.Name): $($cmd.Source)$verStr" -ForegroundColor Cyan
+    }
+}
+
+Write-Host @"
 
   Reinicie o terminal para aplicar as mudanças.
 "@ -ForegroundColor Cyan

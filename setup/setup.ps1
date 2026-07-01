@@ -6,6 +6,7 @@ param([string]$RepoPath)
 $setupDir = Join-Path $RepoPath 'setup'
 $modulesDir = Join-Path $setupDir 'modules'
 
+. (Join-Path $RepoPath 'lib/executable.ps1')
 . (Join-Path $modulesDir 'core.ps1')
 . (Join-Path $modulesDir 'deps.ps1')
 . (Join-Path $modulesDir 'profile.ps1')

@@ -326,6 +326,7 @@ function Show-Gui {
             $script:RepoName = $RepoName
             $global:PROFILE = $ProfilePath
 
+            . (Join-Path $SetupDir '../lib/executable.ps1')
             . (Join-Path $SetupDir 'modules/core.ps1')
             . (Join-Path $SetupDir 'modules/deps.ps1')
             . (Join-Path $SetupDir 'modules/profile.ps1')
@@ -396,6 +397,7 @@ function Show-Gui {
             $script:SyncHash = $SyncHash
             $global:PROFILE = $ProfilePath
 
+            . (Join-Path $SetupDir '../lib/executable.ps1')
             . (Join-Path $SetupDir 'modules/core.ps1')
             . (Join-Path $SetupDir 'modules/profile.ps1')
             . (Join-Path $SetupDir 'modules/orchestrator.ps1')

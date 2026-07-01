@@ -14,10 +14,10 @@ function pkill {
     try {
         if ($script:Config.IsLinux -or $script:Config.IsMacOS) {
             # Fallback para comando nativo em Unix-like
-            $nativePkill = Get-Command '/usr/bin/pkill' -ErrorAction SilentlyContinue
+            $nativePkill = Get-Command 'pkill' -ErrorAction SilentlyContinue
             if ($nativePkill) {
                 if ($PSCmdlet.ShouldProcess($Name, 'Kill process (native pkill)')) {
-                    & '/usr/bin/pkill' -f $Name 2>&1 | Out-Null
+                    & 'pkill' -f $Name 2>&1 | Out-Null
                 }
                 return
             }
@@ -46,9 +46,9 @@ function pgrep {
     )
     try {
         if ($script:Config.IsLinux -or $script:Config.IsMacOS) {
-            $nativePgrep = Get-Command '/usr/bin/pgrep' -ErrorAction SilentlyContinue
+            $nativePgrep = Get-Command 'pgrep' -ErrorAction SilentlyContinue
             if ($nativePgrep) {
-                $ids = & '/usr/bin/pgrep' -f $Name 2>&1
+                $ids = & 'pgrep' -f $Name 2>&1
                 if ($ids) {
                     foreach ($id in $ids) {
                         $processName = (Get-Process -Id $id.Trim() -ErrorAction SilentlyContinue).ProcessName
@@ -127,9 +127,9 @@ function df {
                     @{ L='Free(GB)'; E={ [math]::Round($_.SizeRemaining/1GB, 1) } },
                     @{ L='Free%';    E={ [math]::Round(($_.SizeRemaining/$_.Size)*100, 0) } } -AutoSize
         } elseif ($script:Config.IsLinux -or $script:Config.IsMacOS) {
-            $nativeDf = Get-Command '/usr/bin/df' -ErrorAction SilentlyContinue
+            $nativeDf = Get-Command 'df' -ErrorAction SilentlyContinue
             if ($nativeDf) {
-                & '/usr/bin/df' -h 2>&1 | ForEach-Object { $_ }
+                & 'df' -h 2>&1 | ForEach-Object { $_ }
             }
         }
     } catch {
@@ -282,11 +282,11 @@ function sudo {
 
     # Linux/macOS: usa sudo nativo se disponível
     if ($script:Config.IsLinux -or $script:Config.IsMacOS) {
-        $nativeSudo = Get-Command '/usr/bin/sudo' -ErrorAction SilentlyContinue
+        $nativeSudo = Get-Command 'sudo' -ErrorAction SilentlyContinue
         if ($nativeSudo) {
             if ($Command) {
                 if ($PSCmdlet.ShouldProcess(($Command -join ' '), 'Executar com sudo')) {
-                    & '/usr/bin/sudo' @Command
+                    & 'sudo' @Command
                 }
             } else {
                 Write-Warning "sudo: uso: sudo <comando> ou sudo !! para reexecutar último comando"
