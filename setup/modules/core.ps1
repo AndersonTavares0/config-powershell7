@@ -137,6 +137,7 @@ function Download-Repo {
 function Write-InstallSummary {
     param(
         [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
         [object[]]$Results
     )
 
