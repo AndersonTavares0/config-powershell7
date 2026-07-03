@@ -356,13 +356,13 @@ Write-InstallSummary -Results $testResults
 Summary-Assert-True -Condition ($summarySyncHash.LogMessages.Count -gt 0) -TestName "Write-InstallSummary writes to SyncHash"
 
 $okRows = $summarySyncHash.LogMessages | Where-Object { $_.Type -eq 'Ok' -and $_.Message -match 'PowerShell 7' }
-Summary-Assert-True -Condition ($okRows.Count -gt 0) -TestName "Write-InstallSummary ok row uses Ok type"
+Summary-Assert-True -Condition ($null -ne $okRows -and $okRows.Count -gt 0) -TestName "Write-InstallSummary ok row uses Ok type"
 
 $failRows = $summarySyncHash.LogMessages | Where-Object { $_.Type -eq 'Fail' -and $_.Message -match 'FiraCode' }
-Summary-Assert-True -Condition ($failRows.Count -gt 0) -TestName "Write-InstallSummary fail row uses Fail type"
+Summary-Assert-True -Condition ($null -ne $failRows -and $failRows.Count -gt 0) -TestName "Write-InstallSummary fail row uses Fail type"
 
 $skipRows = $summarySyncHash.LogMessages | Where-Object { $_.Type -eq 'Warn' -and $_.Message -match 'Alacritty' }
-Summary-Assert-True -Condition ($skipRows.Count -gt 0) -TestName "Write-InstallSummary skip row uses Warn type"
+Summary-Assert-True -Condition ($null -ne $skipRows -and $skipRows.Count -gt 0) -TestName "Write-InstallSummary skip row uses Warn type"
 
 $summarySyncHash.LogMessages.Clear()
 
