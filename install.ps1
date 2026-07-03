@@ -380,29 +380,61 @@ if ($PSVersionTable.PSVersion.Major -lt 6) {
     [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
 }
 
+$results = @()
+
+function Add-LegacyResult {
+    param([string]$Name, [bool]$Success, [string]$Detail)
+    $script:results += @{
+        Name   = $Name
+        Status = if ($Success) { 'ok' } else { 'fail' }
+        Detail = $Detail
+    }
+}
+
 # Passo 0: WinGet
 $wingetPath = Get-Command winget -ErrorAction SilentlyContinue
 if (-not $wingetPath) {
     Write-Step "[0/9] Instalando WinGet..."
-    $wingetPath = Install-Winget
+    try {
+        $wingetPath = Install-Winget
+        Add-LegacyResult -Name 'WinGet' -Success $true -Detail $wingetPath
+    } catch {
+        Add-LegacyResult -Name 'WinGet' -Success $false -Detail $_.Exception.Message
+    }
 } else {
     Write-OK "WinGet disponível: $($wingetPath.Source)"
+    Add-LegacyResult -Name 'WinGet' -Success $true -Detail $wingetPath.Source
 }
 
 # Passo 1: PowerShell 7
-Install-WingetPackage -Id 'Microsoft.PowerShell' -Nome 'PowerShell 7' -CommandName 'pwsh'
+$r = Install-WingetPackage -Id 'Microsoft.PowerShell' -Nome 'PowerShell 7' -CommandName 'pwsh'
+$pwshCmd = Get-Command pwsh -ErrorAction SilentlyContinue
+$detail = if ($pwshCmd) { $pwshCmd.Source } else { 'not found' }
+Add-LegacyResult -Name 'PowerShell 7' -Success $r -Detail $detail
 
 # Passo 2: Git
-Install-WingetPackage -Id 'Git.Git' -Nome 'Git' -CommandName 'git'
+$r = Install-WingetPackage -Id 'Git.Git' -Nome 'Git' -CommandName 'git'
+$gitCmd = Get-Command git -ErrorAction SilentlyContinue
+$detail = if ($gitCmd) { $gitCmd.Source } else { 'not found' }
+Add-LegacyResult -Name 'Git' -Success $r -Detail $detail
 
 # Passo 3: Oh My Posh
-Install-WingetPackage -Id 'JanDeDobbeleer.OhMyPosh' -Nome 'Oh My Posh' -CommandName 'oh-my-posh'
+$r = Install-WingetPackage -Id 'JanDeDobbeleer.OhMyPosh' -Nome 'Oh My Posh' -CommandName 'oh-my-posh'
+$ompCmd = Get-Command oh-my-posh -ErrorAction SilentlyContinue
+$detail = if ($ompCmd) { $ompCmd.Source } else { 'not found' }
+Add-LegacyResult -Name 'Oh My Posh' -Success $r -Detail $detail
 
 # Passo 4: Zoxide
-Install-WingetPackage -Id 'ajeetdsouza.zoxide' -Nome 'Zoxide' -CommandName 'zoxide'
+$r = Install-WingetPackage -Id 'ajeetdsouza.zoxide' -Nome 'Zoxide' -CommandName 'zoxide'
+$zoxCmd = Get-Command zoxide -ErrorAction SilentlyContinue
+$detail = if ($zoxCmd) { $zoxCmd.Source } else { 'not found' }
+Add-LegacyResult -Name 'Zoxide' -Success $r -Detail $detail
 
 # Passo 5: Alacritty
-Install-WingetPackage -Id 'Alacritty.Alacritty' -Nome 'Alacritty' -CommandName 'alacritty'
+$r = Install-WingetPackage -Id 'Alacritty.Alacritty' -Nome 'Alacritty' -CommandName 'alacritty'
+$alaCmd = Get-Command alacritty -ErrorAction SilentlyContinue
+$detail = if ($alaCmd) { $alaCmd.Source } else { 'not found' }
+Add-LegacyResult -Name 'Alacritty' -Success $r -Detail $detail
 
 # Passo 6: Fontes + Configs
 $passos = @(
@@ -416,30 +448,71 @@ $passos = @(
 
 for ($i = 0; $i -lt $passos.Count; $i++) {
     Write-Step "[$($i+7)/$($passos.Count+7)] $($passos[$i].Nome)"
-    try { & $passos[$i].Script } catch { Write-Fail "$($passos[$i].Nome) falhou: $($_.Exception.Message)"; $erros++ }
+    try {
+        $r = & $passos[$i].Script
+        $success = $null -ne $r -and $r -ne $false
+        $detail = if ($r -is [string]) { $r } elseif ($success) { 'done' } else { 'failed' }
+        Add-LegacyResult -Name $passos[$i].Nome -Success $success -Detail $detail
+    } catch {
+        Write-Fail "$($passos[$i].Nome) falhou: $($_.Exception.Message)"
+        $erros++
+        Add-LegacyResult -Name $passos[$i].Nome -Success $false -Detail $_.Exception.Message
+    }
 }
 
 # ═══════════════════════════════════════════════════════════════
 # 4. SUMÁRIO
 # ═══════════════════════════════════════════════════════════════
-Write-Host @"
-  ╔══════════════════════════════════════════════╗
-"@ -ForegroundColor Cyan
 
-if ($erros -eq 0) {
-    Write-Host "  ║   Instalação concluída com sucesso!        ║" -ForegroundColor Green
-} else {
-    Write-Host "  ║   Concluído com $erros erro(s).                ║" -ForegroundColor Yellow
+$col1Width = 30
+$col2Width = 8
+$col3Width = 40
+
+foreach ($r in $results) {
+    $nLen = $r.Name.Length
+    $dLen = $r.Detail.Length
+    if ($nLen -gt $col1Width) { $col1Width = $nLen }
+    if ($dLen -gt $col3Width) { $col3Width = $dLen }
 }
 
-Write-Host @"
-  ╚══════════════════════════════════════════════╝
+$border = '┌' + ('─' * ($col1Width + 2)) + '┬' + ('─' * ($col2Width + 2)) + '┬' + ('─' * ($col3Width + 2)) + '┐'
+$sep    = '├' + ('─' * ($col1Width + 2)) + '┼' + ('─' * ($col2Width + 2)) + '┼' + ('─' * ($col3Width + 2)) + '┤'
+$footer = '└' + ('─' * ($col1Width + 2)) + '┴' + ('─' * ($col2Width + 2)) + '┴' + ('─' * ($col3Width + 2)) + '┘'
+$rowFmt = '| {0,-' + $col1Width + '} | {1,' + $col2Width + '} | {2,-' + $col3Width + '} |'
 
-  Repositório: $PermanentDir
-  Profile:     $targetProfile
+Write-Host ''
+if ($erros -eq 0) {
+    Write-Host '  Installation completed successfully!' -ForegroundColor Green
+} else {
+    Write-Host "  Completed with $erros error(s)." -ForegroundColor Yellow
+}
+Write-Host ''
+Write-Host $border -ForegroundColor Cyan
+Write-Host ($rowFmt -f 'Component', 'Status', 'Detail') -ForegroundColor Cyan
+Write-Host $sep -ForegroundColor Cyan
 
-  Ferramentas instaladas:
-"@ -ForegroundColor Cyan
+foreach ($r in $results) {
+    $statusIcon = switch ($r.Status) {
+        'ok'   { '[OK]' }
+        'fail' { '[FAIL]' }
+        'skip' { '[SKIP]' }
+        default { '[???]' }
+    }
+    $color = switch ($r.Status) {
+        'ok'   { 'Green' }
+        'fail' { 'Red' }
+        'skip' { 'Yellow' }
+        default { 'Gray' }
+    }
+    $row = $rowFmt -f $r.Name, $statusIcon, $r.Detail
+    Write-Host "  $row" -ForegroundColor $color
+}
+
+Write-Host $footer -ForegroundColor Cyan
+Write-Host ''
+Write-Host "  Repository: $PermanentDir" -ForegroundColor Cyan
+Write-Host "  Profile:    $targetProfile" -ForegroundColor Cyan
+Write-Host ''
 
 $tools = @(
     @{ Name = 'PowerShell 7'; Cmd = 'pwsh' }
@@ -448,16 +521,20 @@ $tools = @(
     @{ Name = 'Zoxide'; Cmd = 'zoxide' }
 )
 
+$versions = @()
 foreach ($t in $tools) {
     $cmd = Get-Command $t.Cmd -ErrorAction SilentlyContinue
     if ($cmd) {
         $ver = & $t.Cmd --version 2>$null
-        $verStr = if ($ver) { " [$($ver.Trim())]" } else { '' }
-        Write-Host "  $($t.Name): $($cmd.Source)$verStr" -ForegroundColor Cyan
+        $verStr = if ($ver) { " $($ver.Trim())" } else { '' }
+        $versions += "$($t.Name)$verStr"
     }
+}
+if ($versions.Count -gt 0) {
+    Write-Host "  $($versions -join ' | ')" -ForegroundColor Cyan
+    Write-Host ''
 }
 
 Write-Host @"
-
-  Reinicie o terminal para aplicar as mudanças.
+  Restart your terminal to apply all changes.
 "@ -ForegroundColor Cyan
