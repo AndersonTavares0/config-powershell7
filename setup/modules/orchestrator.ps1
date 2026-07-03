@@ -184,6 +184,8 @@ function Start-ProfileInstall {
             Add-Result -Name 'Scoop' -Success $false -Detail 'not selected' -Status 'skip'
         }
 
+        Write-InstallSummary -Results $script:results
+
         Write-GuiLog '' -Type Info
         Write-GuiLog 'INSTALLATION COMPLETE' -Type Step
         Write-GuiLog '' -Type Info
