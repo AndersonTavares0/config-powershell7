@@ -20,9 +20,7 @@ function Start-ProfileInstall {
     )
 
     try {
-        $results = @()
-
-        $script:results = @()
+        $script:_installResults = @()
 
         function Add-Result {
             param([string]$Name, [bool]$Success, [string]$Detail, [string]$Status = '')
@@ -33,7 +31,7 @@ function Start-ProfileInstall {
             } else {
                 $finalStatus = 'fail'
             }
-            $script:results += @{
+            $script:_installResults += @{
                 Name   = $Name
                 Status = $finalStatus
                 Detail = $Detail
@@ -184,7 +182,7 @@ function Start-ProfileInstall {
             Add-Result -Name 'Scoop' -Success $false -Detail 'not selected' -Status 'skip'
         }
 
-        Write-InstallSummary -Results $script:results
+        Write-InstallSummary -Results $script:_installResults
 
         Write-GuiLog '' -Type Info
         Write-GuiLog 'INSTALLATION COMPLETE' -Type Step
