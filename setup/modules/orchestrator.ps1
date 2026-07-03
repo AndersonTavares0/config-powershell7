@@ -20,6 +20,27 @@ function Start-ProfileInstall {
     )
 
     try {
+        $script:_installResults = @()
+
+        function Add-Result {
+            param([string]$Name, [bool]$Success, [string]$Detail, [string]$Status = '')
+            if ($Status) {
+                $finalStatus = $Status
+            } elseif ($Success) {
+                $finalStatus = 'ok'
+            } else {
+                $finalStatus = 'fail'
+            }
+            $script:_installResults += @{
+                Name   = $Name
+                Status = $finalStatus
+                Detail = $Detail
+            }
+        }
+
+        $repoExists = Test-Path (Join-Path $RepoPath 'Microsoft.PowerShell_profile.ps1')
+        Add-Result -Name 'Repository' -Success $repoExists -Detail $(if ($repoExists) { $RepoPath } else { 'not found' })
+
         $step = 0
         $totalSteps = 1
         if ($InstallPS7)    { $totalSteps++ }
@@ -50,65 +71,118 @@ function Start-ProfileInstall {
         if ($InstallPS7) {
             $step++
             Write-GuiLog "[$step/$totalSteps] Checking PowerShell 7..." -Type Step
-            $null = Install-PowerShell7
+            $r = Install-PowerShell7
+            $exe = Get-Executable -Name 'pwsh'
+            $detail = if ($exe -and $exe.Version) { $exe.Version } elseif ($r) { 'installed' } else { 'failed' }
+            Add-Result -Name 'PowerShell 7' -Success $r -Detail $detail
+        } else {
+            Add-Result -Name 'PowerShell 7' -Success $false -Detail 'not selected' -Status 'skip'
         }
 
         if ($InstallGit) {
             $step++
             Write-GuiLog "[$step/$totalSteps] Checking Git..." -Type Step
-            $null = Install-Git
+            $r = Install-Git
+            $exe = Get-Executable -Name 'git'
+            $detail = if ($exe -and $exe.Version) { $exe.Version } elseif ($r) { 'installed' } else { 'failed' }
+            Add-Result -Name 'Git' -Success $r -Detail $detail
+        } else {
+            Add-Result -Name 'Git' -Success $false -Detail 'not selected' -Status 'skip'
         }
 
         if ($InstallOMP) {
             $step++
             Write-GuiLog "[$step/$totalSteps] Checking Oh My Posh..." -Type Step
-            $null = Install-OhMyPosh
+            $r = Install-OhMyPosh
+            $exe = Get-Executable -Name 'oh-my-posh'
+            $detail = if ($exe -and $exe.Version) { $exe.Version } elseif ($r) { 'installed' } else { 'failed' }
+            Add-Result -Name 'Oh My Posh' -Success $r -Detail $detail
+        } else {
+            Add-Result -Name 'Oh My Posh' -Success $false -Detail 'not selected' -Status 'skip'
         }
 
         if ($InstallZoxide) {
             $step++
             Write-GuiLog "[$step/$totalSteps] Checking Zoxide..." -Type Step
-            $null = Install-Zoxide
+            $r = Install-Zoxide
+            $exe = Get-Executable -Name 'zoxide'
+            $detail = if ($exe -and $exe.Version) { $exe.Version } elseif ($r) { 'installed' } else { 'failed' }
+            Add-Result -Name 'Zoxide' -Success $r -Detail $detail
+        } else {
+            Add-Result -Name 'Zoxide' -Success $false -Detail 'not selected' -Status 'skip'
         }
 
         if ($InstallFont) {
             $step++
             Write-GuiLog "[$step/$totalSteps] Checking FiraCode Nerd Font..." -Type Step
-            $null = Install-NerdFont
+            $rFont = Install-NerdFont
+            Add-Result -Name 'FiraCode Nerd Font' -Success $rFont -Detail $(if ($rFont) { 'installed' } else { 'failed' })
             $step++
             Write-GuiLog "[$step/$totalSteps] Configuring Windows Terminal font..." -Type Step
-            Set-WindowsTerminalFont
+            $rWt = Set-WindowsTerminalFont
+            Add-Result -Name 'Windows Terminal font' -Success $rWt -Detail $(if ($rWt) { 'configured' } else { 'not found' })
+        } else {
+            Add-Result -Name 'FiraCode Nerd Font' -Success $false -Detail 'not selected' -Status 'skip'
+            Add-Result -Name 'Windows Terminal font' -Success $false -Detail 'not selected' -Status 'skip'
         }
 
         if ($InstallModules) {
             $step++
             Write-GuiLog "[$step/$totalSteps] Installing PowerShell modules..." -Type Step
-            Install-PSModules
+            $rMods = Install-PSModules
+            $modDetails = @()
+            foreach ($modName in @('PSReadLine', 'Terminal-Icons')) {
+                $m = Get-Module -ListAvailable -Name $modName -ErrorAction SilentlyContinue |
+                    Sort-Object Version -Descending | Select-Object -First 1
+                if ($m) { $modDetails += "$($modName) $($m.Version)" }
+            }
+            $detail = if ($modDetails.Count -gt 0) { $modDetails -join ', ' } elseif ($rMods) { 'installed' } else { 'failed' }
+            Add-Result -Name 'PowerShell Modules' -Success $rMods -Detail $detail
+        } else {
+            Add-Result -Name 'PowerShell Modules' -Success $false -Detail 'not selected' -Status 'skip'
         }
 
         $step++
         Write-GuiLog "[$step/$totalSteps] Configuring profile..." -Type Step
-        $null = Install-Profile -RepoPath $RepoPath
+        $rProfile = Install-Profile -RepoPath $RepoPath
+        Add-Result -Name 'Profile' -Success $rProfile -Detail $(if ($rProfile) { 'linked' } else { 'failed' })
 
         if ($InstallAlacritty) {
             $step++
             Write-GuiLog "[$step/$totalSteps] Installing Alacritty..." -Type Step
-            $null = Install-Alacritty
+            $rAlac = Install-Alacritty
+            $exe = Get-Executable -Name 'alacritty'
+            $detail = if ($exe -and $exe.Version) { $exe.Version } elseif ($rAlac) { 'installed' } else { 'failed' }
+            Add-Result -Name 'Alacritty' -Success $rAlac -Detail $detail
+        } else {
+            Add-Result -Name 'Alacritty' -Success $false -Detail 'not selected' -Status 'skip'
         }
 
         if ($InstallChocolatey) {
             $step++
             Write-GuiLog "[$step/$totalSteps] Installing Chocolatey..." -Type Step
             $chocoSources = if ($ChocolateySources) { $ChocolateySources -split ',' | ForEach-Object { $_.Trim() } } else { @() }
-            $null = Install-Chocolatey -Sources $chocoSources
+            $rChoco = Install-Chocolatey -Sources $chocoSources
+            $chocoCmd = Get-Command choco -ErrorAction SilentlyContinue
+            $detail = if ($chocoCmd) { $chocoCmd.Source } elseif ($rChoco) { 'installed' } else { 'failed' }
+            Add-Result -Name 'Chocolatey' -Success $rChoco -Detail $detail
+        } else {
+            Add-Result -Name 'Chocolatey' -Success $false -Detail 'not selected' -Status 'skip'
         }
 
         if ($InstallScoop) {
             $step++
             Write-GuiLog "[$step/$totalSteps] Installing Scoop..." -Type Step
             $buckets = if ($ScoopBuckets) { $ScoopBuckets -split ',' | ForEach-Object { $_.Trim() } } else { @() }
-            $null = Install-Scoop -Buckets $buckets
+            $rScoop = Install-Scoop -Buckets $buckets
+            $exe = Get-Executable -Name 'scoop'
+            $detail = if ($exe -and $exe.Version) { $exe.Version } elseif ($rScoop) { 'installed' } else { 'failed' }
+            Add-Result -Name 'Scoop' -Success $rScoop -Detail $detail
+        } else {
+            Add-Result -Name 'Scoop' -Success $false -Detail 'not selected' -Status 'skip'
         }
+
+        Write-InstallSummary -Results $script:_installResults
 
         Write-GuiLog '' -Type Info
         Write-GuiLog 'INSTALLATION COMPLETE' -Type Step

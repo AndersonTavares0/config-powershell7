@@ -312,12 +312,81 @@ try {
     Remove-MockDir $testRepoDir3
     Remove-MockDir $testProfileDir3
     $global:PROFILE = $originalProfile
+    # Guard against $script: scope corruption from Start-ProfileInstall
+    $script:TestResults = [System.Collections.Generic.List[object]]::new()
 }
+
+# ══════════════════════════════════════════════════════════════
+# TEST SUITE: CORE — Write-InstallSummary
+# ══════════════════════════════════════════════════════════════
+Write-Host "`nTesting Write-InstallSummary..." -ForegroundColor Yellow
+
+$summaryTestResults = [System.Collections.Generic.List[object]]::new()
+function Summary-Test {
+    param([string]$Name, [bool]$Passed, [string]$Message = '')
+    $summaryTestResults.Add([PSCustomObject]@{ Name = $Name; Passed = $Passed; Message = $Message }) | Out-Null
+    if ($Passed) {
+        $script:TestsPassed++
+        Write-Host "  PASS: $Name" -ForegroundColor Green
+    } else {
+        $script:TestsFailed++
+        Write-Host "  FAIL: $Name - $Message" -ForegroundColor Red
+    }
+}
+function Summary-Assert-True {
+    param([bool]$Condition, [string]$TestName)
+    Summary-Test -Name $TestName -Passed ($Condition -eq $true) -Message $(if (-not $Condition) { "Condition was false" } else { "" })
+}
+
+$summarySyncHash = [hashtable]::Synchronized(@{
+    LogMessages = [System.Collections.Generic.List[object]]::new()
+})
+$oldSyncHash = $script:SyncHash
+$script:SyncHash = $summarySyncHash
+
+$testResults = @(
+    @{ Name = 'PowerShell 7'; Status = 'ok'; Detail = 'v7.4.6' }
+    @{ Name = 'Git'; Status = 'ok'; Detail = 'v2.45.0' }
+    @{ Name = 'FiraCode Nerd Font'; Status = 'fail'; Detail = 'download failed' }
+    @{ Name = 'Alacritty'; Status = 'skip'; Detail = 'not selected' }
+)
+
+Write-InstallSummary -Results $testResults
+
+Summary-Assert-True -Condition ($summarySyncHash.LogMessages.Count -gt 0) -TestName "Write-InstallSummary writes to SyncHash"
+
+$okRows = $summarySyncHash.LogMessages | Where-Object { $_.Type -eq 'Ok' -and $_.Message -match 'PowerShell 7' }
+Summary-Assert-True -Condition ($null -ne $okRows -and $okRows.Count -gt 0) -TestName "Write-InstallSummary ok row uses Ok type"
+
+$failRows = $summarySyncHash.LogMessages | Where-Object { $_.Type -eq 'Fail' -and $_.Message -match 'FiraCode' }
+Summary-Assert-True -Condition ($null -ne $failRows -and $failRows.Count -gt 0) -TestName "Write-InstallSummary fail row uses Fail type"
+
+$skipRows = $summarySyncHash.LogMessages | Where-Object { $_.Type -eq 'Warn' -and $_.Message -match 'Alacritty' }
+Summary-Assert-True -Condition ($null -ne $skipRows -and $skipRows.Count -gt 0) -TestName "Write-InstallSummary skip row uses Warn type"
+
+$summarySyncHash.LogMessages.Clear()
+
+Write-InstallSummary -Results @()
+Summary-Assert-True -Condition ($summarySyncHash.LogMessages.Count -gt 0) -TestName "Write-InstallSummary handles empty results"
+Summary-Assert-True -Condition ($summarySyncHash.LogMessages[0].Type -eq 'Warn') -TestName "Write-InstallSummary empty results shows warning"
+
+$summarySyncHash.LogMessages.Clear()
+
+$longResults = @(
+    @{ Name = 'A very long component name that exceeds default width'; Status = 'ok'; Detail = 'A very long detail string that should expand the column width dynamically' }
+)
+Write-InstallSummary -Results $longResults
+$rowMsg = $summarySyncHash.LogMessages | Where-Object { $_.Message -match 'very long component' }
+Summary-Assert-True -Condition ($null -ne $rowMsg) -TestName "Write-InstallSummary expands column width for long names"
+
+$script:SyncHash = $oldSyncHash
 
 # ══════════════════════════════════════════════════════════════
 # TEST SUITE: DEPS — Set-WindowsTerminalFont
 # ══════════════════════════════════════════════════════════════
 Write-Host "`nTesting Set-WindowsTerminalFont..." -ForegroundColor Yellow
+# Guard against scope corruption from prior test suites
+$script:TestResults = [System.Collections.Generic.List[object]]::new()
 
 $fontTestDir = Join-Path $env:TEMP "test-wt-font-$(Get-Random)"
 

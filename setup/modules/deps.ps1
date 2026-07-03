@@ -172,6 +172,8 @@ function Install-PSModules {
             Set-PSRepository -Name PSGallery -InstallationPolicy Untrusted -ErrorAction SilentlyContinue
         } catch { }
     }
+
+    return $true
 }
 
 function Set-WindowsTerminalFont {
@@ -190,7 +192,7 @@ function Set-WindowsTerminalFont {
 
     if (-not $settingsPath) {
         Write-GuiLog "Windows Terminal settings.json not found." -Type Info
-        return
+        return $false
     }
 
     try {
@@ -198,7 +200,7 @@ function Set-WindowsTerminalFont {
 
         if (-not $settings.profiles) {
             Write-GuiLog "Windows Terminal settings has no profiles section." -Type Warn
-            return
+            return $false
         }
 
         $changed = $false
@@ -241,8 +243,10 @@ function Set-WindowsTerminalFont {
         } else {
             Write-GuiLog "Windows Terminal already using $fontName." -Type Ok
         }
+        return $true
     } catch {
         Write-GuiLog "Could not configure Windows Terminal font: $($_.Exception.Message)" -Type Warn
+        return $false
     }
 }
 

@@ -133,3 +133,61 @@ function Download-Repo {
         return $false
     }
 }
+
+function Write-InstallSummary {
+    param(
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [object[]]$Results
+    )
+
+    if (-not $Results -or $Results.Count -eq 0) {
+        Write-GuiLog 'No installation results to summarize.' -Type Warn
+        return
+    }
+
+    $col1Width = 30
+    $col2Width = 8
+    $col3Width = 20
+
+    foreach ($r in $Results) {
+        $nameLen = $r.Name.Length
+        $detailLen = $r.Detail.Length
+        if ($nameLen -gt $col1Width) { $col1Width = $nameLen }
+        if ($detailLen -gt $col3Width) { $col3Width = $detailLen }
+    }
+
+    $border = '┌' + ('─' * ($col1Width + 2)) + '┬' + ('─' * ($col2Width + 2)) + '┬' + ('─' * ($col3Width + 2)) + '┐'
+    $sep    = '├' + ('─' * ($col1Width + 2)) + '┼' + ('─' * ($col2Width + 2)) + '┼' + ('─' * ($col3Width + 2)) + '┤'
+    $footer = '└' + ('─' * ($col1Width + 2)) + '┴' + ('─' * ($col2Width + 2)) + '┴' + ('─' * ($col3Width + 2)) + '┘'
+
+    $rowFmt = '| {0,-' + $col1Width + '} | {1,' + $col2Width + '} | {2,-' + $col3Width + '} |'
+
+    Write-GuiLog '' -Type Info
+    Write-GuiLog 'INSTALLATION SUMMARY' -Type Step
+    Write-GuiLog $border -Type Info
+
+    $header = $rowFmt -f 'Component', 'Status', 'Detail'
+    Write-GuiLog $header -Type Info
+    Write-GuiLog $sep -Type Info
+
+    foreach ($r in $Results) {
+        $statusIcon = switch ($r.Status) {
+            'ok'   { '[OK]' }
+            'fail' { '[FAIL]' }
+            'skip' { '[SKIP]' }
+            default { '[???]' }
+        }
+        $logType = switch ($r.Status) {
+            'ok'   { 'Ok' }
+            'fail' { 'Fail' }
+            'skip' { 'Warn' }
+            default { 'Info' }
+        }
+        $row = $rowFmt -f $r.Name, $statusIcon, $r.Detail
+        Write-GuiLog $row -Type $logType
+    }
+
+    Write-GuiLog $footer -Type Info
+    Write-GuiLog '' -Type Info
+}
