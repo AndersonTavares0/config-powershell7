@@ -84,7 +84,7 @@ function script:Get-Command {
     return $null
 }
 
-function script:zoxide   { param() '' }
+function script:zoxide { param() '' }
 function script:oh-my-posh { param() '' }
 
 # ── SYSTEM MODULE MOCKS ───────────────────────────────────────
@@ -403,6 +403,76 @@ function Write-CacheSuite {
         Test-Result -Name 'CACHE-14' -Passed $false -Message $_.Exception.Message
     }
 
+    # ============================================================
+    # CACHE-15: Update-PluginCache zoxide init throws → warn, no Zoxide
+    # Note: remove mock function so CommandNotFoundException fires
+    # through 2>&1 | Out-String (throw inside the function gets
+    # consumed by stream redirection; binary-not-found does not)
+    # ============================================================
+    $oldCachePath15 = $script:Config.CachePath
+    $isolatedCache15 = Join-Path $script:CacheDir 'cache15.ps1'
+    $script:Config.CachePath = $isolatedCache15
+    try {
+        Remove-Item Function:\zoxide -Force -ErrorAction SilentlyContinue
+        function script:zoxide { throw "Simulated zoxide init failure for testing" }
+        $script:MockCommandResults['zoxide'] = [PSCustomObject]@{ Source = 'zoxide.exe' }
+        $script:MockWarnings = @()
+        script:Update-PluginCache -zcmd $script:MockCommandResults['zoxide'] -ocmd $null
+        Assert-True -Condition (Test-Path $isolatedCache15) -TestName 'CACHE-15: cache created despite zoxide init failure'
+        Assert-True -Condition ($script:MockWarnings.Count -ge 1) -TestName 'CACHE-15: warning emitted'
+        $hasZoxideWarn = $script:MockWarnings | Where-Object { $_ -match 'zoxide init' }
+        Assert-NotNull -Value $hasZoxideWarn -TestName 'CACHE-15: warning mentions zoxide init'
+        if (Test-Path $isolatedCache15) {
+            $content15 = Get-Content $isolatedCache15 -Raw -ErrorAction SilentlyContinue
+            Assert-False -Condition ($content15 -match "StartupModules\.Add\('Zoxide'\)") -TestName 'CACHE-15: no Zoxide startup line in cache'
+        }
+    }
+    catch {
+        Test-Result -Name 'CACHE-15' -Passed $false -Message $_.Exception.Message
+    }
+    finally {
+        $script:Config.CachePath = $oldCachePath15
+        Remove-MockFile $isolatedCache15
+    }
+
+    # ============================================================
+    # CACHE-16: Update-PluginCache omp init throws → warn, no OMP
+    # Note: same strategy as CACHE-15 — remove mock function so
+    # CommandNotFoundException fires through 2>&1 | Out-String
+    # ============================================================
+    $oldCachePath16 = $script:Config.CachePath
+    $isolatedCache16 = Join-Path $script:CacheDir 'cache16.ps1'
+    $script:Config.CachePath = $isolatedCache16
+    $oldThemePath16 = $script:Config.ThemePath
+    $themeFile16 = Join-Path $script:CacheDir 'theme16.json'
+    $script:Config.ThemePath = $themeFile16
+    try {
+        Remove-MockFile $isolatedCache16
+        New-MockFile -Path $themeFile16 -Content '{}'
+        Remove-Item Function:\oh-my-posh -Force -ErrorAction SilentlyContinue
+        function script:oh-my-posh { throw "Simulated oh-my-posh init failure for testing" }
+        $script:MockCommandResults['oh-my-posh'] = [PSCustomObject]@{ Source = 'oh-my-posh.exe' }
+        $script:MockWarnings = @()
+        script:Update-PluginCache -zcmd $null -ocmd $script:MockCommandResults['oh-my-posh']
+        Assert-True -Condition (Test-Path $isolatedCache16) -TestName 'CACHE-16: cache created despite omp init failure'
+        Assert-True -Condition ($script:MockWarnings.Count -ge 1) -TestName 'CACHE-16: warning emitted'
+        $hasOmpWarn = $script:MockWarnings | Where-Object { $_ -match 'oh-my-posh init' }
+        Assert-NotNull -Value $hasOmpWarn -TestName 'CACHE-16: warning mentions oh-my-posh init'
+        if (Test-Path $isolatedCache16) {
+            $content16 = Get-Content $isolatedCache16 -Raw -ErrorAction SilentlyContinue
+            Assert-False -Condition ($content16 -match "StartupModules\.Add\('OMP") -TestName 'CACHE-16: no OMP startup line in cache'
+        }
+    }
+    catch {
+        Test-Result -Name 'CACHE-16' -Passed $false -Message $_.Exception.Message
+    }
+    finally {
+        $script:Config.CachePath = $oldCachePath16
+        $script:Config.ThemePath = $oldThemePath16
+        Remove-MockFile $isolatedCache16
+        Remove-MockFile $themeFile16
+    }
+
     Write-Host "Cache suite complete." -ForegroundColor Cyan
 }
 
@@ -598,6 +668,41 @@ function Write-SystemSuite {
     }
     catch {
         Test-Result -Name 'SYS-10: sudo normal command' -Passed $false -Message $_.Exception.Message
+    }
+
+    # ============================================================
+    # SYS-11: sysinfo dispatches to script:Get-WindowsSystemInfo
+    # ============================================================
+    try {
+        $script:Config.IsWindows = $true
+        $script:Config.IsLinux = $false
+        $script:Config.IsMacOS = $false
+        function script:Get-WindowsSystemInfo { return 'WINDOWS_CALLED' }
+        $result11 = sysinfo
+        Assert-Equal -Expected 'WINDOWS_CALLED' -Actual $result11 -TestName 'SYS-11: sysinfo dispatches to Get-WindowsSystemInfo'
+    }
+    catch {
+        Test-Result -Name 'SYS-11: sysinfo dispatches to Get-WindowsSystemInfo' -Passed $false -Message $_.Exception.Message
+    }
+    finally {
+        Remove-Item Function:\Get-WindowsSystemInfo -Force -ErrorAction SilentlyContinue
+    }
+
+    # ============================================================
+    # SYS-12: sysinfo fallback when helper throws
+    # ============================================================
+    try {
+        function script:Get-WindowsSystemInfo { throw "Simulated failure" }
+        $result12 = sysinfo
+        Assert-NotNull -Value $result12 -TestName 'SYS-12: fallback returns object'
+        Assert-NotNull -Value $result12.PS -TestName 'SYS-12: fallback has PS version'
+        Assert-Equal -Expected 'Unknown' -Actual $result12.OS -TestName 'SYS-12: fallback OS is Unknown'
+    }
+    catch {
+        Test-Result -Name 'SYS-12: sysinfo fallback' -Passed $false -Message $_.Exception.Message
+    }
+    finally {
+        Remove-Item Function:\Get-WindowsSystemInfo -Force -ErrorAction SilentlyContinue
     }
 
     Write-Host "System suite complete." -ForegroundColor Cyan

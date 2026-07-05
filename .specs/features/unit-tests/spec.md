@@ -55,6 +55,8 @@ The project has three test layers (integration, setup TDD, post-install health c
 12. WHEN `Initialize-PluginCache` finds no cache THEN SHALL create it
 13. WHEN `Clear-PluginCache` is called THEN SHALL remove cache file
 14. WHEN `Import-TerminalIcons` is called THEN SHALL run without error
+15. WHEN `Update-PluginCache` is called and zoxide init throws THEN SHALL warn and omit Zoxide from cache
+16. WHEN `Update-PluginCache` is called and oh-my-posh init throws THEN SHALL warn and omit OMP from cache
 
 ### P2: System Module Tests
 
@@ -72,6 +74,8 @@ The project has three test layers (integration, setup TDD, post-install health c
 8. WHEN `sudo` sanitization removes null bytes/control chars THEN SHALL clean command
 9. WHEN `sudo` sanitization results in empty command THEN SHALL write ErrorRecord
 10. WHEN `sudo` is called with normal command THEN SHALL encode and launch process
+11. WHEN `sysinfo` dispatches to `script:Get-WindowsSystemInfo` THEN SHALL return its result
+12. WHEN `sysinfo` helper throws THEN SHALL return fallback with OS='Unknown'
 
 ### P2: Text Utils Tests
 
@@ -125,6 +129,8 @@ The project has three test layers (integration, setup TDD, post-install health c
 | CACHE-12 | Initialize-PluginCache no cache | P1 | Pending |
 | CACHE-13 | Clear-PluginCache | P1 | Pending |
 | CACHE-14 | Import-TerminalIcons early return | P1 | Pending |
+| CACHE-15 | Update-PluginCache zoxide init throws | P1 | Pending |
+| CACHE-16 | Update-PluginCache omp init throws | P1 | Pending |
 | SYS-01 | pubip valid cache return | P2 | Pending |
 | SYS-02 | pubip expired cache query | P2 | Pending |
 | SYS-03 | pubip endpoint fallback chain | P2 | Pending |
@@ -135,6 +141,8 @@ The project has three test layers (integration, setup TDD, post-install health c
 | SYS-08 | sudo sanitization | P2 | Pending |
 | SYS-09 | sudo empty after sanitization | P2 | Pending |
 | SYS-10 | sudo normal command | P2 | Pending |
+| SYS-11 | sysinfo dispatch to Windows helper | P2 | Pending |
+| SYS-12 | sysinfo fallback on error | P2 | Pending |
 | TEXT-01 | sed file not found | P2 | Pending |
 | TEXT-02 | sed file too large | P2 | Pending |
 | TEXT-03 | sed valid replace | P2 | Pending |
@@ -187,7 +195,7 @@ The project has three test layers (integration, setup TDD, post-install health c
 
 ## Success Criteria
 
-- [x] All 42 requirement IDs mapped to test assertions
+- [x] All 46 requirement IDs mapped to test assertions
 - [x] Tests run standalone: `.\tests\Unit.Tests.ps1` without pre-loaded profile
 - [x] Each sub-suite completes in <100ms
 - [x] No external tool calls (git, zoxide, oh-my-posh, network)
