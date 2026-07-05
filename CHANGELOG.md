@@ -7,6 +7,12 @@ All notable changes to this project will be documented in this file.
 ### Added
 - System32/SysWOW64 startup guard — redirect independente de módulos,
   executa antes do config.ps1 para proteger sessões Admin
+- Unit tests para lógica interna dos módulos (`tests/Unit.Tests.ps1`):
+  - Cache: 14 ACs — fingerprints, TTL hot/cold, rebuild, clear (CACHE-01–14)
+  - System: 10 ACs — pubip cache/fallback, sudo sanitização (SYS-01–10)
+  - Text utils: 9 ACs — sed validação/backup/cleanup, clipboard, touch (TEXT-01–09)
+  - Git: 9 ACs — gcom/lazyg LASTEXITCODE branching (GIT-01–09)
+  - 88 asserções, zero dependências externas, ~350ms total
 
 ### Fixed
 - install.ps1: removido passo duplicado de instalação do PowerShell 7
