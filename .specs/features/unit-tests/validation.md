@@ -1,6 +1,6 @@
 # Unit Tests for Module-Internal Logic — Validation
 
-**Date**: 2026-07-02
+**Date**: 2026-07-05
 **Spec**: `.specs/features/unit-tests/spec.md`
 **Diff range**: `tests/Unit.Tests.ps1`
 **Verifier**: standalone (fresh-eyes pass)
@@ -12,10 +12,10 @@
 | Task | Status | Notes |
 | ---- | ------ | ----- |
 | T1: Framework + cache mocks | ✅ Done | Test-Result, Assert-*, shared mocks, Config mock |
-| T2: Cache module tests | ✅ Done | 29 assertions (14 ACs) |
-| T3: System module tests | ✅ Done | 20 assertions (10 ACs) |
-| T4: Text utils tests | ✅ Done | 17 assertions (9 ACs) |
-| T5: Git module tests | ✅ Done | 17 assertions (9 ACs) |
+| T2: Cache module tests | ✅ Done | 38 assertions (16 ACs) |
+| T3: System module tests | ✅ Done | 23 assertions (12 ACs) |
+| T4: Text utils tests | ✅ Done | 16 assertions (9 ACs) |
+| T5: Git module tests | ✅ Done | 23 assertions (9 ACs) |
 
 ---
 
@@ -37,6 +37,8 @@
 | CACHE-12: No cache | create cache | `Unit.Tests.ps1:370` — file exists after init | ✅ PASS |
 | CACHE-13: Clear-PluginCache | remove file | `Unit.Tests.ps1:383` — file not found after clear | ✅ PASS |
 | CACHE-14: Import-TerminalIcons | early return | `Unit.Tests.ps1:394` — no exception | ✅ PASS |
+| CACHE-15: Update-PluginCache zoxide init throws | warn + no Zoxide line | `Unit.Tests.ps1:[suite]` — warning count ≥1, content no match | ✅ PASS |
+| CACHE-16: Update-PluginCache omp init throws | warn + no OMP line | `Unit.Tests.ps1:[suite]` — warning count ≥1, content no match | ✅ PASS |
 | SYS-01: pubip valid cache | return cached IP | `Unit.Tests.ps1:415` — `result -eq '1.2.3.4'` | ✅ PASS |
 | SYS-02: pubip expired cache | query endpoints | `Unit.Tests.ps1:429` — `result -eq '5.6.7.8'` | ✅ PASS |
 | SYS-03: pubip fallback chain | try next endpoint | `Unit.Tests.ps1:448,465` — fallback IPs returned | ✅ PASS |
@@ -47,6 +49,8 @@
 | SYS-08: sudo sanitization | clean command | `Unit.Tests.ps1:548` — decoded is 'notepadtest' | ✅ PASS |
 | SYS-09: empty after sanitization | ErrorRecord | `Unit.Tests.ps1:569` — error ID SudoEmptyCommand | ✅ PASS |
 | SYS-10: sudo normal command | encode+launch | `Unit.Tests.ps1:585-590` — Verb RunAs, decoded matches | ✅ PASS |
+| SYS-11: sysinfo dispatch | calls Get-WindowsSystemInfo | `Unit.Tests.ps1:[suite]` — result is 'WINDOWS_CALLED' | ✅ PASS |
+| SYS-12: sysinfo fallback | OS='Unknown' on helper throw | `Unit.Tests.ps1:[suite]` — result.OS equals 'Unknown' | ✅ PASS |
 | TEXT-01: sed file not found | ErrorRecord | `Unit.Tests.ps1:[suite]:627` — error ID SedFileNotFound | ✅ PASS |
 | TEXT-02: sed file >50MB | ErrorRecord | `Unit.Tests.ps1:[suite]:642` — error ID SedFileTooLarge | ✅ PASS |
 | TEXT-03: sed valid replace | replace content | `Unit.Tests.ps1:[suite]:655` — content is 'hello there' | ✅ PASS |
@@ -66,7 +70,7 @@
 | GIT-08: Test-InteractiveSession CI=true | false | `Unit.Tests.ps1:[suite]:854` — condition is false | ✅ PASS |
 | GIT-09: Test-InteractiveSession default | returns bool | `Unit.Tests.ps1:[suite]:861` — returns boolean | ✅ PASS |
 
-**Status**: ✅ 42/43 ACs matched spec outcome, 1 spec-precision gap flagged
+**Status**: ✅ 46/47 ACs matched spec outcome, 1 spec-precision gap flagged
 
 ---
 
@@ -94,15 +98,15 @@
 | No scope creep | ✅ |
 | Matches existing patterns | ✅ (custom framework, monolithic file, temp files) |
 | No module files modified | ✅ |
-| Spec-anchored outcome check | ✅ (42/43 matched; 1 gap flagged) |
-| Every test maps to a requirement | ✅ (reverse check: all 83 assertions trace to spec ACs) |
+| Spec-anchored outcome check | ✅ (46/47 matched; 1 gap flagged) |
+| Every test maps to a requirement | ✅ (reverse check: all 100 assertions trace to spec ACs) |
 
 ---
 
 ## Gate Check
 
 - **Command**: `.\tests\Unit.Tests.ps1`
-- **Result**: 83 passed, 0 failed, 0 skipped
+- **Result**: 100 passed, 0 failed, 0 skipped
 - **Average runtime**: ~350ms (3 runs)
 - **Determinism**: 100% across 3 runs
 
@@ -114,9 +118,9 @@
 
 | Dimension | Result |
 | --------- | ------ |
-| Spec-anchored check | 42/43 matched, 1 gap |
+| Spec-anchored check | 46/47 matched, 1 gap |
 | Sensor | 5/5 mutations killed |
-| Gate | 83/83 passed |
+| Gate | 100/100 passed |
 | Determinism | 100% (3/3 runs identical) |
 | External deps | None (all mocked) |
 | Isolation | Each module dot-sourced independently |
@@ -126,4 +130,4 @@
 **Spec-precision gaps**:
 1. TEXT-07: PowerShell's `[string]` parameter coercion converts `$null` to `''` in pipeline. The function behavior is correct (it skips `$null` values per the code), but `[string]$InputObject` means `$null` arrives as `''`. This is a PowerShell limitation, not a code bug. The test documents this behavior.
 
-**Next steps**: None — feature complete
+**Next steps**: None — issue #64 fully resolved (sysinfo dispatch + fallback tests added)
