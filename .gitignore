@@ -70,3 +70,6 @@ modules/99-local.ps1
 
 # PowerShell auto-generated formats
 *.ps1xml
+# Specs de desenvolvimento (local only)
+.specs/
+
