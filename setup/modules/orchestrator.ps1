@@ -16,7 +16,8 @@ function Start-ProfileInstall {
         [bool]$InstallChocolatey = $false,
         [string]$ChocolateySources = '',
         [bool]$InstallScoop = $false,
-        [string]$ScoopBuckets = ''
+        [string]$ScoopBuckets = '',
+        [string]$ThemeName = ''
     )
 
     try {
@@ -49,6 +50,7 @@ function Start-ProfileInstall {
         if ($InstallZoxide) { $totalSteps++ }
         if ($InstallFont)   { $totalSteps += 2 }
         if ($InstallModules) { $totalSteps++ }
+        if ($ThemeName -and $InstallOMP) { $totalSteps++ }
         $totalSteps++
         if ($InstallAlacritty)   { $totalSteps++ }
         if ($InstallChocolatey)  { $totalSteps++ }
@@ -142,9 +144,18 @@ function Start-ProfileInstall {
             Add-Result -Name 'PowerShell Modules' -Success $false -Detail 'not selected' -Status 'skip'
         }
 
+        if ($ThemeName -and $InstallOMP) {
+            $step++
+            Write-GuiLog "[$step/$totalSteps] Downloading OMP theme '$ThemeName'..." -Type Step
+            $rTheme = Install-OmpTheme -ThemeName $ThemeName
+            Add-Result -Name "OMP Theme ($ThemeName)" -Success $rTheme -Detail $(if ($rTheme) { 'downloaded' } else { 'failed' })
+        } else {
+            Add-Result -Name 'OMP Theme' -Success $false -Detail 'not selected' -Status 'skip'
+        }
+
         $step++
         Write-GuiLog "[$step/$totalSteps] Configuring profile..." -Type Step
-        $rProfile = Install-Profile -RepoPath $RepoPath
+        $rProfile = Install-Profile -RepoPath $RepoPath -ThemeName $ThemeName
         Add-Result -Name 'Profile' -Success $rProfile -Detail $(if ($rProfile) { 'linked' } else { 'failed' })
 
         if ($InstallAlacritty) {

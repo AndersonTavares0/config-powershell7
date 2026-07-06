@@ -129,6 +129,20 @@ function Show-Gui {
                       Foreground="#CDD6F4" FontSize="12" Margin="0,0,0,3">
                 Install Oh My Posh (prompt themes)
             </CheckBox>
+            <StackPanel Orientation="Horizontal" Margin="20,0,0,6">
+                <TextBlock Text="OMP theme:" FontSize="11" Foreground="#A6ADC8" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                <ComboBox x:Name="CmbTheme" Width="240" SelectedIndex="0"
+                          Background="#313244" Foreground="#CDD6F4"
+                          BorderBrush="#45475A" BorderThickness="1"
+                          FontSize="11" FontFamily="Consolas"
+                          IsEnabled="{Binding ElementName=ChkOMP, Path=IsChecked}">
+                    <ComboBoxItem Content="jandedobbeleer (recommended)" Tag="jandedobbeleer"/>
+                    <ComboBoxItem Content="powerlevel10k_lean" Tag="powerlevel10k_lean"/>
+                    <ComboBoxItem Content="powerlevel10k_modern" Tag="powerlevel10k_modern"/>
+                    <ComboBoxItem Content="powerlevel10k_rainbow" Tag="powerlevel10k_rainbow"/>
+                    <ComboBoxItem Content="atomic" Tag="atomic"/>
+                </ComboBox>
+            </StackPanel>
             <CheckBox x:Name="ChkZoxide" IsChecked="True"
                       Foreground="#CDD6F4" FontSize="12" Margin="0,0,0,3">
                 Install Zoxide (smart cd)
@@ -218,6 +232,7 @@ function Show-Gui {
     $chkPS7          = $window.FindName('ChkPS7')
     $chkGit          = $window.FindName('ChkGit')
     $chkOMP          = $window.FindName('ChkOMP')
+    $cmbTheme        = $window.FindName('CmbTheme')
     $chkZoxide       = $window.FindName('ChkZoxide')
     $chkFont         = $window.FindName('ChkFont')
     $chkModules      = $window.FindName('ChkModules')
@@ -280,9 +295,9 @@ function Show-Gui {
                 $txtStatus.Foreground = $colors.Ok
             }
             foreach ($ctrl in @($btnInstall, $btnRemove, $btnBrowse, $txtRepoPath,
-                $chkPS7, $chkGit, $chkOMP, $chkZoxide, $chkFont, $chkModules,
-                $chkAlacritty, $chkChoco, $txtChocoSources, $chkScoop, $txtScoopBuckets)) {
-                $ctrl.IsEnabled = $true
+        $chkPS7, $chkGit, $chkOMP, $cmbTheme, $chkZoxide, $chkFont, $chkModules,
+        $chkAlacritty, $chkChoco, $txtChocoSources, $chkScoop, $txtScoopBuckets)) {
+        $ctrl.IsEnabled = $true
             }
             $script:SyncHash.IsRunning = $false
         }
@@ -300,7 +315,7 @@ function Show-Gui {
         }
 
         foreach ($ctrl in @($btnInstall, $btnRemove, $btnBrowse, $txtRepoPath,
-            $chkPS7, $chkGit, $chkOMP, $chkZoxide, $chkFont, $chkModules,
+            $chkPS7, $chkGit, $chkOMP, $cmbTheme, $chkZoxide, $chkFont, $chkModules,
             $chkAlacritty, $chkChoco, $txtChocoSources, $chkScoop, $txtScoopBuckets)) {
             $ctrl.IsEnabled = $false
         }
@@ -315,6 +330,7 @@ function Show-Gui {
         $txtProgress.Text = ''
         $timer.Start()
 
+        $selectedTheme = if ($cmbTheme.SelectedItem -and $cmbTheme.SelectedItem.Tag) { $cmbTheme.SelectedItem.Tag } else { '' }
         $needDownload = -not (Test-Path (Join-Path $repoPath 'Microsoft.PowerShell_profile.ps1'))
 
         $ps = [PowerShell]::Create()
@@ -351,6 +367,7 @@ function Show-Gui {
             InstallPS7        = $chkPS7.IsChecked
             InstallGit        = $chkGit.IsChecked
             InstallOMP        = $chkOMP.IsChecked
+            ThemeName         = $selectedTheme
             InstallZoxide     = $chkZoxide.IsChecked
             InstallFont       = $chkFont.IsChecked
             InstallModules    = $chkModules.IsChecked
@@ -375,7 +392,7 @@ function Show-Gui {
         if ($confirm -ne 'Yes') { return }
 
         foreach ($ctrl in @($btnInstall, $btnRemove, $btnBrowse, $txtRepoPath,
-            $chkPS7, $chkGit, $chkOMP, $chkZoxide, $chkFont, $chkModules,
+            $chkPS7, $chkGit, $chkOMP, $cmbTheme, $chkZoxide, $chkFont, $chkModules,
             $chkAlacritty, $chkChoco, $txtChocoSources, $chkScoop, $txtScoopBuckets)) {
             $ctrl.IsEnabled = $false
         }

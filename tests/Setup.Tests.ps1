@@ -218,6 +218,31 @@ try {
     $global:PROFILE = $originalProfile
 }
 
+# Test Install-Profile with ThemeName
+$testThemeDir = Join-Path $env:TEMP "test-setup-theme-$(Get-Random)"
+$testThemeProfileDir = Join-Path $env:TEMP "test-setup-theme-profile-$(Get-Random)"
+$testThemeProfilePath = Join-Path $testThemeProfileDir "Microsoft.PowerShell_profile.ps1"
+
+try {
+    New-MockDir $testThemeDir
+    New-MockDir (Join-Path $testThemeDir 'modules')
+    New-MockFile (Join-Path $testThemeDir 'Microsoft.PowerShell_profile.ps1') '# profile'
+
+    $originalProfile = $PROFILE
+    $global:PROFILE = $testThemeProfilePath
+
+    $result4 = Install-Profile -RepoPath $testThemeDir -ThemeName 'jandedobbeleer'
+    Assert-True -Condition $result4 -TestName "Install-Profile with ThemeName returns true"
+    $content4 = Get-Content $testThemeProfilePath -Raw
+    Assert-True -Condition ($content4 -match 'POSH_THEME') -TestName "Install-Profile with ThemeName includes POSH_THEME in stub"
+    Assert-True -Condition ($content4 -match 'jandedobbeleer') -TestName "Install-Profile with ThemeName includes theme name in stub"
+
+} finally {
+    Remove-MockDir $testThemeDir
+    Remove-MockDir $testThemeProfileDir
+    $global:PROFILE = $originalProfile
+}
+
 # ══════════════════════════════════════════════════════════════
 # TEST SUITE: PROFILE — Uninstall-Profile (mock)
 # ══════════════════════════════════════════════════════════════
