@@ -492,7 +492,7 @@ if (-not $isAdmin) {
     $result = Install-Chocolatey
     Assert-False -Condition $result -TestName "Install-Chocolatey returns false when not admin"
 } else {
-    Test-Skip -Name "Install-Chocolatey admin check" -Reason "Running as admin — cannot test non-admin path"
+    Test-Skip -Name "Install-Chocolatey admin check" -Reason "Running as admin - cannot test non-admin path"
 }
 
 # ══════════════════════════════════════════════════════════════
