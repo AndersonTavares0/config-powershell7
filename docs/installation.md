@@ -44,8 +44,9 @@ O script baixa e executa o instalador universal que:
 4. **Instala a FiraCode Nerd Font** via Shell API do Windows
 5. **Configura o Alacritty** com tema Tokyo Night + FiraCode
 6. **Configura o Windows Terminal** com FiraCode como fonte padrão
-7. **Baixa o tema atomic.omp.json** para Oh My Posh
-8. **Linka o profile** via dot-source
+7. **Solicita seleção de tema** Oh My Posh (GUI dropdown ou CLI interativo)
+8. **Baixa o tema OMP selecionado** (padrão: `jandedobbeleer`) com validação de download
+9. **Linka o profile** via dot-source, configurando `$env:POSH_THEME`
 
 > Caminhos dinâmicos com `[Environment]::GetFolderPath` — funciona com OneDrive ativado.
 > Idempotente — pode rodar várias vezes sem quebrar.
@@ -161,16 +162,17 @@ The uninstaller:
 ## Additional Configuration
 
 ### Oh My Posh Theme
-The profile expects the theme at `$HOME\.poshthemes\atomic.omp.json` (Windows) or `$XDG_DATA_HOME/poshthemes/atomic.omp.json` (Linux).
 
-Set `$env:POSH_THEME` to any installed theme name to override the default:
+During installation, you can select from curated themes via GUI dropdown or CLI prompt. The installer downloads the selected theme, validates it, and sets `$env:POSH_THEME` in your profile stub.
+
+**Default theme:** `jandedobbeleer` (recommended)
+
+**Available themes:** `jandedobbeleer`, `powerlevel10k_lean`, `powerlevel10k_modern`, `powerlevel10k_rainbow`, `atomic`
+
+To change themes after installation, set `$env:POSH_THEME`:
 ```powershell
 $env:POSH_THEME = 'powerlevel10k_lean'
 ```
 The profile reads this variable at boot. Empty or unset = `atomic`.
 
-```powershell
-# Create directory and download theme
-New-Item -ItemType Directory -Force "$HOME\.poshthemes" | Out-Null
-oh-my-posh font install
-```
+Themes are stored at `$HOME\.poshthemes\{name}.omp.json` (Windows) or `$XDG_DATA_HOME/poshthemes/{name}.omp.json` (Linux).
