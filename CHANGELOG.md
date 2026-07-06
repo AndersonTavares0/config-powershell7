@@ -5,6 +5,8 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- Post-install summary agora exibe Theme, Cache e Terminal message,
+  substituindo bloco de versões de ferramentas (#52)
 - Suporte a `POSH_THEME` env var para seleção de tema do Oh My Posh
   via ambiente, com fallback para `$script:Config.ThemePath`
 - Testes isolados para o mecanismo `POSH_THEME`
@@ -35,6 +37,8 @@ All notable changes to this project will be documented in this file.
   ferramenta instalada
 
 ### Fixed
+- tests/Setup.Tests.ps1: parser error "Missing closing '}'" causado por
+  em dash `—` (U+2014) na linha 495 — substituído por hífen comum
 - Microsoft.PowerShell_profile.Tests.ps1: parser não reconhecia `catch`
   como keyword na linha 504 — adicionado UTF-8 BOM (#70)
 - Test-ProfileInstallation.ps1: Missing closing `}` falso positivo nas

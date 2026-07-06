@@ -185,26 +185,25 @@ function Start-ProfileInstall {
         Write-InstallSummary -Results $script:_installResults
 
         Write-GuiLog '' -Type Info
-        Write-GuiLog 'INSTALLATION COMPLETE' -Type Step
+        Write-GuiLog 'Installation complete!' -Type Step
         Write-GuiLog '' -Type Info
         Write-GuiLog "Profile:  $(Get-ProfilePath)" -Type Info
         Write-GuiLog "Repo:     $RepoPath" -Type Info
+
+        $themeName = if ($env:POSH_THEME) { $env:POSH_THEME } else { 'atomic' }
+        Write-GuiLog "Theme:    $themeName" -Type Info
+
+        $cachePath = if ($script:IsWin) {
+            Join-Path $HOME '.cache_pwsh_plugins.ps1'
+        } else {
+            $xdgCache = if ($env:XDG_CACHE_HOME) { $env:XDG_CACHE_HOME } else { Join-Path $HOME '.cache' }
+            Join-Path (Join-Path $xdgCache 'pwsh') 'plugins_cache.ps1'
+        }
+        $cacheNote = if (Test-Path $cachePath) { 'exists' } else { 'on next launch' }
+        Write-GuiLog "Cache:    $cachePath ($cacheNote)" -Type Info
+
         Write-GuiLog '' -Type Info
-
-        $tools = @('pwsh', 'git', 'oh-my-posh', 'zoxide')
-        $versions = @()
-        foreach ($tool in $tools) {
-            $e = Get-Executable -Name $tool
-            if ($e -and $e.Version) {
-                $versions += "$($e.Name) $($e.Version)"
-            }
-        }
-        if ($versions.Count -gt 0) {
-            Write-GuiLog ($versions -join ' · ') -Type Info
-            Write-GuiLog '' -Type Info
-        }
-
-        Write-GuiLog 'Restart your terminal to apply all changes!' -Type Ok
+        Write-GuiLog 'Terminal: Restart recommended to apply changes' -Type Ok
 
         $sync = Get-Variable -Name SyncHash -Scope Script -ValueOnly -ErrorAction SilentlyContinue
         if ($sync) { $sync.InstallComplete = $true }
