@@ -162,6 +162,19 @@ Assert-NotNull -Value $script:RepoZipUrl -TestName "RepoZipUrl is set"
 Assert-True -Condition ($script:RepoZipUrl -match 'github\.com') -TestName "RepoZipUrl points to GitHub"
 
 # ══════════════════════════════════════════════════════════════
+# TEST SUITE: CORE — Test-DocumentsRedirected
+# ══════════════════════════════════════════════════════════════
+Write-Host "`nTesting Test-DocumentsRedirected..." -ForegroundColor Yellow
+
+$actualDocs = [Environment]::GetFolderPath('MyDocuments')
+$expectedDocs = Join-Path ([Environment]::GetFolderPath('UserProfile')) 'Documents'
+if ($actualDocs -eq $expectedDocs) {
+    Assert-False -Condition (Test-DocumentsRedirected) -TestName "Test-DocumentsRedirected returns false when Documents is default"
+} else {
+    Assert-True -Condition (Test-DocumentsRedirected) -TestName "Test-DocumentsRedirected returns true when Documents is redirected"
+}
+
+# ══════════════════════════════════════════════════════════════
 # TEST SUITE: CORE — Get-WingetPath
 # ══════════════════════════════════════════════════════════════
 Write-Host "`nTesting Get-WingetPath..." -ForegroundColor Yellow

@@ -60,6 +60,15 @@ function Start-ProfileInstall {
         Write-GuiLog 'STARTING INSTALLATION' -Type Step
         Write-GuiLog '' -Type Info
 
+        $resolvedProfile = Get-ProfilePath
+        $resolvedDocs = [Environment]::GetFolderPath('MyDocuments')
+        Write-GuiLog "Profile path: $resolvedProfile" -Type Info
+        Write-GuiLog "Documents path: $resolvedDocs" -Type Info
+        if (Test-DocumentsRedirected) {
+            Write-GuiLog 'Documents folder is redirected (OneDrive/Group Policy). All paths resolved via .NET APIs.' -Type Warn
+        }
+        Write-GuiLog '' -Type Info
+
         $step++
         Write-GuiLog "[$step/$totalSteps] Setting ExecutionPolicy..." -Type Step
         $currentPolicy = Get-ExecutionPolicy -Scope CurrentUser -ErrorAction SilentlyContinue
