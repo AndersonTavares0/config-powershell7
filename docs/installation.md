@@ -162,6 +162,13 @@ The uninstaller:
 
 ### Oh My Posh Theme
 The profile expects the theme at `$HOME\.poshthemes\atomic.omp.json` (Windows) or `$XDG_DATA_HOME/poshthemes/atomic.omp.json` (Linux).
+
+Set `$env:POSH_THEME` to any installed theme name to override the default:
+```powershell
+$env:POSH_THEME = 'powerlevel10k_lean'
+```
+The profile reads this variable at boot. Empty or unset = `atomic`.
+
 ```powershell
 # Create directory and download theme
 New-Item -ItemType Directory -Force "$HOME\.poshthemes" | Out-Null
