@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 # ============================================================
 # UNIT TESTS FOR Microsoft.PowerShell_profile.ps1
 # PS 5.1+ / PS Core 7+ | Revisão: 05/2026
