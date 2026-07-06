@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- Suporte a `POSH_THEME` env var para seleção de tema do Oh My Posh
+  via ambiente, com fallback para `$script:Config.ThemePath`
+- Testes isolados para o mecanismo `POSH_THEME`
+  (`tests/POSH_THEME.Tests.ps1`)
 - System32/SysWOW64 startup guard — redirect independente de módulos,
   executa antes do config.ps1 para proteger sessões Admin
 - Unit tests para lógica interna dos módulos (`tests/Unit.Tests.ps1`):
@@ -29,6 +33,12 @@ All notable changes to this project will be documented in this file.
 - install.ps1: sumário final exibe versão de cada ferramenta instalada
 - setup/modules/orchestrator.ps1: sumário final exibe versão de cada
   ferramenta instalada
+
+### Fixed
+- Microsoft.PowerShell_profile.Tests.ps1: parser não reconhecia `catch`
+  como keyword na linha 504 — adicionado UTF-8 BOM (#70)
+- Test-ProfileInstallation.ps1: Missing closing `}` falso positivo nas
+  linhas 45/59 — adicionado UTF-8 BOM (#71)
 
 ## [v0.1] — 2026-07
 

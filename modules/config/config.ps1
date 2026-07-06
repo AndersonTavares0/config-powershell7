@@ -44,13 +44,26 @@ $cachePath = if ($isLinuxOrMac) {
     Join-Path $HOME '.cache_pwsh_plugins.ps1'
 }
 
+$poshTheme = if ($env:POSH_THEME) { $env:POSH_THEME } else { 'atomic' }
+
 $themePath = if ($isLinuxOrMac) {
     $xdgData = if ($env:XDG_DATA_HOME) { $env:XDG_DATA_HOME } else { Join-Path $HOME '.local/share' }
-    $t = Join-Path $xdgData 'poshthemes/atomic.omp.json'
+    $t = Join-Path $xdgData "poshthemes/$poshTheme.omp.json"
     if (Test-Path $t) { $t }
-    else { $f = Join-Path $HOME '.poshthemes/atomic.omp.json'; if (Test-Path $f) { $f } else { $f } }
+    else { Join-Path $HOME ".poshthemes/$poshTheme.omp.json" }
 } else {
-    Join-Path $HOME '.poshthemes\atomic.omp.json'
+    Join-Path $HOME ".poshthemes\$poshTheme.omp.json"
+}
+
+if (-not (Test-Path $themePath) -and $poshTheme -ne 'atomic') {
+    Write-Warning "Oh My Posh theme '$poshTheme' not found at '$themePath'. Falling back to 'atomic'."
+    if ($isLinuxOrMac) {
+        $xdgData = if ($env:XDG_DATA_HOME) { $env:XDG_DATA_HOME } else { Join-Path $HOME '.local/share' }
+        $t = Join-Path $xdgData 'poshthemes/atomic.omp.json'
+        $themePath = if (Test-Path $t) { $t } else { Join-Path $HOME '.poshthemes/atomic.omp.json' }
+    } else {
+        $themePath = Join-Path $HOME '.poshthemes\atomic.omp.json'
+    }
 }
 
 $script:Config = [PSCustomObject]@{
