@@ -391,7 +391,7 @@ try {
     Start-ProfileInstall -RepoPath $testRepoDir3 `
         -InstallPS7 $false -InstallGit $false -InstallOMP $false `
         -InstallZoxide $false -InstallFont $false -InstallModules $false `
-        -InstallAlacritty $false -InstallChocolatey $false -InstallScoop $false
+        -InstallAlacritty $false -InstallScoop $false
 
     Assert-True -Condition (Test-Path $testProfilePath3) -TestName "Orchestrator creates profile link (dry-run)"
 
@@ -569,20 +569,6 @@ try {
 
 } finally {
     Remove-MockDir $fontTestDir
-}
-
-# ══════════════════════════════════════════════════════════════
-# TEST SUITE: DEPS — Install-Chocolatey admin check
-# ══════════════════════════════════════════════════════════════
-Write-Host "`nTesting Install-Chocolatey admin detection..." -ForegroundColor Yellow
-
-# Test: Non-admin returns false without crashing
-$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-if (-not $isAdmin) {
-    $result = Install-Chocolatey
-    Assert-False -Condition $result -TestName "Install-Chocolatey returns false when not admin"
-} else {
-    Test-Skip -Name "Install-Chocolatey admin check" -Reason "Running as admin - cannot test non-admin path"
 }
 
 # ══════════════════════════════════════════════════════════════
