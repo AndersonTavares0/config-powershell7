@@ -671,6 +671,7 @@ $downloadRepoFunc = $bootAst.FindAll({ param($node) $node -is [System.Management
 if ($downloadRepoFunc) {
     $downloadText = $downloadRepoFunc.Body.Extent.Text
     Assert-True -Condition ($downloadText -match 'catch') -TestName "Download-Repo has catch block"
+    Assert-True -Condition ($downloadText -match 'New-Item.*parentDir') -TestName "Download-Repo creates parent dir before extraction"
     Assert-True -Condition ($downloadText -match 'Remove-Item.*zipPath') -TestName "Download-Repo cleans up zip on failure"
     Assert-True -Condition ($downloadText -match 'Remove-Item.*extractDir') -TestName "Download-Repo cleans up extract dir on failure"
     Assert-True -Condition ($downloadText -match 'return \$false') -TestName "Download-Repo returns false on failure"
