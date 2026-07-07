@@ -1,12 +1,21 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-    GUI installer for the PowerShell 7 Profile ecosystem.
+    Bootstrapper for the PowerShell 7 Profile ecosystem.
 .DESCRIPTION
-    One-click setup that installs ALL requirements (PowerShell 7, Git,
-    Oh My Posh, Zoxide, Nerd Font, PS modules) and configures the profile.
+    Acquires the repository (local or remote) and launches the installer.
 
-    Invoke remotely (no clone needed):
+    Remote flow (irm | iex):
+        - Shows summary of what the installer does
+        - Asks for install directory (default: ~/Documents/config-powershell7)
+        - Requests explicit consent before downloading
+        - Downloads repo and invokes the local installer
+
+    Local flow (.\setup.ps1 in valid repo):
+        - Detects existing repo and invokes the installer directly
+        - No prompts, no download
+
+    Invoke remotely:
         irm https://github.com/AndersonTavares0/config-powershell7/raw/main/setup.ps1 | iex
 
     Or run locally:
@@ -22,7 +31,9 @@
 #>
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '')]
-param()
+param(
+    [switch]$NonInteractive
+)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -45,114 +56,158 @@ if (-not $isWin) {
 }
 
 # Constants
-$repoOwner  = 'AndersonTavares0'
-$repoName   = 'config-powershell7'
-$repoBranch = 'main'
-$repoZipUrl = "https://github.com/$repoOwner/$repoName/archive/refs/heads/$repoBranch.zip"
+$repoOwner   = 'AndersonTavares0'
+$repoName    = 'config-powershell7'
+$repoBranch  = 'main'
+$repoZipUrl  = "https://github.com/$repoOwner/$repoName/archive/refs/heads/$repoBranch.zip"
 $repoDefaultDir = Join-Path ([Environment]::GetFolderPath('MyDocuments')) $repoName
 
-# Resolve repo path
-function Resolve-RepoPath {
-    if ($PSScriptRoot -and (Test-Path (Join-Path $PSScriptRoot 'Microsoft.PowerShell_profile.ps1'))) {
-        return $PSScriptRoot
-    }
-    $defaultPath = $repoDefaultDir
-    if (Test-Path (Join-Path $defaultPath 'Microsoft.PowerShell_profile.ps1')) {
-        return $defaultPath
-    }
-    return $null
-}
+# Helpers
 
-$repoPath = Resolve-RepoPath
-
-# Detect temporary locations where users commonly extract ZIPs
-$tempLocations = @(
-    [Environment]::GetFolderPath('Desktop'),
-    [Environment]::GetFolderPath('MyDocuments'),
-    "$([Environment]::GetFolderPath('UserProfile'))\Downloads",
-    $env:TEMP,
-    $env:TMP
-) | Where-Object { $_ }
-
-function Test-IsTempLocation {
+function Test-IsValidRepo {
     param([string]$Path)
-    foreach ($temp in $tempLocations) {
-        if ($Path -like "$temp*") { return $true }
+    return (Test-Path (Join-Path $Path 'Microsoft.PowerShell_profile.ps1'))
+}
+
+function Invoke-Launcher {
+    param([string]$RepoPath)
+    $setupEntryPoint = Join-Path $RepoPath 'setup\setup.ps1'
+    if (-not (Test-Path $setupEntryPoint)) {
+        Write-Host "Setup directory not found. The repository may be outdated." -ForegroundColor Red
+        return
     }
-    return $false
+    . $setupEntryPoint -RepoPath $RepoPath
 }
 
-# If running from a temporary location, copy to permanent install dir
-if ($repoPath -and (Test-IsTempLocation $repoPath)) {
-    Write-Host "Detected temporary install location. Copying to permanent directory..." -ForegroundColor Yellow
-    $permanentPath = $repoDefaultDir
-    
-    try {
-        if (Test-Path $permanentPath) {
-            Remove-Item $permanentPath -Recurse -Force -ErrorAction Stop
-        }
-        Copy-Item -Path "$repoPath\*" -Destination $permanentPath -Recurse -Force -ErrorAction Stop
-        Write-Host "Files copied to: $permanentPath" -ForegroundColor Green
-        $repoPath = $permanentPath
-    } catch {
-        Write-Host "Failed to copy to permanent location: $($_.Exception.Message)" -ForegroundColor Red
-        Write-Host "Continuing with temporary location (profile may break if folder is deleted)." -ForegroundColor Yellow
-    }
-}
+function Download-Repo {
+    param([string]$TargetDir)
 
-# Unblock files in existing repo (covers git clone or manual copy)
-if ($repoPath) {
-    Write-Host "Unblocking script files..." -ForegroundColor Cyan
-    Get-ChildItem -Path $repoPath -Filter '*.ps1' -Recurse -ErrorAction SilentlyContinue |
-        Unblock-File -ErrorAction SilentlyContinue
-    Write-Host "Files unblocked." -ForegroundColor Green
-}
-
-# Download repo if not found
-if (-not $repoPath) {
-    $repoPath = $repoDefaultDir
-    Write-Host "Downloading repository..." -ForegroundColor Cyan
-
-    $zipPath = Join-Path $env:TEMP "$repoName.zip"
+    $zipPath    = Join-Path $env:TEMP "$repoName.zip"
     $extractDir = Join-Path $env:TEMP "$repoName-extract"
 
     try {
+        Write-Host "Downloading repository..." -ForegroundColor Cyan
         Invoke-WebRequest -Uri $repoZipUrl -OutFile $zipPath -ErrorAction Stop
 
         if (Test-Path $extractDir) { Remove-Item $extractDir -Recurse -Force -ErrorAction SilentlyContinue }
-        if (Test-Path $repoPath) { Remove-Item $repoPath -Recurse -Force -ErrorAction SilentlyContinue }
+        if (Test-Path $TargetDir)    { Remove-Item $TargetDir -Recurse -Force -ErrorAction SilentlyContinue }
 
         Add-Type -AssemblyName System.IO.Compression.FileSystem
         [System.IO.Compression.ZipFile]::ExtractToDirectory($zipPath, $extractDir)
 
         $innerDir = Get-ChildItem $extractDir -Directory | Select-Object -First 1
         if ($innerDir) {
-            Move-Item $innerDir.FullName $repoPath -Force
+            Move-Item $innerDir.FullName $TargetDir -Force
         } else {
-            Move-Item $extractDir $repoPath -Force
+            Move-Item $extractDir $TargetDir -Force
         }
 
         Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
         Remove-Item $extractDir -Recurse -Force -ErrorAction SilentlyContinue
 
-        # Unblock downloaded files to avoid ExecutionPolicy errors
         Write-Host "Unblocking script files..." -ForegroundColor Cyan
-        Get-ChildItem -Path $repoPath -Filter '*.ps1' -Recurse -ErrorAction SilentlyContinue |
+        Get-ChildItem -Path $TargetDir -Filter '*.ps1' -Recurse -ErrorAction SilentlyContinue |
             Unblock-File -ErrorAction SilentlyContinue
         Write-Host "Files unblocked." -ForegroundColor Green
 
-        Write-Host "Repository downloaded to: $repoPath" -ForegroundColor Green
+        Write-Host "Repository downloaded to: $TargetDir" -ForegroundColor Green
+        return $true
     } catch {
         Write-Host "Failed to download repository: $($_.Exception.Message)" -ForegroundColor Red
+        # Clean up partial download
+        Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
+        Remove-Item $extractDir -Recurse -Force -ErrorAction SilentlyContinue
+        return $false
+    }
+}
+
+# Local repo detection
+
+$localRepoPath = $null
+if ($PSScriptRoot -and (Test-IsValidRepo $PSScriptRoot)) {
+    $localRepoPath = $PSScriptRoot
+}
+
+# Local flow: repo already on disk
+
+if ($localRepoPath) {
+    # Unblock files in existing repo (covers git clone or manual copy)
+    Get-ChildItem -Path $localRepoPath -Filter '*.ps1' -Recurse -ErrorAction SilentlyContinue |
+        Unblock-File -ErrorAction SilentlyContinue
+    Invoke-Launcher -RepoPath $localRepoPath
+    return
+}
+
+# Remote flow: bootstrapper with user agency
+
+$isHeadless = $NonInteractive -or ($env:CI -eq 'true') -or ($env:CI -eq '1')
+
+if (-not $isHeadless) {
+    # Welcome banner
+    Write-Host ""
+    Write-Host "  +------------------------------------------------------+" -ForegroundColor Cyan
+    Write-Host "  |   PowerShell 7 Profile Kit                           |" -ForegroundColor Cyan
+    Write-Host "  |   One-click setup - all dependencies included        |" -ForegroundColor Cyan
+    Write-Host "  +------------------------------------------------------+" -ForegroundColor Cyan
+    Write-Host ""
+
+    # High-level summary
+    Write-Host "This will download and launch the local installer." -ForegroundColor White
+    Write-Host "The installer can configure:" -ForegroundColor White
+    Write-Host "  - PowerShell 7, Git, Oh My Posh, Zoxide" -ForegroundColor Gray
+    Write-Host "  - FiraCode Nerd Font, PowerShell modules" -ForegroundColor Gray
+    Write-Host "  - Optional: Alacritty, terminal themes, Topgrade, Scoop" -ForegroundColor Gray
+    Write-Host ""
+
+    # Ask install directory
+    Write-Host "Install directory [$repoDefaultDir]:" -ForegroundColor Cyan
+    $userDir = Read-Host ""
+    if ([string]::IsNullOrWhiteSpace($userDir)) {
+        $repoPath = $repoDefaultDir
+    } else {
+        $repoPath = $userDir
+    }
+
+    # Check if directory exists
+    if (Test-Path $repoPath) {
+        if (Test-IsValidRepo $repoPath) {
+            # Valid repo already exists - skip download, go straight to launcher
+            Write-Host "Repository found at: $repoPath" -ForegroundColor Green
+            Write-Host "Launching installer..." -ForegroundColor Cyan
+            Invoke-Launcher -RepoPath $repoPath
+            return
+        }
+        # Directory exists but is not a valid repo - ask before replacing
+        Write-Host "Directory exists but is not a valid repo: $repoPath" -ForegroundColor Yellow
+        $replaceChoice = Read-Host "Replace it? [Y/n]"
+        if ($replaceChoice -eq 'n' -or $replaceChoice -eq 'N') {
+            Write-Host "Installation cancelled. No changes were made." -ForegroundColor Yellow
+            return
+        }
+    }
+
+    # Explicit consent before download
+    Write-Host ""
+    $confirmChoice = Read-Host "Proceed with download and installation? [Y/n]"
+    if ($confirmChoice -eq 'n' -or $confirmChoice -eq 'N') {
+        Write-Host "Installation cancelled. No changes were made." -ForegroundColor Yellow
+        return
+    }
+} else {
+    # Headless mode - use defaults
+    $repoPath = $repoDefaultDir
+    if (Test-Path $repoPath -and (Test-IsValidRepo $repoPath)) {
+        Invoke-Launcher -RepoPath $repoPath
         return
     }
 }
 
-# Delegate to setup modules
-$setupEntryPoint = Join-Path $repoPath 'setup\setup.ps1'
-if (-not (Test-Path $setupEntryPoint)) {
-    Write-Host "Setup directory not found. The repository may be outdated." -ForegroundColor Red
+# Download repository
+$downloadOk = Download-Repo -TargetDir $repoPath
+if (-not $downloadOk) {
+    Write-Host "Installation aborted due to download failure." -ForegroundColor Red
     return
 }
 
-. $setupEntryPoint -RepoPath $repoPath
+# Launch installer
+Invoke-Launcher -RepoPath $repoPath
