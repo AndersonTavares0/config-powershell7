@@ -90,7 +90,14 @@ function Download-Repo {
         Invoke-WebRequest -Uri $repoZipUrl -OutFile $zipPath -ErrorAction Stop
 
         if (Test-Path $extractDir) { Remove-Item $extractDir -Recurse -Force -ErrorAction SilentlyContinue }
-        if (Test-Path $TargetDir)    { Remove-Item $TargetDir -Recurse -Force -ErrorAction SilentlyContinue }
+
+        # Ensure parent directory exists before extraction
+        $parentDir = Split-Path $TargetDir -Parent
+        if (-not (Test-Path $parentDir)) {
+            New-Item -ItemType Directory -Force -Path $parentDir | Out-Null
+        }
+
+        if (Test-Path $TargetDir) { Remove-Item $TargetDir -Recurse -Force -ErrorAction SilentlyContinue }
 
         Add-Type -AssemblyName System.IO.Compression.FileSystem
         [System.IO.Compression.ZipFile]::ExtractToDirectory($zipPath, $extractDir)
