@@ -1,7 +1,8 @@
 param(
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '')]
     [switch]$NonInteractive,
-    [string]$ThemeName = ''
+    [string]$ThemeName = '',
+    [switch]$InstallAlacritty
 )
 
 $ErrorActionPreference = 'Continue'
@@ -14,7 +15,7 @@ $RepoName  = 'config-powershell7'
 $RepoZip   = "https://github.com/$RepoOwner/$RepoName/archive/refs/heads/main.zip"
 $ScriptUrl = "https://raw.githubusercontent.com/$RepoOwner/$RepoName/main/install.ps1"
 
-# Caminhos dinâmicos — NEVER use $HOME\Documents (blindado contra OneDrive)
+# Caminhos dinâmicos - NEVER use $HOME\Documents (blindado contra OneDrive)
 $DocsDir      = [Environment]::GetFolderPath('MyDocuments')
 $PermanentDir = Join-Path $DocsDir $RepoName
 $AppDataDir   = [Environment]::GetFolderPath('ApplicationData')
@@ -28,6 +29,84 @@ $WinTermPaths = @(
     "$([Environment]::GetFolderPath('LocalApplicationData'))\Microsoft\Windows Terminal\settings.json"
 )
 
+# Terminal theme data (same source as setup/modules/deps.ps1)
+$script:TerminalThemeDataLegacy = [ordered]@{
+    'Catppuccin Mocha' = @{
+        Type = 'dark'; Description = 'Dark purple theme from Catppuccin project'
+        WT = @{ foreground = '#CDD6F4'; background = '#1E1E2E'; cursorColor = '#F5E0DC'; selectionBackground = '#45475A'
+                black = '#45475A'; red = '#F38BA8'; green = '#A6E3A1'; yellow = '#F9E2AF'
+                blue = '#89B4FA'; purple = '#F5C2E7'; cyan = '#94E2D5'; white = '#BAC2DE'
+                brightBlack = '#585B70'; brightRed = '#F38BA8'; brightGreen = '#A6E3A1'
+                brightYellow = '#F9E2AF'; brightBlue = '#89B4FA'; brightPurple = '#F5C2E7'
+                brightCyan = '#94E2D5'; brightWhite = '#A6ADC8' }
+        Ala = @{ primary = @{ background = '#1E1E2E'; foreground = '#CDD6F4' }
+                 normal = @{ black = '#45475A'; red = '#F38BA8'; green = '#A6E3A1'
+                             yellow = '#F9E2AF'; blue = '#89B4FA'; magenta = '#F5C2E7'
+                             cyan = '#94E2D5'; white = '#BAC2DE' }
+                 bright = @{ black = '#585B70'; red = '#F38BA8'; green = '#A6E3A1'
+                             yellow = '#F9E2AF'; blue = '#89B4FA'; magenta = '#F5C2E7'
+                             cyan = '#94E2D5'; white = '#A6ADC8' } }
+    }
+    'Dracula' = @{
+        Type = 'dark'; Description = 'Popular dark theme with purple accents'
+        WT = @{ foreground = '#F8F8F2'; background = '#282A36'; cursorColor = '#F8F8F2'; selectionBackground = '#44475A'
+                black = '#21222C'; red = '#FF5555'; green = '#50FA7B'; yellow = '#F1FA8C'
+                blue = '#BD93F9'; purple = '#FF79C6'; cyan = '#8BE9FD'; white = '#F8F8F2'
+                brightBlack = '#6272A4'; brightRed = '#FF6E6E'; brightGreen = '#69FF94'
+                brightYellow = '#FFFFA5'; brightBlue = '#D6ACFF'; brightPurple = '#FF92DF'
+                brightCyan = '#A4FFFF'; brightWhite = '#FFFFFF' }
+        Ala = @{ primary = @{ background = '#282A36'; foreground = '#F8F8F2' }
+                 normal = @{ black = '#21222C'; red = '#FF5555'; green = '#50FA7B'
+                             yellow = '#F1FA8C'; blue = '#BD93F9'; magenta = '#FF79C6'
+                             cyan = '#8BE9FD'; white = '#F8F8F2' }
+                 bright = @{ black = '#6272A4'; red = '#FF6E6E'; green = '#69FF94'
+                             yellow = '#FFFFA5'; blue = '#D6ACFF'; magenta = '#FF92DF'
+                             cyan = '#A4FFFF'; white = '#FFFFFF' } }
+    }
+    'Nord' = @{
+        Type = 'dark'; Description = 'Arctic bluish dark theme'
+        WT = @{ foreground = '#D8DEE9'; background = '#2E3440'; cursorColor = '#D8DEE9'; selectionBackground = '#434C5E'
+                black = '#3B4252'; red = '#BF616A'; green = '#A3BE8C'; yellow = '#EBCB8B'
+                blue = '#81A1C1'; purple = '#B48EAD'; cyan = '#88C0D0'; white = '#E5E9F0'
+                brightBlack = '#4C566A'; brightRed = '#BF616A'; brightGreen = '#A3BE8C'
+                brightYellow = '#EBCB8B'; brightBlue = '#81A1C1'; brightPurple = '#B48EAD'
+                brightCyan = '#8FBCBB'; brightWhite = '#ECEFF4' }
+        Ala = @{ primary = @{ background = '#2E3440'; foreground = '#D8DEE9' }
+                 normal = @{ black = '#3B4252'; red = '#BF616A'; green = '#A3BE8C'
+                             yellow = '#EBCB8B'; blue = '#81A1C1'; magenta = '#B48EAD'
+                             cyan = '#88C0D0'; white = '#E5E9F0' }
+                 bright = @{ black = '#4C566A'; red = '#BF616A'; green = '#A3BE8C'
+                             yellow = '#EBCB8B'; blue = '#81A1C1'; magenta = '#B48EAD'
+                             cyan = '#8FBCBB'; white = '#ECEFF4' } }
+    }
+    'Tokyo Night' = @{
+        Type = 'dark'; Description = 'Deep blue night theme'
+        WT = @{ foreground = '#A9B1D6'; background = '#1A1B26'; cursorColor = '#A9B1D6'; selectionBackground = '#283457'
+                black = '#1D202F'; red = '#F7768E'; green = '#9ECE6A'; yellow = '#E0AF68'
+                blue = '#7AA2F7'; purple = '#BB9AF7'; cyan = '#7DCFFF'; white = '#A9B1D6'
+                brightBlack = '#565F89'; brightRed = '#F7768E'; brightGreen = '#9ECE6A'
+                brightYellow = '#E0AF68'; brightBlue = '#7AA2F7'; brightPurple = '#BB9AF7'
+                brightCyan = '#7DCFFF'; brightWhite = '#C0CAF5' }
+        Ala = @{ primary = @{ background = '#1A1B26'; foreground = '#A9B1D6' }
+                 normal = @{ black = '#1D202F'; red = '#F7768E'; green = '#9ECE6A'
+                             yellow = '#E0AF68'; blue = '#7AA2F7'; magenta = '#BB9AF7'
+                             cyan = '#7DCFFF'; white = '#A9B1D6' }
+                 bright = @{ black = '#565F89'; red = '#F7768E'; green = '#9ECE6A'
+                             yellow = '#E0AF68'; blue = '#7AA2F7'; magenta = '#BB9AF7'
+                             cyan = '#7DCFFF'; white = '#C0CAF5' } }
+    }
+}
+function Get-TerminalThemeDataLegacy {
+    param([string]$Name)
+    return $script:TerminalThemeDataLegacy[$Name]
+}
+function Get-TerminalThemeListLegacy {
+    return $script:TerminalThemeDataLegacy.Keys | ForEach-Object {
+        $d = $script:TerminalThemeDataLegacy[$_]
+        [PSCustomObject]@{ Name = $_; Type = $d.Type; Description = $d.Description }
+    }
+}
+
 # ═══════════════════════════════════════════════════════════════
 # FUNÇÕES DE LOG
 # ═══════════════════════════════════════════════════════════════
@@ -37,7 +116,7 @@ function Write-Fail  { Write-Host "[FAIL] $args" -ForegroundColor Red }
 function Write-Step  { Write-Host "`n[>>>] $args" -ForegroundColor Cyan }
 function Write-Info  { Write-Host "[--] $args" -ForegroundColor Gray }
 
-# Variáveis globais para o sumário — evitam StrictMode crash se funções falharem
+# Variáveis globais para o sumário - evitam StrictMode crash se funções falharem
 $targetProfile = $null
 $erros = 0
 
@@ -72,7 +151,7 @@ if (-not (Test-IsAdministrator)) {
         throw "Processo não iniciado."
     } catch {
         Write-Warn "Elevação falhou: $($_.Exception.Message)"
-        Write-Info "Continuando sem admin — algumas instalações podem requerer permissão manual."
+        Write-Info "Continuando sem admin - algumas instalações podem requerer permissão manual."
     }
 }
 
@@ -156,7 +235,7 @@ function Download-ComRepositorio {
             [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
         }
         Invoke-WebRequest -Uri $RepoZip -OutFile $zipPath -ErrorAction Stop
-    } catch { throw "Falha ao baixar repositório — verifique sua internet. $($_.Exception.Message)" }
+    } catch { throw "Falha ao baixar repositório - verifique sua internet. $($_.Exception.Message)" }
 
     try {
         if (Test-Path $tempDir) { Remove-Item $tempDir -Recurse -Force }
@@ -199,7 +278,7 @@ function Install-FonteNerd {
             [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
         }
         Invoke-WebRequest -Uri $url -OutFile $zip -ErrorAction Stop
-    } catch { throw "Falha ao baixar fonte — verifique sua internet. $($_.Exception.Message)" }
+    } catch { throw "Falha ao baixar fonte - verifique sua internet. $($_.Exception.Message)" }
 
     try {
         if (Test-Path $dir) { Remove-Item $dir -Recurse -Force }
@@ -353,6 +432,106 @@ function Install-ConfigWindowsTerminal {
     } catch { Write-Warn "Falha ao configurar WT: $($_.Exception.Message)"; return $false }
 }
 
+function Install-TerminalWTColorScheme {
+    param([string]$ThemeName)
+    $data = Get-TerminalThemeDataLegacy -Name $ThemeName
+    if (-not $data) { Write-Warn "Tema '$ThemeName' não encontrado."; return $false }
+
+    $settingsPath = $WinTermPaths | Where-Object { Test-Path $_ -PathType Leaf } | Select-Object -First 1
+    if (-not $settingsPath) { Write-Info "WT settings.json não encontrado."; return $false }
+
+    try {
+        $settings = Get-Content $settingsPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $wt = $data.WT
+
+        $scheme = [PSCustomObject]@{ name = $ThemeName; cursorColor = $wt.cursorColor
+            foreground = $wt.foreground; background = $wt.background; selectionBackground = $wt.selectionBackground
+            black = $wt.black; red = $wt.red; green = $wt.green; yellow = $wt.yellow
+            blue = $wt.blue; purple = $wt.purple; cyan = $wt.cyan; white = $wt.white
+            brightBlack = $wt.brightBlack; brightRed = $wt.brightRed; brightGreen = $wt.brightGreen
+            brightYellow = $wt.brightYellow; brightBlue = $wt.brightBlue; brightPurple = $wt.brightPurple
+            brightCyan = $wt.brightCyan; brightWhite = $wt.brightWhite }
+
+        if (-not $settings.schemes) {
+            $settings | Add-Member -Name 'schemes' -Value @($scheme) -MemberType NoteProperty -Force
+        } else {
+            $existing = $settings.schemes | Where-Object { $_.name -eq $ThemeName }
+            if ($existing) {
+                $idx = [array]::IndexOf($settings.schemes, $existing)
+                $settings.schemes[$idx] = $scheme
+            } else { $settings.schemes += $scheme }
+        }
+        if (-not $settings.profiles.defaults) {
+            $settings.profiles | Add-Member -Name 'defaults' -Value @{} -MemberType NoteProperty -Force
+        }
+        $settings.profiles.defaults | Add-Member -Name 'colorScheme' -Value $ThemeName -MemberType NoteProperty -Force
+        $settings | ConvertTo-Json -Depth 15 | Set-Content $settingsPath -Encoding UTF8 -Force
+        Write-OK "WT color scheme: $ThemeName"
+        return $true
+    } catch { Write-Warn "Falha ao configurar WT colorScheme: $($_.Exception.Message)"; return $false }
+}
+
+function Install-TerminalAlacrittyColorScheme {
+    param([string]$ThemeName)
+    $data = Get-TerminalThemeDataLegacy -Name $ThemeName
+    if (-not $data) { Write-Warn "Tema '$ThemeName' não encontrado."; return $false }
+    $colors = $data.Ala
+    $colorLines = @(
+        "[colors.primary]",
+        "background = `"$($colors.primary.background)`"",
+        "foreground = `"$($colors.primary.foreground)`"",
+        "",
+        "[colors.normal]",
+        "black   = `"$($colors.normal.black)`"",
+        "red     = `"$($colors.normal.red)`"",
+        "green   = `"$($colors.normal.green)`"",
+        "yellow  = `"$($colors.normal.yellow)`"",
+        "blue    = `"$($colors.normal.blue)`"",
+        "magenta = `"$($colors.normal.magenta)`"",
+        "cyan    = `"$($colors.normal.cyan)`"",
+        "white   = `"$($colors.normal.white)`"",
+        "",
+        "[colors.bright]",
+        "black   = `"$($colors.bright.black)`"",
+        "red     = `"$($colors.bright.red)`"",
+        "green   = `"$($colors.bright.green)`"",
+        "yellow  = `"$($colors.bright.yellow)`"",
+        "blue    = `"$($colors.bright.blue)`"",
+        "magenta = `"$($colors.bright.magenta)`"",
+        "cyan    = `"$($colors.bright.cyan)`"",
+        "white   = `"$($colors.bright.white)`""
+    )
+    $configPath = Join-Path $AlacrittyDir 'alacritty.toml'
+    try {
+        if (Test-Path $configPath) {
+            $existing = Get-Content $configPath -Raw -Encoding UTF8
+            $cs = $existing.IndexOf('[colors.primary]')
+            if ($cs -ge 0) {
+                $ce = $existing.IndexOf('[[', $cs + 1)
+                if ($ce -lt 0) { $ce = $existing.IndexOf('[', $existing.IndexOf('[', 1) + 1) }
+                if ($ce -lt 0) { $ce = $existing.Length }
+                $newContent = $existing.Substring(0, $cs) + ($colorLines -join "`r`n") + "`r`n`r`n" + $existing.Substring($ce).TrimStart()
+                Set-Content -Path $configPath -Value $newContent -Encoding UTF8 -Force
+            } else {
+                Add-Content -Path $configPath -Value ("`r`n`r`n" + ($colorLines -join "`r`n")) -Encoding UTF8
+            }
+        } else {
+            if (-not (Test-Path $AlacrittyDir)) { New-Item -ItemType Directory -Force -Path $AlacrittyDir | Out-Null }
+            Set-Content -Path $configPath -Value (($colorLines -join "`r`n") + "`r`n") -Encoding UTF8 -Force
+        }
+        Write-OK "Alacritty color scheme: $ThemeName"
+        return $true
+    } catch { Write-Warn "Alacritty colors falhou: $($_.Exception.Message)"; return $false }
+}
+
+function Install-TerminalThemeLegacy {
+    param([string]$ThemeName)
+    $any = $false
+    if (Install-TerminalWTColorScheme -ThemeName $ThemeName) { $any = $true }
+    if (Install-TerminalAlacrittyColorScheme -ThemeName $ThemeName) { $any = $true }
+    return $any
+}
+
 function Install-LinkProfile {
     param([string]$ThemeName = '')
 
@@ -392,7 +571,7 @@ function Install-LinkProfile {
 Write-Host @"
 
   ╔══════════════════════════════════════════════╗
-  ║   config-powershell7 — Instalador Universal  ║
+  ║   config-powershell7 - Instalador Universal  ║
   ╚══════════════════════════════════════════════╝
 
 "@ -ForegroundColor Cyan
@@ -433,13 +612,56 @@ if (-not $NonInteractive -and -not $ThemeName) {
     }
 }
 
+# Alacritty prompt (only in interactive mode and when not explicitly set)
+if (-not $NonInteractive -and -not $PSBoundParameters.ContainsKey('InstallAlacritty')) {
+    Write-Host ""
+    $alacrittyChoice = Read-Host "Instalar Alacritty terminal? (s/N)"
+    $script:OptInstallAlacritty = ($alacrittyChoice -eq 's' -or $alacrittyChoice -eq 'S')
+} else {
+    $script:OptInstallAlacritty = $InstallAlacritty.IsPresent
+}
+
+# Terminal color theme prompt (optional, interactive only)
+if (-not $NonInteractive -and -not $PSBoundParameters.ContainsKey('TerminalThemeName')) {
+    Write-Host ""
+    Write-Host "Terminal Color Theme (optional)" -ForegroundColor Cyan
+    Write-Host "-------------------------------" -ForegroundColor Cyan
+    $termChoice = Read-Host "Apply a terminal color theme to Windows Terminal + Alacritty? (y/n) [y]"
+    if ([string]::IsNullOrWhiteSpace($termChoice) -or $termChoice -eq 'y') {
+        $termThemes = Get-TerminalThemeListLegacy
+        $idx = 0
+        foreach ($tt in $termThemes) {
+            $idx++
+            Write-Host "  $idx. $($tt.Name) ($($tt.Type))" -ForegroundColor White
+        }
+        Write-Host "  $($idx+1). Skip" -ForegroundColor Gray
+        Write-Host ""
+        $themeChoice = Read-Host "Select terminal theme [1]"
+        if ([string]::IsNullOrWhiteSpace($themeChoice)) { $themeChoice = '1' }
+        if ([int]::TryParse($themeChoice, [ref]$null)) {
+            $i = [int]$themeChoice - 1
+            if ($i -ge 0 -and $i -lt $termThemes.Count) {
+                $script:OptTerminalThemeName = $termThemes[$i].Name
+                Write-Host "Selected terminal theme: $($script:OptTerminalThemeName)" -ForegroundColor Green
+            }
+        }
+    }
+}
+
 $results = @()
 
 function Add-LegacyResult {
-    param([string]$Name, [bool]$Success, [string]$Detail)
+    param([string]$Name, [bool]$Success, [string]$Detail, [string]$Status = '')
+    if ($Status) {
+        $finalStatus = $Status
+    } elseif ($Success) {
+        $finalStatus = 'ok'
+    } else {
+        $finalStatus = 'fail'
+    }
     $script:results += @{
         Name   = $Name
-        Status = if ($Success) { 'ok' } else { 'fail' }
+        Status = $finalStatus
         Detail = $Detail
     }
 }
@@ -483,21 +705,34 @@ $zoxCmd = Get-Command zoxide -ErrorAction SilentlyContinue
 $detail = if ($zoxCmd) { $zoxCmd.Source } else { 'not found' }
 Add-LegacyResult -Name 'Zoxide' -Success $r -Detail $detail
 
-# Passo 5: Alacritty
-$r = Install-WingetPackage -Id 'Alacritty.Alacritty' -Nome 'Alacritty' -CommandName 'alacritty'
-$alaCmd = Get-Command alacritty -ErrorAction SilentlyContinue
-$detail = if ($alaCmd) { $alaCmd.Source } else { 'not found' }
-Add-LegacyResult -Name 'Alacritty' -Success $r -Detail $detail
+# Passo 5: Alacritty (opcional)
+if ($script:OptInstallAlacritty) {
+    $r = Install-WingetPackage -Id 'Alacritty.Alacritty' -Nome 'Alacritty' -CommandName 'alacritty'
+    $alaCmd = Get-Command alacritty -ErrorAction SilentlyContinue
+    $detail = if ($alaCmd) { $alaCmd.Source } else { 'not found' }
+    Add-LegacyResult -Name 'Alacritty' -Success $r -Detail $detail
+} else {
+    Add-LegacyResult -Name 'Alacritty' -Success $true -Detail 'not selected' -Status 'skip'
+}
 
-# Passo 6: Fontes + Configs
-$passos = @(
+$passosBase = @(
     @{ Nome = 'Baixar repositório';     Script = { Download-ComRepositorio } }
     @{ Nome = 'Instalar FiraCode Font'; Script = { Install-FonteNerd } }
-    @{ Nome = 'Configurar Alacritty';   Script = { Install-ConfigAlacritty } }
     @{ Nome = 'Configurar WT';          Script = { Install-ConfigWindowsTerminal } }
     @{ Nome = 'Baixar tema OMP';        Script = { Install-TemaOhMyPosh -ThemeName $ThemeName } }
     @{ Nome = 'Linkar profile';         Script = { Install-LinkProfile -ThemeName $ThemeName } }
 )
+
+if ($script:OptTerminalThemeName) {
+    $passosBase += @{ Nome = "Terminal color ($($script:OptTerminalThemeName))"; Script = { Install-TerminalThemeLegacy -ThemeName $script:OptTerminalThemeName } }
+}
+
+$passos = if ($script:OptInstallAlacritty) {
+    $passosBase | ForEach-Object { $_ }
+    @{ Nome = 'Configurar Alacritty';   Script = { Install-ConfigAlacritty } }
+} else {
+    $passosBase
+}
 
 for ($i = 0; $i -lt $passos.Count; $i++) {
     Write-Step "[$($i+7)/$($passos.Count+7)] $($passos[$i].Nome)"
