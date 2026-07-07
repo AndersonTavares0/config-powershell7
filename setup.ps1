@@ -168,7 +168,7 @@ if (-not $isHeadless) {
 
     # Ask install directory
     Write-Host "Install directory [$repoDefaultDir]:" -ForegroundColor Cyan
-    $userDir = Read-Host ""
+    $userDir = Read-Host
     $userDir = $userDir.Trim()
     if ([string]::IsNullOrWhiteSpace($userDir)) {
         $repoPath = $repoDefaultDir
