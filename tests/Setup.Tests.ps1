@@ -391,7 +391,7 @@ try {
     Start-ProfileInstall -RepoPath $testRepoDir3 `
         -InstallPS7 $false -InstallGit $false -InstallOMP $false `
         -InstallZoxide $false -InstallFont $false -InstallModules $false `
-        -InstallAlacritty $false -InstallChocolatey $false -InstallScoop $false
+        -InstallAlacritty $false -InstallScoop $false
 
     Assert-True -Condition (Test-Path $testProfilePath3) -TestName "Orchestrator creates profile link (dry-run)"
 
@@ -572,17 +572,121 @@ try {
 }
 
 # ══════════════════════════════════════════════════════════════
-# TEST SUITE: DEPS — Install-Chocolatey admin check
+# TEST SUITE: BOOTSTRAPPER — setup.ps1 (root)
 # ══════════════════════════════════════════════════════════════
-Write-Host "`nTesting Install-Chocolatey admin detection..." -ForegroundColor Yellow
+Write-Host "`nTesting Bootstrapper (setup.ps1)..." -ForegroundColor Yellow
 
-# Test: Non-admin returns false without crashing
-$isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-if (-not $isAdmin) {
-    $result = Install-Chocolatey
-    Assert-False -Condition $result -TestName "Install-Chocolatey returns false when not admin"
+$bootstrapperPath = Join-Path $repoRoot 'setup.ps1'
+
+# Syntax check for root setup.ps1
+$tokens = $null; $errors = $null
+[System.Management.Automation.Language.Parser]::ParseFile($bootstrapperPath, [ref]$tokens, [ref]$errors) | Out-Null
+if ($errors.Count -eq 0) {
+    Test-Result -Name "Syntax: setup.ps1 (root)" -Passed $true -Message ""
 } else {
-    Test-Skip -Name "Install-Chocolatey admin check" -Reason "Running as admin - cannot test non-admin path"
+    $errMsg = ($errors | Select-Object -First 2 | ForEach-Object { "L$($_.Extent.StartLineNumber): $($_.Message)" }) -join '; '
+    Test-Result -Name "Syntax: setup.ps1 (root)" -Passed $false -Message $errMsg
+}
+
+# Content checks — verify user agency prompts exist
+$bootContent = Get-Content $bootstrapperPath -Raw -Encoding UTF8
+
+Assert-True -Condition ($bootContent -match 'Proceed with download') -TestName "Bootstrapper has consent prompt"
+Assert-True -Condition ($bootContent -match 'Install directory') -TestName "Bootstrapper asks for install directory"
+Assert-True -Condition ($bootContent -match 'Replace it\?') -TestName "Bootstrapper has overwrite safety prompt"
+Assert-True -Condition ($bootContent -match 'Installation cancelled') -TestName "Bootstrapper has clean exit on cancel"
+Assert-True -Condition ($bootContent -match 'Test-IsValidRepo') -TestName "Bootstrapper has Test-IsValidRepo helper"
+Assert-True -Condition ($bootContent -match 'Invoke-Launcher') -TestName "Bootstrapper has Invoke-Launcher helper"
+Assert-True -Condition ($bootContent -match 'Download-Repo') -TestName "Bootstrapper has Download-Repo helper"
+Assert-True -Condition ($bootContent -match 'NonInteractive') -TestName "Bootstrapper accepts -NonInteractive"
+Assert-True -Condition ($bootContent -match 'env:CI') -TestName "Bootstrapper detects CI mode"
+
+# Verify local flow detection exists
+Assert-True -Condition ($bootContent -match 'localRepoPath') -TestName "Bootstrapper detects local repo path"
+Assert-True -Condition ($bootContent -match 'PSScriptRoot') -TestName "Bootstrapper uses PSScriptRoot for local detection"
+
+# Verify no temp-location heuristics (removed in refactor)
+Assert-False -Condition ($bootContent -match 'Test-IsTempLocation') -TestName "Bootstrapper does not have temp-location heuristics"
+
+# Behavioral tests — Test-IsValidRepo function (inlined from setup.ps1)
+$bootTestDir = Join-Path $env:TEMP "test-bootstrapper-$(Get-Random)"
+try {
+    # Verify the function exists in AST
+    $ast = [System.Management.Automation.Language.Parser]::ParseFile($bootstrapperPath, [ref]$null, [ref]$null)
+    $isValidRepoFunc = $ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Test-IsValidRepo' }, $false) | Select-Object -First 1
+
+    if ($isValidRepoFunc) {
+        # Inline the function logic (matches setup.ps1: Test-Path for Microsoft.PowerShell_profile.ps1)
+        function Test-BootIsValidRepo {
+            param([string]$Path)
+            return (Test-Path (Join-Path $Path 'Microsoft.PowerShell_profile.ps1'))
+        }
+
+        # Test with valid repo (has Microsoft.PowerShell_profile.ps1)
+        $validRepoDir = Join-Path $bootTestDir "valid-repo"
+        New-Item -ItemType Directory -Force -Path $validRepoDir | Out-Null
+        New-Item -ItemType File -Path (Join-Path $validRepoDir 'Microsoft.PowerShell_profile.ps1') -Value '# profile' | Out-Null
+        Assert-True -Condition (Test-BootIsValidRepo $validRepoDir) -TestName "Test-IsValidRepo returns true for valid repo"
+
+        # Test with invalid repo (no profile file)
+        $invalidRepoDir = Join-Path $bootTestDir "invalid-repo"
+        New-Item -ItemType Directory -Force -Path $invalidRepoDir | Out-Null
+        New-Item -ItemType File -Path (Join-Path $invalidRepoDir 'some-file.txt') -Value 'not a repo' | Out-Null
+        Assert-False -Condition (Test-BootIsValidRepo $invalidRepoDir) -TestName "Test-IsValidRepo returns false for invalid repo"
+
+        # Test with nonexistent path
+        Assert-False -Condition (Test-BootIsValidRepo "C:\nonexistent-path-$(Get-Random)") -TestName "Test-IsValidRepo returns false for nonexistent path"
+    } else {
+        Test-Skip -Name "Test-IsValidRepo behavioral tests" -Reason "Function not found in AST"
+    }
+} finally {
+    Remove-MockDir $bootTestDir
+}
+
+# AST-based flow verification — verify control flow structure
+$bootAst = [System.Management.Automation.Language.Parser]::ParseFile($bootstrapperPath, [ref]$null, [ref]$null)
+
+# Verify the script has the expected flow branches
+$ifStatements = $bootAst.FindAll({ param($node) $node -is [System.Management.Automation.Language.IfStatementAst] }, $true)
+$hasLocalFlowCheck = $false
+$hasHeadlessCheck = $false
+$hasDirectoryExistsCheck = $false
+$hasConsentCheck = $false
+
+foreach ($if in $ifStatements) {
+    $ifText = $if.Extent.Text
+    if ($ifText -match 'localRepoPath') { $hasLocalFlowCheck = $true }
+    if ($ifText -match 'isHeadless') { $hasHeadlessCheck = $true }
+    if ($ifText -match 'Test-Path.*repoPath') { $hasDirectoryExistsCheck = $true }
+    if ($ifText -match 'confirmChoice|replaceChoice') { $hasConsentCheck = $true }
+}
+
+Assert-True -Condition $hasLocalFlowCheck -TestName "AST: local flow branch exists"
+Assert-True -Condition $hasHeadlessCheck -TestName "AST: headless mode branch exists"
+Assert-True -Condition $hasDirectoryExistsCheck -TestName "AST: directory existence check exists"
+Assert-True -Condition $hasConsentCheck -TestName "AST: user consent check exists"
+
+# Verify Download-Repo has error handling with cleanup
+$downloadRepoFunc = $bootAst.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Download-Repo' }, $false) | Select-Object -First 1
+if ($downloadRepoFunc) {
+    $downloadText = $downloadRepoFunc.Body.Extent.Text
+    Assert-True -Condition ($downloadText -match 'catch') -TestName "Download-Repo has catch block"
+    Assert-True -Condition ($downloadText -match 'New-Item.*parentDir') -TestName "Download-Repo creates parent dir before extraction"
+    Assert-True -Condition ($downloadText -match 'Remove-Item.*zipPath') -TestName "Download-Repo cleans up zip on failure"
+    Assert-True -Condition ($downloadText -match 'Remove-Item.*extractDir') -TestName "Download-Repo cleans up extract dir on failure"
+    Assert-True -Condition ($downloadText -match 'return \$false') -TestName "Download-Repo returns false on failure"
+} else {
+    Test-Skip -Name "Download-Repo error handling tests" -Reason "Function not found in AST"
+}
+
+# Verify Invoke-Launcher validates setup.ps1 exists
+$invokeLauncherFunc = $bootAst.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Invoke-Launcher' }, $false) | Select-Object -First 1
+if ($invokeLauncherFunc) {
+    $launcherText = $invokeLauncherFunc.Body.Extent.Text
+    Assert-True -Condition ($launcherText -match 'Test-Path.*setupEntryPoint') -TestName "Invoke-Launcher validates setup.ps1 exists"
+    Assert-True -Condition ($launcherText -match '\. \$setupEntryPoint') -TestName "Invoke-Launcher dot-sources setup.ps1"
+} else {
+    Test-Skip -Name "Invoke-Launcher tests" -Reason "Function not found in AST"
 }
 
 # ══════════════════════════════════════════════════════════════

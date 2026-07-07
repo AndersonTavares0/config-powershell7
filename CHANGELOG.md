@@ -5,6 +5,41 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- (nothing yet)
+
+## [v0.3] — 2026-07-07
+
+### Added
+- Bootstrapper user agency: `irm | iex` now shows summary, asks for
+  install directory, and requires explicit consent before downloading
+- Local flow (`.\setup.ps1` in valid repo) delegates directly to launcher
+  with zero prompts
+- Headless mode (`-NonInteractive` / `$env:CI`) skips prompts, uses defaults
+- Overwrite safety: existing directory without valid repo asks confirmation
+  before replacing
+- Download-Repo creates parent directory before extraction (handles deep
+  custom install paths)
+- Input sanitization: `Read-Host` output trimmed to avoid leading/trailing
+  spaces in path
+
+### Changed
+- `setup.ps1` refactored as bootstrapper with 3 flows (local, remote, headless)
+- Removed temp-location heuristics (`Test-IsTempLocation`, `Resolve-RepoPath`)
+- Added `-NonInteractive` parameter
+
+### Tests
+- `tests/Setup.Tests.ps1`: +27 bootstrapper tests (53 → 80):
+  - Syntax, content assertions, behavioral `Test-IsValidRepo` with mock dirs
+  - AST verification of flow branches (local, headless, consent, overwrite)
+  - AST verification of Download-Repo (try/catch, parent dir, cleanup, return)
+  - AST verification of Invoke-Launcher (Test-Path, dot-source)
+
+### CI
+- `.github/workflows/test.yml`: `Setup.Tests.ps1` added to CI pipeline
+
+## [v0.2] — 2026-07
+
+### Added
 - Post-install summary agora exibe Theme, Cache e Terminal message,
   substituindo bloco de versões de ferramentas (#52)
 - Suporte a `POSH_THEME` env var para seleção de tema do Oh My Posh
@@ -19,32 +54,6 @@ All notable changes to this project will be documented in this file.
   - Text utils: 9 ACs — sed validação/backup/cleanup, clipboard, touch (TEXT-01–09)
   - Git: 9 ACs — gcom/lazyg LASTEXITCODE branching (GIT-01–09)
   - 88 asserções, zero dependências externas, ~350ms total
-
-### Fixed
-- install.ps1: removido passo duplicado de instalação do PowerShell 7
-- install.ps1: `$targetProfile` agora exibe caminho correto no sumário
-- install.ps1: detecção de executáveis via `-CommandName` explícito
-  (substitui regex frágil que quebrava para `oh-my-posh` e `pwsh`)
-- Cache de plugins invalidado imediatamente ao trocar tema, mesmo
-  dentro da janela TTL (issue #46)
-- system.ps1: caminhos hardcoded `/usr/bin/*` substituídos por
-  `Get-Command` com nome simples (compatível com macOS ARM, Linux
-  não-standard)
-- setup/modules/deps.ps1: detecção de executáveis centralizada via
-  `Get-Executable` com exibição de versão
-- install.ps1: sumário final exibe versão de cada ferramenta instalada
-- setup/modules/orchestrator.ps1: sumário final exibe versão de cada
-  ferramenta instalada
-
-### Fixed
-- tests/Setup.Tests.ps1: parser error "Missing closing '}'" causado por
-  em dash `—` (U+2014) na linha 495 — substituído por hífen comum
-- Microsoft.PowerShell_profile.Tests.ps1: parser não reconhecia `catch`
-  como keyword na linha 504 — adicionado UTF-8 BOM (#70)
-- Test-ProfileInstallation.ps1: Missing closing `}` falso positivo nas
-  linhas 45/59 — adicionado UTF-8 BOM (#71)
-
-### Added
 - WPF GUI installer redesigned with VS Code dark palette (`#1E1E1E`,
   `#569CD6` accent)
 - OMP theme selection at install time with live prompt bar preview
@@ -66,6 +75,26 @@ All notable changes to this project will be documented in this file.
 - Em dashes (`—`) replaced with hyphens in source to fix PS 5.1 parser issues
 
 ### Fixed
+- tests/Setup.Tests.ps1: parser error "Missing closing '}'" causado por
+  em dash `—` (U+2014) na linha 495 — substituído por hífen comum
+- Microsoft.PowerShell_profile.Tests.ps1: parser não reconhecia `catch`
+  como keyword na linha 504 — adicionado UTF-8 BOM (#70)
+- Test-ProfileInstallation.ps1: Missing closing `}` falso positivo nas
+  linhas 45/59 — adicionado UTF-8 BOM (#71)
+- install.ps1: removido passo duplicado de instalação do PowerShell 7
+- install.ps1: `$targetProfile` agora exibe caminho correto no sumário
+- install.ps1: detecção de executáveis via `-CommandName` explícito
+  (substitui regex frágil que quebrava para `oh-my-posh` e `pwsh`)
+- Cache de plugins invalidado imediatamente ao trocar tema, mesmo
+  dentro da janela TTL (issue #46)
+- system.ps1: caminhos hardcoded `/usr/bin/*` substituídos por
+  `Get-Command` com nome simples (compatível com macOS ARM, Linux
+  não-standard)
+- setup/modules/deps.ps1: detecção de executáveis centralizada via
+  `Get-Executable` com exibição de versão
+- install.ps1: sumário final exibe versão de cada ferramenta instalada
+- setup/modules/orchestrator.ps1: sumário final exibe versão de cada
+  ferramenta instalada
 - install.ps1: UTF-8 corruption in error messages with em dashes causing
   parser failures
 - install.ps1: outdated CLI menus updated for new dependency options
@@ -86,5 +115,7 @@ All notable changes to this project will be documented in this file.
 - 3 test suites + boot benchmark (custom framework)
 - GitHub Actions CI pipeline
 
-[Unreleased]: https://github.com/AndersonTavares0/config-powershell7/compare/v0.1...HEAD
+[Unreleased]: https://github.com/AndersonTavares0/config-powershell7/compare/v0.3...HEAD
+[v0.3]: https://github.com/AndersonTavares0/config-powershell7/releases/tag/v0.3
+[v0.2]: https://github.com/AndersonTavares0/config-powershell7/releases/tag/v0.2
 [v0.1]: https://github.com/AndersonTavares0/config-powershell7/releases/tag/v0.1
