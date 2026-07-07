@@ -572,6 +572,43 @@ try {
 }
 
 # ══════════════════════════════════════════════════════════════
+# TEST SUITE: BOOTSTRAPPER — setup.ps1 (root)
+# ══════════════════════════════════════════════════════════════
+Write-Host "`nTesting Bootstrapper (setup.ps1)..." -ForegroundColor Yellow
+
+$bootstrapperPath = Join-Path $repoRoot 'setup.ps1'
+
+# Syntax check for root setup.ps1
+$tokens = $null; $errors = $null
+[System.Management.Automation.Language.Parser]::ParseFile($bootstrapperPath, [ref]$tokens, [ref]$errors) | Out-Null
+if ($errors.Count -eq 0) {
+    Test-Result -Name "Syntax: setup.ps1 (root)" -Passed $true -Message ""
+} else {
+    $errMsg = ($errors | Select-Object -First 2 | ForEach-Object { "L$($_.Extent.StartLineNumber): $($_.Message)" }) -join '; '
+    Test-Result -Name "Syntax: setup.ps1 (root)" -Passed $false -Message $errMsg
+}
+
+# Content checks — verify user agency prompts exist
+$bootContent = Get-Content $bootstrapperPath -Raw -Encoding UTF8
+
+Assert-True -Condition ($bootContent -match 'Proceed with download') -TestName "Bootstrapper has consent prompt"
+Assert-True -Condition ($bootContent -match 'Install directory') -TestName "Bootstrapper asks for install directory"
+Assert-True -Condition ($bootContent -match 'Replace it\?') -TestName "Bootstrapper has overwrite safety prompt"
+Assert-True -Condition ($bootContent -match 'Installation cancelled') -TestName "Bootstrapper has clean exit on cancel"
+Assert-True -Condition ($bootContent -match 'Test-IsValidRepo') -TestName "Bootstrapper has Test-IsValidRepo helper"
+Assert-True -Condition ($bootContent -match 'Invoke-Launcher') -TestName "Bootstrapper has Invoke-Launcher helper"
+Assert-True -Condition ($bootContent -match 'Download-Repo') -TestName "Bootstrapper has Download-Repo helper"
+Assert-True -Condition ($bootContent -match 'NonInteractive') -TestName "Bootstrapper accepts -NonInteractive"
+Assert-True -Condition ($bootContent -match 'env:CI') -TestName "Bootstrapper detects CI mode"
+
+# Verify local flow detection exists
+Assert-True -Condition ($bootContent -match 'localRepoPath') -TestName "Bootstrapper detects local repo path"
+Assert-True -Condition ($bootContent -match 'PSScriptRoot') -TestName "Bootstrapper uses PSScriptRoot for local detection"
+
+# Verify no temp-location heuristics (removed in refactor)
+Assert-False -Condition ($bootContent -match 'Test-IsTempLocation') -TestName "Bootstrapper does not have temp-location heuristics"
+
+# ══════════════════════════════════════════════════════════════
 # TEST SUITE: SYNTAX — All setup modules parse cleanly
 # ══════════════════════════════════════════════════════════════
 Write-Host "`nTesting Setup Module Syntax..." -ForegroundColor Yellow
