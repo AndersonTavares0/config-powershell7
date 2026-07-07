@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### Added
+- Bootstrapper user agency: `irm | iex` now shows summary, asks for
+  install directory, and requires explicit consent before downloading
+- Local flow (`.\setup.ps1` in valid repo) delegates directly to launcher
+  with zero prompts
+- Headless mode (`-NonInteractive` / `$env:CI`) skips prompts, uses defaults
+- Overwrite safety: existing directory without valid repo asks confirmation
+  before replacing
 - Post-install summary agora exibe Theme, Cache e Terminal message,
   substituindo bloco de versões de ferramentas (#52)
 - Suporte a `POSH_THEME` env var para seleção de tema do Oh My Posh
