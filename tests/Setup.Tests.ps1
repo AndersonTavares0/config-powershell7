@@ -162,6 +162,19 @@ Assert-NotNull -Value $script:RepoZipUrl -TestName "RepoZipUrl is set"
 Assert-True -Condition ($script:RepoZipUrl -match 'github\.com') -TestName "RepoZipUrl points to GitHub"
 
 # ══════════════════════════════════════════════════════════════
+# TEST SUITE: CORE — Test-DocumentsRedirected
+# ══════════════════════════════════════════════════════════════
+Write-Host "`nTesting Test-DocumentsRedirected..." -ForegroundColor Yellow
+
+$actualDocs = [Environment]::GetFolderPath('MyDocuments')
+$expectedDocs = Join-Path ([Environment]::GetFolderPath('UserProfile')) 'Documents'
+if ($actualDocs -eq $expectedDocs) {
+    Assert-False -Condition (Test-DocumentsRedirected) -TestName "Test-DocumentsRedirected returns false when Documents is default"
+} else {
+    Assert-True -Condition (Test-DocumentsRedirected) -TestName "Test-DocumentsRedirected returns true when Documents is redirected"
+}
+
+# ══════════════════════════════════════════════════════════════
 # TEST SUITE: CORE — Get-WingetPath
 # ══════════════════════════════════════════════════════════════
 Write-Host "`nTesting Get-WingetPath..." -ForegroundColor Yellow
@@ -215,6 +228,31 @@ try {
 } finally {
     Remove-MockDir $testRepoDir
     Remove-MockDir $testProfileDir
+    $global:PROFILE = $originalProfile
+}
+
+# Test Install-Profile with ThemeName
+$testThemeDir = Join-Path $env:TEMP "test-setup-theme-$(Get-Random)"
+$testThemeProfileDir = Join-Path $env:TEMP "test-setup-theme-profile-$(Get-Random)"
+$testThemeProfilePath = Join-Path $testThemeProfileDir "Microsoft.PowerShell_profile.ps1"
+
+try {
+    New-MockDir $testThemeDir
+    New-MockDir (Join-Path $testThemeDir 'modules')
+    New-MockFile (Join-Path $testThemeDir 'Microsoft.PowerShell_profile.ps1') '# profile'
+
+    $originalProfile = $PROFILE
+    $global:PROFILE = $testThemeProfilePath
+
+    $result4 = Install-Profile -RepoPath $testThemeDir -ThemeName 'jandedobbeleer'
+    Assert-True -Condition $result4 -TestName "Install-Profile with ThemeName returns true"
+    $content4 = Get-Content $testThemeProfilePath -Raw
+    Assert-True -Condition ($content4 -match 'POSH_THEME') -TestName "Install-Profile with ThemeName includes POSH_THEME in stub"
+    Assert-True -Condition ($content4 -match 'jandedobbeleer') -TestName "Install-Profile with ThemeName includes theme name in stub"
+
+} finally {
+    Remove-MockDir $testThemeDir
+    Remove-MockDir $testThemeProfileDir
     $global:PROFILE = $originalProfile
 }
 
@@ -279,6 +317,58 @@ if ($gallery) {
 } else {
     Test-Skip -Name "PSGallery repository" -Reason "Not accessible"
 }
+
+# ══════════════════════════════════════════════════════════════
+# TEST SUITE: DEPS — Install-OmpTheme
+# ══════════════════════════════════════════════════════════════
+Write-Host "`nTesting Install-OmpTheme..." -ForegroundColor Yellow
+
+# Save original functions we'll mock
+$origGetExecutable = ${function:Get-Executable}
+
+# Test 1: Returns false when no theme name provided
+${function:Get-Executable} = { return $null }
+$result1 = Install-OmpTheme -ThemeName ''
+Assert-False -Condition $result1 -TestName "Install-OmpTheme returns false for empty theme name"
+
+$result1b = Install-OmpTheme -ThemeName '   '
+Assert-False -Condition $result1b -TestName "Install-OmpTheme returns false for whitespace theme name"
+
+# Test 2: Returns false when oh-my-posh not in PATH
+${function:Get-Executable} = { return $null }
+$result2 = Install-OmpTheme -ThemeName 'jandedobbeleer'
+Assert-False -Condition $result2 -TestName "Install-OmpTheme returns false when OMP missing"
+
+# Test 3: Returns true when theme already exists and is valid
+$ompThemeTestDir = Join-Path $env:TEMP "test-omp-theme-$(Get-Random)"
+$origUserProfile = [Environment]::GetFolderPath('UserProfile')
+try {
+    # Mock UserProfile to our test dir
+    # We can't easily mock GetFolderPath, so we create the actual path structure
+    # Instead, test via the function's behavior with a pre-existing file
+    
+    ${function:Get-Executable} = {
+        return [PSCustomObject]@{ Name = 'oh-my-posh'; Path = 'C:\dummy\oh-my-posh.exe'; Found = $true; Version = '23.0.0' }
+    }
+    
+    # Create a mock theme dir and file
+    $mockThemeDir = Join-Path $env:USERPROFILE '.poshthemes'
+    if (-not (Test-Path $mockThemeDir)) {
+        New-Item -ItemType Directory -Force -Path $mockThemeDir | Out-Null
+    }
+    $mockThemeFile = Join-Path $mockThemeDir 'test-theme.omp.json'
+    Set-Content -Path $mockThemeFile -Value ('{"$schema": "https://raw.githubusercontent.com/JanDeDobbeleer/oh-my-posh/main/themes/schema.json", "version": 2}' * 5) -Encoding UTF8 -Force
+    
+    $result3 = Install-OmpTheme -ThemeName 'test-theme'
+    Assert-True -Condition $result3 -TestName "Install-OmpTheme returns true when theme already exists and is valid"
+    
+    Remove-Item $mockThemeFile -Force -ErrorAction SilentlyContinue
+} finally {
+    if (Test-Path $ompThemeTestDir) { Remove-Item $ompThemeTestDir -Recurse -Force -ErrorAction SilentlyContinue }
+}
+
+# Restore original functions
+${function:Get-Executable} = $origGetExecutable
 
 # ══════════════════════════════════════════════════════════════
 # TEST SUITE: ORCHESTRATOR — Start-ProfileInstall (dry-run)

@@ -68,6 +68,340 @@ function Install-Zoxide {
     return Install-WingetPackage -Id 'ajeetdsouza.zoxide' -DisplayName 'Zoxide'
 }
 
+function Get-OmpThemeList {
+    $apiUrl = 'https://api.github.com/repos/JanDeDobbeleer/oh-my-posh/contents/themes'
+    try {
+        if ($PSVersionTable.PSVersion.Major -lt 6) {
+            [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+        }
+        $items = Invoke-RestMethod -Uri $apiUrl -ErrorAction Stop
+        $themes = $items | Where-Object { $_.name -like '*.omp.json' } |
+            ForEach-Object { $_.name -replace '\.omp\.json$', '' } |
+            Sort-Object
+        return @($themes)
+    } catch {
+        Write-GuiLog "Failed to fetch theme list: $($_.Exception.Message)" -Type Warn
+        return $null
+    }
+}
+
+#region Terminal theme definitions
+$script:TerminalThemeData = $null
+function Initialize-TerminalThemes {
+    if ($script:TerminalThemeData) { return }
+    $script:TerminalThemeData = [ordered]@{
+        'Catppuccin Mocha' = @{
+            Type = 'dark'; Description = 'Dark purple theme from Catppuccin project'
+            WT = @{ foreground = '#CDD6F4'; background = '#1E1E2E'; cursorColor = '#F5E0DC'; selectionBackground = '#45475A'
+                    black = '#45475A'; red = '#F38BA8'; green = '#A6E3A1'; yellow = '#F9E2AF'
+                    blue = '#89B4FA'; purple = '#F5C2E7'; cyan = '#94E2D5'; white = '#BAC2DE'
+                    brightBlack = '#585B70'; brightRed = '#F38BA8'; brightGreen = '#A6E3A1'
+                    brightYellow = '#F9E2AF'; brightBlue = '#89B4FA'; brightPurple = '#F5C2E7'
+                    brightCyan = '#94E2D5'; brightWhite = '#A6ADC8' }
+            Ala = @{ primary = @{ background = '#1E1E2E'; foreground = '#CDD6F4' }
+                     normal = @{ black = '#45475A'; red = '#F38BA8'; green = '#A6E3A1'
+                                 yellow = '#F9E2AF'; blue = '#89B4FA'; magenta = '#F5C2E7'
+                                 cyan = '#94E2D5'; white = '#BAC2DE' }
+                     bright = @{ black = '#585B70'; red = '#F38BA8'; green = '#A6E3A1'
+                                 yellow = '#F9E2AF'; blue = '#89B4FA'; magenta = '#F5C2E7'
+                                 cyan = '#94E2D5'; white = '#A6ADC8' } }
+        }
+        'Catppuccin Latte' = @{
+            Type = 'light'; Description = 'Light theme from Catppuccin project'
+            WT = @{ foreground = '#4C4F69'; background = '#EFF1F5'; cursorColor = '#DC8A78'; selectionBackground = '#ACB0BE'
+                    black = '#5C5F77'; red = '#D20F39'; green = '#40A02B'; yellow = '#DF8E1D'
+                    blue = '#1E66F5'; purple = '#EA76CB'; cyan = '#179299'; white = '#ACB0BE'
+                    brightBlack = '#6C6F85'; brightRed = '#D20F39'; brightGreen = '#40A02B'
+                    brightYellow = '#DF8E1D'; brightBlue = '#1E66F5'; brightPurple = '#EA76CB'
+                    brightCyan = '#179299'; brightWhite = '#BCC0CC' }
+            Ala = @{ primary = @{ background = '#EFF1F5'; foreground = '#4C4F69' }
+                     normal = @{ black = '#5C5F77'; red = '#D20F39'; green = '#40A02B'
+                                 yellow = '#DF8E1D'; blue = '#1E66F5'; magenta = '#EA76CB'
+                                 cyan = '#179299'; white = '#ACB0BE' }
+                     bright = @{ black = '#6C6F85'; red = '#D20F39'; green = '#40A02B'
+                                 yellow = '#DF8E1D'; blue = '#1E66F5'; magenta = '#EA76CB'
+                                 cyan = '#179299'; white = '#BCC0CC' } }
+        }
+        'Dracula' = @{
+            Type = 'dark'; Description = 'Popular dark theme with purple accents'
+            WT = @{ foreground = '#F8F8F2'; background = '#282A36'; cursorColor = '#F8F8F2'; selectionBackground = '#44475A'
+                    black = '#21222C'; red = '#FF5555'; green = '#50FA7B'; yellow = '#F1FA8C'
+                    blue = '#BD93F9'; purple = '#FF79C6'; cyan = '#8BE9FD'; white = '#F8F8F2'
+                    brightBlack = '#6272A4'; brightRed = '#FF6E6E'; brightGreen = '#69FF94'
+                    brightYellow = '#FFFFA5'; brightBlue = '#D6ACFF'; brightPurple = '#FF92DF'
+                    brightCyan = '#A4FFFF'; brightWhite = '#FFFFFF' }
+            Ala = @{ primary = @{ background = '#282A36'; foreground = '#F8F8F2' }
+                     normal = @{ black = '#21222C'; red = '#FF5555'; green = '#50FA7B'
+                                 yellow = '#F1FA8C'; blue = '#BD93F9'; magenta = '#FF79C6'
+                                 cyan = '#8BE9FD'; white = '#F8F8F2' }
+                     bright = @{ black = '#6272A4'; red = '#FF6E6E'; green = '#69FF94'
+                                 yellow = '#FFFFA5'; blue = '#D6ACFF'; magenta = '#FF92DF'
+                                 cyan = '#A4FFFF'; white = '#FFFFFF' } }
+        }
+        'Nord' = @{
+            Type = 'dark'; Description = 'Arctic bluish dark theme'
+            WT = @{ foreground = '#D8DEE9'; background = '#2E3440'; cursorColor = '#D8DEE9'; selectionBackground = '#434C5E'
+                    black = '#3B4252'; red = '#BF616A'; green = '#A3BE8C'; yellow = '#EBCB8B'
+                    blue = '#81A1C1'; purple = '#B48EAD'; cyan = '#88C0D0'; white = '#E5E9F0'
+                    brightBlack = '#4C566A'; brightRed = '#BF616A'; brightGreen = '#A3BE8C'
+                    brightYellow = '#EBCB8B'; brightBlue = '#81A1C1'; brightPurple = '#B48EAD'
+                    brightCyan = '#8FBCBB'; brightWhite = '#ECEFF4' }
+            Ala = @{ primary = @{ background = '#2E3440'; foreground = '#D8DEE9' }
+                     normal = @{ black = '#3B4252'; red = '#BF616A'; green = '#A3BE8C'
+                                 yellow = '#EBCB8B'; blue = '#81A1C1'; magenta = '#B48EAD'
+                                 cyan = '#88C0D0'; white = '#E5E9F0' }
+                     bright = @{ black = '#4C566A'; red = '#BF616A'; green = '#A3BE8C'
+                                 yellow = '#EBCB8B'; blue = '#81A1C1'; magenta = '#B48EAD'
+                                 cyan = '#8FBCBB'; white = '#ECEFF4' } }
+        }
+        'Tokyo Night' = @{
+            Type = 'dark'; Description = 'Deep blue night theme'
+            WT = @{ foreground = '#A9B1D6'; background = '#1A1B26'; cursorColor = '#A9B1D6'; selectionBackground = '#283457'
+                    black = '#1D202F'; red = '#F7768E'; green = '#9ECE6A'; yellow = '#E0AF68'
+                    blue = '#7AA2F7'; purple = '#BB9AF7'; cyan = '#7DCFFF'; white = '#A9B1D6'
+                    brightBlack = '#565F89'; brightRed = '#F7768E'; brightGreen = '#9ECE6A'
+                    brightYellow = '#E0AF68'; brightBlue = '#7AA2F7'; brightPurple = '#BB9AF7'
+                    brightCyan = '#7DCFFF'; brightWhite = '#C0CAF5' }
+            Ala = @{ primary = @{ background = '#1A1B26'; foreground = '#A9B1D6' }
+                     normal = @{ black = '#1D202F'; red = '#F7768E'; green = '#9ECE6A'
+                                 yellow = '#E0AF68'; blue = '#7AA2F7'; magenta = '#BB9AF7'
+                                 cyan = '#7DCFFF'; white = '#A9B1D6' }
+                     bright = @{ black = '#565F89'; red = '#F7768E'; green = '#9ECE6A'
+                                 yellow = '#E0AF68'; blue = '#7AA2F7'; magenta = '#BB9AF7'
+                                 cyan = '#7DCFFF'; white = '#C0CAF5' } }
+        }
+        'One Half Dark' = @{
+            Type = 'dark'; Description = 'Popular dark theme with warm accents'
+            WT = @{ foreground = '#DCDFE4'; background = '#282C34'; cursorColor = '#DCDFE4'; selectionBackground = '#3E4451'
+                    black = '#383C42'; red = '#E06C75'; green = '#98C379'; yellow = '#D19A66'
+                    blue = '#61AFEF'; purple = '#C678DD'; cyan = '#56B6C2'; white = '#ABB2BF'
+                    brightBlack = '#5C6370'; brightRed = '#E06C75'; brightGreen = '#98C379'
+                    brightYellow = '#D19A66'; brightBlue = '#61AFEF'; brightPurple = '#C678DD'
+                    brightCyan = '#56B6C2'; brightWhite = '#DCDFE4' }
+            Ala = @{ primary = @{ background = '#282C34'; foreground = '#DCDFE4' }
+                     normal = @{ black = '#383C42'; red = '#E06C75'; green = '#98C379'
+                                 yellow = '#D19A66'; blue = '#61AFEF'; magenta = '#C678DD'
+                                 cyan = '#56B6C2'; white = '#ABB2BF' }
+                     bright = @{ black = '#5C6370'; red = '#E06C75'; green = '#98C379'
+                                 yellow = '#D19A66'; blue = '#61AFEF'; magenta = '#C678DD'
+                                 cyan = '#56B6C2'; white = '#DCDFE4' } }
+        }
+    }
+}
+
+function Get-TerminalThemeList {
+    Initialize-TerminalThemes
+    return $script:TerminalThemeData.Keys | ForEach-Object {
+        $d = $script:TerminalThemeData[$_]
+        [PSCustomObject]@{ Name = $_; Type = $d.Type; Description = $d.Description }
+    } | Sort-Object Name
+}
+
+function Get-TerminalThemeData {
+    param([string]$Name)
+    Initialize-TerminalThemes
+    return $script:TerminalThemeData[$Name]
+}
+
+function Set-WindowsTerminalColorScheme {
+    param([string]$ThemeName, [string]$SettingsPath)
+    $theme = Get-TerminalThemeData -Name $ThemeName
+    if (-not $theme) { Write-GuiLog "Terminal theme '$ThemeName' not found." -Type Warn; return $false }
+
+    if (-not $SettingsPath) {
+        $knownPaths = @(
+            "$env:LOCALAPPDATA\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json",
+            "$env:LOCALAPPDATA\Packages\Microsoft.WindowsTerminalPreview_8wekyb3d8bbwe\LocalState\settings.json",
+            "$env:LOCALAPPDATA\Microsoft\Windows Terminal\settings.json"
+        )
+        $SettingsPath = $knownPaths | Where-Object { Test-Path $_ -PathType Leaf } | Select-Object -First 1
+    }
+    if (-not $SettingsPath) { Write-GuiLog "Windows Terminal settings.json not found." -Type Info; return $false }
+
+    try {
+        $settings = Get-Content $SettingsPath -Raw -Encoding UTF8 | ConvertFrom-Json
+        $wtColors = $theme.WT
+
+        $scheme = [PSCustomObject]@{
+            name = $ThemeName
+            foreground = $wtColors.foreground
+            background = $wtColors.background
+            cursorColor = $wtColors.cursorColor
+            selectionBackground = $wtColors.selectionBackground
+            black = $wtColors.black; red = $wtColors.red; green = $wtColors.green
+            yellow = $wtColors.yellow; blue = $wtColors.blue; purple = $wtColors.purple
+            cyan = $wtColors.cyan; white = $wtColors.white
+            brightBlack = $wtColors.brightBlack; brightRed = $wtColors.brightRed
+            brightGreen = $wtColors.brightGreen; brightYellow = $wtColors.brightYellow
+            brightBlue = $wtColors.brightBlue; brightPurple = $wtColors.brightPurple
+            brightCyan = $wtColors.brightCyan; brightWhite = $wtColors.brightWhite
+        }
+
+        if (-not $settings.schemes) {
+            $settings | Add-Member -Name 'schemes' -Value @($scheme) -MemberType NoteProperty -Force
+        } else {
+            $existing = $settings.schemes | Where-Object { $_.name -eq $ThemeName }
+            if ($existing) {
+                $idx = [array]::IndexOf($settings.schemes, $existing)
+                $settings.schemes[$idx] = $scheme
+            } else {
+                $settings.schemes += $scheme
+            }
+        }
+
+        if (-not $settings.profiles) {
+            Write-GuiLog "Windows Terminal settings has no profiles section." -Type Warn; return $false
+        }
+        if (-not $settings.profiles.defaults) {
+            $settings.profiles | Add-Member -Name 'defaults' -Value @{} -MemberType NoteProperty -Force
+        }
+        $settings.profiles.defaults | Add-Member -Name 'colorScheme' -Value $ThemeName -MemberType NoteProperty -Force
+
+        $settings | ConvertTo-Json -Depth 15 | Set-Content $SettingsPath -Encoding UTF8 -Force
+        Write-GuiLog "Windows Terminal color scheme set to '$ThemeName'." -Type Ok
+        return $true
+    } catch {
+        Write-GuiLog "Failed to set Windows Terminal color scheme: $($_.Exception.Message)" -Type Warn
+        return $false
+    }
+}
+
+function Set-AlacrittyColorScheme {
+    param([string]$ThemeName)
+    $theme = Get-TerminalThemeData -Name $ThemeName
+    if (-not $theme) { Write-GuiLog "Terminal theme '$ThemeName' not found." -Type Warn; return $false }
+
+    $configDir = Join-Path $env:APPDATA 'alacritty'
+    if (-not (Test-Path $configDir)) { New-Item -ItemType Directory -Path $configDir -Force | Out-Null }
+    $configPath = Join-Path $configDir 'alacritty.toml'
+
+    if (Test-Path $configPath) {
+        $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+        Copy-Item $configPath "$configPath.bak-$timestamp" -Force
+    }
+
+    $colors = $theme.Ala
+    $colorLines = @(
+        "[colors.primary]",
+        "background = `"$($colors.primary.background)`"",
+        "foreground = `"$($colors.primary.foreground)`"",
+        "",
+        "[colors.normal]",
+        "black   = `"$($colors.normal.black)`"",
+        "red     = `"$($colors.normal.red)`"",
+        "green   = `"$($colors.normal.green)`"",
+        "yellow  = `"$($colors.normal.yellow)`"",
+        "blue    = `"$($colors.normal.blue)`"",
+        "magenta = `"$($colors.normal.magenta)`"",
+        "cyan    = `"$($colors.normal.cyan)`"",
+        "white   = `"$($colors.normal.white)`"",
+        "",
+        "[colors.bright]",
+        "black   = `"$($colors.bright.black)`"",
+        "red     = `"$($colors.bright.red)`"",
+        "green   = `"$($colors.bright.green)`"",
+        "yellow  = `"$($colors.bright.yellow)`"",
+        "blue    = `"$($colors.bright.blue)`"",
+        "magenta = `"$($colors.bright.magenta)`"",
+        "cyan    = `"$($colors.bright.cyan)`"",
+        "white   = `"$($colors.bright.white)`""
+    )
+
+    try {
+        if (Test-Path $configPath) {
+            $existing = Get-Content $configPath -Raw -Encoding UTF8
+            $colorSectionStart = $existing.IndexOf('[colors.primary]')
+            if ($colorSectionStart -ge 0) {
+                $colorSectionEnd = $existing.IndexOf('[[', $colorSectionStart + 1)
+                if ($colorSectionEnd -lt 0) { $colorSectionEnd = $existing.IndexOf('[', $existing.IndexOf('[', 1) + 1) }
+                if ($colorSectionEnd -lt 0) { $colorSectionEnd = $existing.Length }
+                # Replace colors, keep other sections
+                $newContent = $existing.Substring(0, $colorSectionStart) + ($colorLines -join "`r`n") + "`r`n`r`n" + $existing.Substring($colorSectionEnd).TrimStart()
+            } else {
+                # No colors section — append before first [[ or end
+                $lastSection = $existing.LastIndexOf('[', $existing.LastIndexOf('[') - 1)
+                if ($lastSection -le 0) { $lastSection = $existing.Length }
+                $newContent = $existing.Substring(0, $lastSection).TrimEnd() + "`r`n`r`n" + ($colorLines -join "`r`n") + "`r`n`r`n" + $existing.Substring($lastSection).TrimStart()
+            }
+            Set-Content -Path $configPath -Value $newContent -Encoding UTF8 -Force
+        } else {
+            Set-Content -Path $configPath -Value (($colorLines -join "`r`n") + "`r`n") -Encoding UTF8 -Force
+        }
+        Write-GuiLog "Alacritty theme set to '$ThemeName'." -Type Ok
+        return $true
+    } catch {
+        Write-GuiLog "Failed to set Alacritty color scheme: $($_.Exception.Message)" -Type Warn
+        return $false
+    }
+}
+
+function Install-CompleteConfig {
+    param([string]$ThemeName)
+    Set-WindowsTerminalColorScheme -ThemeName $ThemeName
+    Set-AlacrittyColorScheme -ThemeName $ThemeName
+}
+#endregion
+
+function Install-OmpTheme {
+    param([string]$ThemeName)
+
+    if ([string]::IsNullOrWhiteSpace($ThemeName)) {
+        Write-GuiLog "No theme selected - skipping theme download." -Type Info
+        return $false
+    }
+
+    $omp = Get-Executable -Name 'oh-my-posh'
+    if (-not $omp) {
+        Write-GuiLog "Oh My Posh not found in PATH. Cannot download theme." -Type Warn
+        return $false
+    }
+
+    $themeDir = Join-Path ([Environment]::GetFolderPath('UserProfile')) '.poshthemes'
+    if (-not (Test-Path $themeDir)) {
+        New-Item -ItemType Directory -Force -Path $themeDir | Out-Null
+    }
+
+    $themeFile = Join-Path $themeDir "$ThemeName.omp.json"
+
+    if (Test-Path $themeFile) {
+        try {
+            $raw = Get-Content $themeFile -Raw -ErrorAction SilentlyContinue
+            if ($raw -and $raw.Length -gt 100) {
+                Write-GuiLog "Theme '$ThemeName' already exists." -Type Ok
+                return $true
+            }
+        } catch {
+            # Corrupted file - re-download
+        }
+    }
+
+    $themeUrl = "https://raw.githubusercontent.com/JanDeDobbeleer/oh-my-posh/main/themes/$ThemeName.omp.json"
+    Write-GuiLog "Downloading theme '$ThemeName'..." -Type Step
+
+    try {
+        if ($PSVersionTable.PSVersion.Major -lt 6) {
+            [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+        }
+        Invoke-WebRequest -Uri $themeUrl -OutFile $themeFile -ErrorAction Stop
+
+        $fileItem = Get-Item $themeFile -ErrorAction SilentlyContinue
+        if (-not $fileItem -or $fileItem.Length -lt 100) {
+            Write-GuiLog "Theme download appears corrupted (size: $($fileItem.Length) bytes)" -Type Fail
+            Remove-Item $themeFile -Force -ErrorAction SilentlyContinue
+            return $false
+        }
+
+        Write-GuiLog "Theme '$ThemeName' downloaded successfully." -Type Ok
+        return $true
+    } catch {
+        Write-GuiLog "Failed to download theme '$ThemeName': $($_.Exception.Message)" -Type Warn
+        if (Test-Path $themeFile) {
+            Remove-Item $themeFile -Force -ErrorAction SilentlyContinue
+        }
+        return $false
+    }
+}
+
 function Install-NerdFont {
     Add-Type -AssemblyName System.Drawing -ErrorAction SilentlyContinue
     $existingFamilies = [System.Drawing.FontFamily]::Families | Where-Object { $_.Name -match 'FiraCode Nerd' }
@@ -121,6 +455,16 @@ function Install-NerdFont {
         Write-GuiLog "Failed to install Nerd Font: $($_.Exception.Message)" -Type Warn
         return $false
     }
+}
+
+function Install-Topgrade {
+    $existing = Get-Executable -Name 'topgrade'
+    if ($existing) {
+        $verStr = if ($existing.Version) { " $($existing.Version)" } else { '' }
+        Write-GuiLog "Topgrade already installed: $($existing.Path)$verStr" -Type Ok
+        return $true
+    }
+    return Install-WingetPackage -Id 'topgrade.topgrade' -DisplayName 'Topgrade'
 }
 
 function Install-PSModules {

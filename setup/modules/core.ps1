@@ -134,6 +134,12 @@ function Download-Repo {
     }
 }
 
+function Test-DocumentsRedirected {
+    $actualDocs = [Environment]::GetFolderPath('MyDocuments')
+    $expectedDocs = Join-Path ([Environment]::GetFolderPath('UserProfile')) 'Documents'
+    return $actualDocs -ne $expectedDocs
+}
+
 function Write-InstallSummary {
     param(
         [Parameter(Mandatory = $true)]

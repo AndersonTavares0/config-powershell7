@@ -13,10 +13,13 @@ function Start-ProfileInstall {
         [bool]$InstallFont = $true,
         [bool]$InstallModules = $true,
         [bool]$InstallAlacritty = $false,
-        [bool]$InstallChocolatey = $false,
-        [string]$ChocolateySources = '',
+        [bool]$InstallTopgrade = $false,
         [bool]$InstallScoop = $false,
-        [string]$ScoopBuckets = ''
+        [string]$ScoopBuckets = '',
+        [string]$ThemeName = '',
+        [string]$TerminalThemeName = '',
+        [bool]$TerminalThemeWT = $false,
+        [bool]$TerminalThemeAla = $false
     )
 
     try {
@@ -49,13 +52,27 @@ function Start-ProfileInstall {
         if ($InstallZoxide) { $totalSteps++ }
         if ($InstallFont)   { $totalSteps += 2 }
         if ($InstallModules) { $totalSteps++ }
+        if ($ThemeName -and $InstallOMP) { $totalSteps++ }
         $totalSteps++
         if ($InstallAlacritty)   { $totalSteps++ }
-        if ($InstallChocolatey)  { $totalSteps++ }
-        if ($InstallScoop)       { $totalSteps++ }
+        if ($TerminalThemeName) {
+            if ($TerminalThemeWT) { $totalSteps++ }
+            if ($TerminalThemeAla) { $totalSteps++ }
+        }
+        if ($InstallTopgrade)   { $totalSteps++ }
+        if ($InstallScoop)      { $totalSteps++ }
 
         Write-GuiLog '' -Type Info
         Write-GuiLog 'STARTING INSTALLATION' -Type Step
+        Write-GuiLog '' -Type Info
+
+        $resolvedProfile = Get-ProfilePath
+        $resolvedDocs = [Environment]::GetFolderPath('MyDocuments')
+        Write-GuiLog "Profile path: $resolvedProfile" -Type Info
+        Write-GuiLog "Documents path: $resolvedDocs" -Type Info
+        if (Test-DocumentsRedirected) {
+            Write-GuiLog 'Documents folder is redirected (OneDrive/Group Policy). All paths resolved via .NET APIs.' -Type Warn
+        }
         Write-GuiLog '' -Type Info
 
         $step++
@@ -142,9 +159,18 @@ function Start-ProfileInstall {
             Add-Result -Name 'PowerShell Modules' -Success $false -Detail 'not selected' -Status 'skip'
         }
 
+        if ($ThemeName -and $InstallOMP) {
+            $step++
+            Write-GuiLog "[$step/$totalSteps] Downloading OMP theme '$ThemeName'..." -Type Step
+            $rTheme = Install-OmpTheme -ThemeName $ThemeName
+            Add-Result -Name "OMP Theme ($ThemeName)" -Success $rTheme -Detail $(if ($rTheme) { 'downloaded' } else { 'failed' })
+        } else {
+            Add-Result -Name 'OMP Theme' -Success $false -Detail 'not selected' -Status 'skip'
+        }
+
         $step++
         Write-GuiLog "[$step/$totalSteps] Configuring profile..." -Type Step
-        $rProfile = Install-Profile -RepoPath $RepoPath
+        $rProfile = Install-Profile -RepoPath $RepoPath -ThemeName $ThemeName
         Add-Result -Name 'Profile' -Success $rProfile -Detail $(if ($rProfile) { 'linked' } else { 'failed' })
 
         if ($InstallAlacritty) {
@@ -158,16 +184,36 @@ function Start-ProfileInstall {
             Add-Result -Name 'Alacritty' -Success $false -Detail 'not selected' -Status 'skip'
         }
 
-        if ($InstallChocolatey) {
-            $step++
-            Write-GuiLog "[$step/$totalSteps] Installing Chocolatey..." -Type Step
-            $chocoSources = if ($ChocolateySources) { $ChocolateySources -split ',' | ForEach-Object { $_.Trim() } } else { @() }
-            $rChoco = Install-Chocolatey -Sources $chocoSources
-            $chocoCmd = Get-Command choco -ErrorAction SilentlyContinue
-            $detail = if ($chocoCmd) { $chocoCmd.Source } elseif ($rChoco) { 'installed' } else { 'failed' }
-            Add-Result -Name 'Chocolatey' -Success $rChoco -Detail $detail
+        if ($TerminalThemeName) {
+            if ($TerminalThemeWT) {
+                $step++
+                Write-GuiLog "[$step/$totalSteps] Applying terminal theme '$TerminalThemeName' to Windows Terminal..." -Type Step
+                $rWTTheme = Set-WindowsTerminalColorScheme -ThemeName $TerminalThemeName
+                Add-Result -Name "WT Color Scheme ($TerminalThemeName)" -Success $rWTTheme -Detail $(if ($rWTTheme) { 'configured' } else { 'failed' })
+            } else {
+                Add-Result -Name "WT Color Scheme" -Success $false -Detail 'not selected' -Status 'skip'
+            }
+            if ($TerminalThemeAla) {
+                $step++
+                Write-GuiLog "[$step/$totalSteps] Applying terminal theme '$TerminalThemeName' to Alacritty..." -Type Step
+                $rAlaTheme = Set-AlacrittyColorScheme -ThemeName $TerminalThemeName
+                Add-Result -Name "Alacritty Color Scheme ($TerminalThemeName)" -Success $rAlaTheme -Detail $(if ($rAlaTheme) { 'configured' } else { 'failed' })
+            } else {
+                Add-Result -Name "Alacritty Color Scheme" -Success $false -Detail 'not selected' -Status 'skip'
+            }
         } else {
-            Add-Result -Name 'Chocolatey' -Success $false -Detail 'not selected' -Status 'skip'
+            Add-Result -Name 'Terminal Color Theme' -Success $false -Detail 'not selected' -Status 'skip'
+        }
+
+        if ($InstallTopgrade) {
+            $step++
+            Write-GuiLog "[$step/$totalSteps] Installing Topgrade..." -Type Step
+            $rTopgrade = Install-Topgrade
+            $exe = Get-Executable -Name 'topgrade'
+            $detail = if ($exe -and $exe.Version) { $exe.Version } elseif ($rTopgrade) { 'installed' } else { 'failed' }
+            Add-Result -Name 'Topgrade' -Success $rTopgrade -Detail $detail
+        } else {
+            Add-Result -Name 'Topgrade' -Success $false -Detail 'not selected' -Status 'skip'
         }
 
         if ($InstallScoop) {

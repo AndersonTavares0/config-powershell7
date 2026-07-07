@@ -44,6 +44,33 @@ All notable changes to this project will be documented in this file.
 - Test-ProfileInstallation.ps1: Missing closing `}` falso positivo nas
   linhas 45/59 — adicionado UTF-8 BOM (#71)
 
+### Added
+- WPF GUI installer redesigned with VS Code dark palette (`#1E1E1E`,
+  `#569CD6` accent)
+- OMP theme selection at install time with live prompt bar preview
+  (segment-level foreground/background colors from theme JSON)
+- Terminal color theme selection (Catppuccin, Dracula, Nord, Tokyo Night,
+  One Half Dark) for Windows Terminal and Alacritty
+- Topgrade optional install (universal package updater)
+- ScrollViewer, layout rounding, and keyboard navigation in GUI for
+  accessibility and HiDPI support
+- OMP theme list loaded asynchronously via background job (no UI freeze)
+- Terminal theme section collapses when checkbox unchecked
+
+### Changed
+- GUI installer label clarified: "Install Alacritty terminal emulator"
+- Chocolatey removed from GUI/orchestrator flow (still available via CLI)
+- Removed "Required: PSReadLine + Terminal-Icons" text from GUI
+- `InstallModules` always `$true` from GUI (modules are non-optional)
+- All paths use `[Environment]::GetFolderPath()` — no hardcoded user paths
+- Em dashes (`—`) replaced with hyphens in source to fix PS 5.1 parser issues
+
+### Fixed
+- install.ps1: UTF-8 corruption in error messages with em dashes causing
+  parser failures
+- install.ps1: outdated CLI menus updated for new dependency options
+- setup/modules/gui.ps1: unused variables in OMP preview handler removed
+
 ## [v0.1] — 2026-07
 
 ### Added
