@@ -1173,10 +1173,69 @@ if (Test-Path $script:GitModulePath) {
 }
 else { Write-Host "ERROR: git.ps1 not found" -ForegroundColor Red }
 
+# ── PSREADLINE MODULE MOCKS ───────────────────────────────────
+$script:PSReadLineOptions = @{}
+function script:Set-PSReadLineOption {
+    [CmdletBinding()]
+    param(
+        [string]$EditMode,
+        [switch]$HistoryNoDuplicates,
+        [switch]$HistorySearchCursorMovesToEnd,
+        [string]$BellStyle,
+        [int]$MaximumHistoryCount,
+        [string]$PredictionSource,
+        [string]$PredictionViewStyle
+    )
+    $script:PSReadLineOptions['EditMode'] = $EditMode
+    $script:PSReadLineOptions['PredictionSource'] = $PredictionSource
+    $script:PSReadLineOptions['PredictionViewStyle'] = $PredictionViewStyle
+}
+
+function script:Set-PSReadLineKeyHandler {
+    [CmdletBinding()]
+    param(
+        [string]$Key, [string]$Chord,
+        [string]$Function, [string]$ViMode
+    )
+}
+
+# ── PSREADLINE MODULE TESTS ───────────────────────────────────
+
+function Write-PSReadLineSuite {
+    Write-Host "`n=== PSREADLINE MODULE TESTS ===" -ForegroundColor Cyan
+
+    # PSR-01: psreadline.ps1 parses cleanly
+    $psreadlinePath = Join-Path $PSScriptRoot '..\modules\psreadline\psreadline.ps1'
+    $tokens = $null; $errors = $null
+    [System.Management.Automation.Language.Parser]::ParseFile($psreadlinePath, [ref]$tokens, [ref]$errors) | Out-Null
+    if ($errors.Count -eq 0) {
+        Test-Result -Name 'PSR-01: psreadline.ps1 parses cleanly' -Passed $true
+    } else {
+        $errMsg = ($errors | Select-Object -First 2 | ForEach-Object { "L$($_.Extent.StartLineNumber): $($_.Message)" }) -join '; '
+        Test-Result -Name 'PSR-01: psreadline.ps1 parses cleanly' -Passed $false -Message $errMsg
+    }
+
+    # PSR-02: silent when Config.ThemeName is not set (no crash)
+    try {
+        $oldWarnings = $script:MockWarnings
+        $script:MockWarnings = @()
+        . $psreadlinePath
+        $noWarning = ($script:MockWarnings.Count -eq 0)
+        Assert-True -Condition $noWarning -TestName 'PSR-02: loads without prediction warnings in headless host'
+    }
+    catch {
+        Test-Result -Name 'PSR-02: loads without prediction warnings in headless host' -Passed $false -Message $_.Exception.Message
+    }
+    finally { $script:MockWarnings = $oldWarnings }
+
+    Write-Host "PSReadLine suite complete." -ForegroundColor Cyan
+}
+
 Write-CacheSuite
 Write-SystemSuite
 Write-TextUtilsSuite
 Write-GitSuite
+Write-PSReadLineSuite
 
 # ── CLEANUP ───────────────────────────────────────────────────
 Remove-Item $script:CacheDir -Force -Recurse -ErrorAction SilentlyContinue

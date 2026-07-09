@@ -11,13 +11,14 @@ try {
         -ErrorAction Stop
 
     if ($script:Config.PSMajor -ge 7) {
-        try {
-            $isInteractive = -not [Console]::IsOutputRedirected
-        } catch {
-            $isInteractive = $false
-        }
+        $isInteractive = $true
+        try { $isInteractive = -not [Console]::IsOutputRedirected } catch { $isInteractive = $false }
         if ($isInteractive) {
-            try { Set-PSReadLineOption -PredictionSource History -PredictionViewStyle ListView -ErrorAction Stop } catch { Write-Warning "PSReadLine: predição de histórico indisponível — $($_.Exception.Message)" }
+            $canPredict = $false
+            try { $canPredict = $Host.UI.SupportsVirtualTerminal } catch { $canPredict = $false }
+            if ($canPredict) {
+                Set-PSReadLineOption -PredictionSource History -PredictionViewStyle ListView -ErrorAction SilentlyContinue
+            }
         }
     }
 
