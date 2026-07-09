@@ -720,8 +720,13 @@ function Install-Chocolatey {
         if ($PSVersionTable.PSVersion.Major -lt 6) {
             [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
         }
-        $chocoInstall = Invoke-WebRequest -Uri 'https://community.chocolatey.org/install.ps1' -UseBasicParsing -ErrorAction Stop
-        Invoke-Expression $chocoInstall.Content
+        $chocolateyInstallUrl = 'https://community.chocolatey.org/install.ps1'
+        $chocolateyInstallPath = Join-Path $env:TEMP "config-pwsh7-install-chocolatey-$([guid]::NewGuid().ToString('N')).ps1"
+        Write-GuiLog "Remote installer notice: Chocolatey setup executes the official script from $chocolateyInstallUrl." -Type Warn
+        Write-GuiLog "Downloading Chocolatey installer to: $chocolateyInstallPath" -Type Info
+        Invoke-WebRequest -Uri $chocolateyInstallUrl -OutFile $chocolateyInstallPath -UseBasicParsing -ErrorAction Stop
+        Unblock-File -Path $chocolateyInstallPath -ErrorAction SilentlyContinue
+        & $chocolateyInstallPath
 
         $chocoBin = 'C:\ProgramData\chocolatey\bin'
         if (Test-Path $chocoBin) {
@@ -771,8 +776,13 @@ function Install-Scoop {
             if ($PSVersionTable.PSVersion.Major -lt 6) {
                 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
             }
-            $scoopInstall = Invoke-RestMethod -Uri 'https://get.scoop.sh' -ErrorAction Stop
-            Invoke-Expression $scoopInstall
+            $scoopInstallUrl = 'https://get.scoop.sh'
+            $scoopInstallPath = Join-Path $env:TEMP "config-pwsh7-install-scoop-$([guid]::NewGuid().ToString('N')).ps1"
+            Write-GuiLog "Remote installer notice: Scoop setup executes the official script from $scoopInstallUrl." -Type Warn
+            Write-GuiLog "Downloading Scoop installer to: $scoopInstallPath" -Type Info
+            Invoke-WebRequest -Uri $scoopInstallUrl -OutFile $scoopInstallPath -UseBasicParsing -ErrorAction Stop
+            Unblock-File -Path $scoopInstallPath -ErrorAction SilentlyContinue
+            & $scoopInstallPath
 
             $scoopBin = Join-Path $HOME 'scoop\bin'
             if (Test-Path $scoopBin) {
