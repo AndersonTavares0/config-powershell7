@@ -71,9 +71,7 @@ function Install-Zoxide {
 function Get-OmpThemeList {
     $apiUrl = 'https://api.github.com/repos/JanDeDobbeleer/oh-my-posh/contents/themes'
     try {
-        if ($PSVersionTable.PSVersion.Major -lt 6) {
-            [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
-        }
+        Enable-Tls12
         $items = Invoke-RestMethod -Uri $apiUrl -ErrorAction Stop
         $themes = $items | Where-Object { $_.name -like '*.omp.json' } |
             ForEach-Object { $_.name -replace '\.omp\.json$', '' } |
@@ -458,9 +456,7 @@ function Install-PSModules {
     if (-not $nuGet) {
         Write-GuiLog "Installing NuGet package provider..." -Type Step
         try {
-            if ($PSVersionTable.PSVersion.Major -lt 6) {
-                [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
-            }
+            Enable-Tls12
             Install-PackageProvider -Name NuGet -Force -Scope CurrentUser -ErrorAction Stop
             Write-GuiLog "NuGet installed." -Type Ok
         } catch {
@@ -703,9 +699,7 @@ function Install-Chocolatey {
     Write-GuiLog "Installing Chocolatey..." -Type Step
     try {
         Set-ExecutionPolicy Bypass -Scope Process -Force -ErrorAction Stop
-        if ($PSVersionTable.PSVersion.Major -lt 6) {
-            [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
-        }
+        Enable-Tls12
         $chocoInstall = Invoke-WebRequest -Uri 'https://community.chocolatey.org/install.ps1' -UseBasicParsing -ErrorAction Stop
         Invoke-Expression $chocoInstall.Content
 
@@ -754,9 +748,7 @@ function Install-Scoop {
         Write-GuiLog "Installing Scoop..." -Type Step
         try {
             Set-ExecutionPolicy RemoteSigned -Scope CurrentUser -Force -ErrorAction Stop
-            if ($PSVersionTable.PSVersion.Major -lt 6) {
-                [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
-            }
+            Enable-Tls12
             $scoopInstall = Invoke-RestMethod -Uri 'https://get.scoop.sh' -ErrorAction Stop
             Invoke-Expression $scoopInstall
 

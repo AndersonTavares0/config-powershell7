@@ -52,6 +52,13 @@ function Get-WingetPath {
     return $null
 }
 
+function Enable-Tls12 {
+    if ($PSVersionTable.PSVersion.Major -lt 6) {
+        $current = [System.Net.ServicePointManager]::SecurityProtocol
+        [System.Net.ServicePointManager]::SecurityProtocol = $current -bor [System.Net.SecurityProtocolType]::Tls12
+    }
+}
+
 function Get-FileFromUrl {
     param(
         [Parameter(Mandatory = $true)]
@@ -63,9 +70,7 @@ function Get-FileFromUrl {
     )
     Write-GuiLog "Downloading from $Url..." -Type Step
     try {
-        if ($PSVersionTable.PSVersion.Major -lt 6) {
-            [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
-        }
+        Enable-Tls12
         Invoke-WebRequest -Uri $Url -OutFile $OutFile -ErrorAction Stop
 
         $fileItem = Get-Item $OutFile -ErrorAction SilentlyContinue
