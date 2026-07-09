@@ -8,8 +8,20 @@ Write-Host ("=" * 60)
 $allRuns = [System.Collections.Generic.List[double]]::new()
 $allDetails = $null
 
+$cachePath = if ($IsWindows) {
+    Join-Path $HOME '.cache_pwsh_plugins.ps1'
+} else {
+    $xdgCache = if ($env:XDG_CACHE_HOME) { $env:XDG_CACHE_HOME } else { Join-Path $HOME '.cache' }
+    Join-Path (Join-Path $xdgCache 'pwsh') 'plugins_cache.ps1'
+}
+$coldRuns = [System.Collections.Generic.List[double]]::new()
+$warmRuns = [System.Collections.Generic.List[double]]::new()
+
 foreach ($run in 1..$Runs) {
-    Write-Host "  Run $run/$Runs... " -NoNewline
+    $cacheExistedBefore = Test-Path $cachePath
+    $label = if ($cacheExistedBefore) { '[warm]' } else { '[cold]' }
+
+    Write-Host "  Run $run/$Runs $label... " -NoNewline
 
     $scriptBlock = {
         $sw = [Diagnostics.Stopwatch]::StartNew()
@@ -55,6 +67,8 @@ foreach ($run in 1..$Runs) {
     $total = [double]$parts[7]
     $allRuns.Add($total)
 
+    if ($cacheExistedBefore) { $warmRuns.Add($total) } else { $coldRuns.Add($total) }
+
     $color = if ($total -lt 300) { 'Green' } elseif ($total -lt 600) { 'Yellow' } else { 'Red' }
     Write-Host "$($total)ms" -ForegroundColor $color
 
@@ -84,4 +98,18 @@ if ($allRuns.Count -gt 0) {
         Write-Host ("  {0,-15} {1,8} ms" -f $_.Name, [math]::Round($_.Value, 1)) -ForegroundColor $c
     }
     Write-Host ("`n  Media: {0}ms  Min: {1}ms  Max: {2}ms" -f $avg, $min, $max) -ForegroundColor $ca
+
+    if ($coldRuns.Count -gt 0) {
+        $coldAvg = [math]::Round(($coldRuns | Measure-Object -Average).Average, 1)
+        $coldMin = [math]::Round(($coldRuns | Measure-Object -Minimum).Minimum, 1)
+        $coldMax = [math]::Round(($coldRuns | Measure-Object -Maximum).Maximum, 1)
+        Write-Host "`n  Cold runs: $($coldRuns.Count)  Media: ${coldAvg}ms  Min: ${coldMin}ms  Max: ${coldMax}ms" -ForegroundColor Yellow
+    }
+    if ($warmRuns.Count -gt 0) {
+        $warmAvg = [math]::Round(($warmRuns | Measure-Object -Average).Average, 1)
+        $warmMin = [math]::Round(($warmRuns | Measure-Object -Minimum).Minimum, 1)
+        $warmMax = [math]::Round(($warmRuns | Measure-Object -Maximum).Maximum, 1)
+        $warmColor = if ($warmAvg -lt 300) { 'Green' } elseif ($warmAvg -lt 600) { 'Yellow' } else { 'Red' }
+        Write-Host "  Warm runs: $($warmRuns.Count)  Media: ${warmAvg}ms  Min: ${warmMin}ms  Max: ${warmMax}ms" -ForegroundColor $warmColor
+    }
 }
