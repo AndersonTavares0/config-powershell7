@@ -80,12 +80,12 @@ Custom framework (not Pester) -- functions: `Test-Result`, `Test-Skip`,
 `Assert-True`, `Assert-Equal`, `Assert-NotNull`, `Assert-False`.
 
 ```powershell
-.\tests\Unit.Tests.ps1                              # 100 unit tests (fastest feedback)
+.\tests\Unit.Tests.ps1                              # unit tests (fastest feedback)
 .\tests\POSH_THEME.Tests.ps1                        # 5 POSH_THEME env-var tests
-.\tests\Test-ProfileInstallation.ps1 -Detailed      # 64 post-install health checks
+.\tests\Test-ProfileInstallation.ps1 -Detailed      # post-install health checks
 .\tests\Microsoft.PowerShell_profile.Tests.ps1 -Verbose  # Behavioral integration
-.\tests\Setup.Tests.ps1 -Verbose                     # 32 TDD tests for setup modules
-.\tests\benchmark.ps1 -Runs 10                       # Profile boot timing (fresh pwsh)
+.\tests\Setup.Tests.ps1 -Verbose                     # setup module tests
+.\tests\benchmark.ps1 -Runs 10                       # profile boot timing; compare cold/warm cache
 ```
 
 CI (`.github/workflows/test.yml`) roda em push/PR na `main`: setup profile ->
