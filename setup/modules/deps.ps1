@@ -71,9 +71,7 @@ function Install-Zoxide {
 function Get-OmpThemeList {
     $apiUrl = 'https://api.github.com/repos/JanDeDobbeleer/oh-my-posh/contents/themes'
     try {
-        if ($PSVersionTable.PSVersion.Major -lt 6) {
-            [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
-        }
+        Enable-Tls12
         $items = Invoke-RestMethod -Uri $apiUrl -ErrorAction Stop
         $themes = $items | Where-Object { $_.name -like '*.omp.json' } |
             ForEach-Object { $_.name -replace '\.omp\.json$', '' } |
@@ -86,6 +84,9 @@ function Get-OmpThemeList {
 }
 
 #region Terminal theme definitions
+# Canonical terminal theme data for the primary setup installer.
+# Legacy install.ps1 keeps a standalone copy to avoid coupling the legacy path
+# to setup module load order.
 $script:TerminalThemeData = $null
 function Initialize-TerminalThemes {
     if ($script:TerminalThemeData) { return }
@@ -378,28 +379,12 @@ function Install-OmpTheme {
     $themeUrl = "https://raw.githubusercontent.com/JanDeDobbeleer/oh-my-posh/main/themes/$ThemeName.omp.json"
     Write-GuiLog "Downloading theme '$ThemeName'..." -Type Step
 
-    try {
-        if ($PSVersionTable.PSVersion.Major -lt 6) {
-            [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
-        }
-        Invoke-WebRequest -Uri $themeUrl -OutFile $themeFile -ErrorAction Stop
-
-        $fileItem = Get-Item $themeFile -ErrorAction SilentlyContinue
-        if (-not $fileItem -or $fileItem.Length -lt 100) {
-            Write-GuiLog "Theme download appears corrupted (size: $($fileItem.Length) bytes)" -Type Fail
-            Remove-Item $themeFile -Force -ErrorAction SilentlyContinue
-            return $false
-        }
-
+    if (Get-FileFromUrl -Url $themeUrl -OutFile $themeFile -MinBytes 100 -Description "theme '$ThemeName'") {
         Write-GuiLog "Theme '$ThemeName' downloaded successfully." -Type Ok
         return $true
-    } catch {
-        Write-GuiLog "Failed to download theme '$ThemeName': $($_.Exception.Message)" -Type Warn
-        if (Test-Path $themeFile) {
-            Remove-Item $themeFile -Force -ErrorAction SilentlyContinue
-        }
-        return $false
     }
+
+    return $false
 }
 
 function Install-NerdFont {
@@ -416,10 +401,9 @@ function Install-NerdFont {
         $fontZip = Join-Path $env:TEMP 'FiraCode-NerdFont.zip'
         $fontDir = Join-Path $env:TEMP 'FiraCode-NerdFont'
 
-        if ($PSVersionTable.PSVersion.Major -lt 6) {
-            [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+        if (-not (Get-FileFromUrl -Url $fontZipUrl -OutFile $fontZip -MinBytes 100 -Description 'FiraCode Nerd Font archive')) {
+            return $false
         }
-        Invoke-WebRequest -Uri $fontZipUrl -OutFile $fontZip -ErrorAction Stop
 
         if (Test-Path $fontDir) { Remove-Item $fontDir -Recurse -Force -ErrorAction SilentlyContinue }
         New-Item -ItemType Directory -Path $fontDir -Force | Out-Null
@@ -472,9 +456,7 @@ function Install-PSModules {
     if (-not $nuGet) {
         Write-GuiLog "Installing NuGet package provider..." -Type Step
         try {
-            if ($PSVersionTable.PSVersion.Major -lt 6) {
-                [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
-            }
+            Enable-Tls12
             Install-PackageProvider -Name NuGet -Force -Scope CurrentUser -ErrorAction Stop
             Write-GuiLog "NuGet installed." -Type Ok
         } catch {
@@ -717,9 +699,7 @@ function Install-Chocolatey {
     Write-GuiLog "Installing Chocolatey..." -Type Step
     try {
         Set-ExecutionPolicy Bypass -Scope Process -Force -ErrorAction Stop
-        if ($PSVersionTable.PSVersion.Major -lt 6) {
-            [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
-        }
+        Enable-Tls12
         $chocoInstall = Invoke-WebRequest -Uri 'https://community.chocolatey.org/install.ps1' -UseBasicParsing -ErrorAction Stop
         Invoke-Expression $chocoInstall.Content
 
@@ -768,9 +748,7 @@ function Install-Scoop {
         Write-GuiLog "Installing Scoop..." -Type Step
         try {
             Set-ExecutionPolicy RemoteSigned -Scope CurrentUser -Force -ErrorAction Stop
-            if ($PSVersionTable.PSVersion.Major -lt 6) {
-                [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
-            }
+            Enable-Tls12
             $scoopInstall = Invoke-RestMethod -Uri 'https://get.scoop.sh' -ErrorAction Stop
             Invoke-Expression $scoopInstall
 

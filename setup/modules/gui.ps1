@@ -396,9 +396,7 @@ function Show-Gui {
         $promptPanel.Children.Clear()
 
         try {
-            if ($PSVersionTable.PSVersion.Major -lt 6) {
-                [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
-            }
+            Enable-Tls12
             $url = "https://raw.githubusercontent.com/JanDeDobbeleer/oh-my-posh/main/themes/$theme.omp.json"
             $json = Invoke-RestMethod -Uri $url -ErrorAction Stop -UseBasicParsing
 
@@ -502,9 +500,7 @@ function Show-Gui {
     function Start-OmpThemeLoad {
         $script:ThemeJob = Start-Job -ScriptBlock {
             try {
-                if ($PSVersionTable.PSVersion.Major -lt 6) {
-                    [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
-                }
+                Enable-Tls12
                 $apiUrl = 'https://api.github.com/repos/JanDeDobbeleer/oh-my-posh/contents/themes'
                 $items = Invoke-RestMethod -Uri $apiUrl -ErrorAction Stop
                 @($items | Where-Object { $_.name -like '*.omp.json' } |
