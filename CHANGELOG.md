@@ -7,6 +7,50 @@ All notable changes to this project will be documented in this file.
 ### Added
 - (nothing yet)
 
+## [v0.4] — 2026-07-09
+
+### Added
+- Remote installer now shows summary and asks for explicit consent before
+  downloading (`irm | iex` flow)
+- Download trust model documented in `SECURITY.md` and `docs/installation.md`
+- Shared download helper (`Invoke-WebRequest` extraction) extracted from
+  duplicate code paths
+- TLS 1.2 setup helper extracted for setup modules (#111)
+- Unit tests for high-use alias behavior (`gcmt`, `gco`, `gpush`, etc.)
+- CACHE-17: OMP label in cache uses `Config.ThemeName`
+- CACHE-18: OMP label falls back to `OMP:default` when theme file missing
+
+### Changed
+- PSReadLine prediction guarded behind `[Console]::IsOutputRedirected` +
+  `$Host.UI.SupportsVirtualTerminal` check — no warnings in headless/redirected
+  hosts (#96, #109)
+- Benchmark reports cold/warm cache runs separately (#97)
+- Benchmark output uses ASCII borders instead of Unicode (#98)
+- `Install-AlacrittyConfig` wrapped in try/catch with explicit `$true`/`$false`
+  return (#79)
+- `Install-Alacritty` propagates `Install-AlacrittyConfig` return value instead
+  of always returning `$true` (#79)
+- Remote installer hardened: download extracted to temp with cleanup, binary
+  content detection removed
+
+### Fixed
+- `Read-Host ''` crash when user presses Enter without input (#77)
+- Uninstall crash under `Set-StrictMode -Version Latest` (#78)
+- `Update-PluginCache` label now uses Config.ThemeName as dynamic source
+  instead of hardcoded value (#95)
+- `Test-PostInstallSummary` now correctly reflects summary content (#94)
+
+### Tests
+- `tests/Setup.Tests.ps1`: +39 tests (80 → ~102)
+  - Alacritty installer (5 ACs): success, Set-Content failure, not-found, config failure
+  - Security download helper tests
+  - TLS 1.2 helper extraction tests
+- `tests/Unit.Tests.ps1`: +12 tests (105 → 117)
+  - CACHE-17/18: OMP label tests
+  - PSR-01/02: PSReadLine parse + silent headless load
+  - Alias behavior tests
+- `tests/benchmark.ps1`: cold/warm split, ASCII borders, improved reporting
+
 ## [v0.3] — 2026-07-07
 
 ### Added
@@ -115,7 +159,8 @@ All notable changes to this project will be documented in this file.
 - 3 test suites + boot benchmark (custom framework)
 - GitHub Actions CI pipeline
 
-[Unreleased]: https://github.com/AndersonTavares0/config-powershell7/compare/v0.3...HEAD
+[Unreleased]: https://github.com/AndersonTavares0/config-powershell7/compare/v0.4...HEAD
+[v0.4]: https://github.com/AndersonTavares0/config-powershell7/releases/tag/v0.4
 [v0.3]: https://github.com/AndersonTavares0/config-powershell7/releases/tag/v0.3
 [v0.2]: https://github.com/AndersonTavares0/config-powershell7/releases/tag/v0.2
 [v0.1]: https://github.com/AndersonTavares0/config-powershell7/releases/tag/v0.1

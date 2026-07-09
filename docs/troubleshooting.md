@@ -304,6 +304,6 @@ false-positives under `Set-StrictMode -Version Latest`.
 
 ---
 
-*Revision: 07/2026 (v3 -- GUI installer overhaul, theme selection, terminal
-themes, POSH_THEME env var, and custom test suites) -- Compatible with PS 5.1+
-/ PS Core 7+ / Windows 10+ / Linux / macOS*
+*Revision: 07/2026 (v0.4 -- Security hardening, Alacritty return bool,
+PSReadLine prediction guard, OMP label tests, alias tests) -- Compatible with
+PS 5.1+ / PS Core 7+ / Windows 10+ / Linux / macOS*
