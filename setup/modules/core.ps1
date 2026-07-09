@@ -163,9 +163,9 @@ function Write-InstallSummary {
         if ($detailLen -gt $col3Width) { $col3Width = $detailLen }
     }
 
-    $border = '┌' + ('─' * ($col1Width + 2)) + '┬' + ('─' * ($col2Width + 2)) + '┬' + ('─' * ($col3Width + 2)) + '┐'
-    $sep    = '├' + ('─' * ($col1Width + 2)) + '┼' + ('─' * ($col2Width + 2)) + '┼' + ('─' * ($col3Width + 2)) + '┤'
-    $footer = '└' + ('─' * ($col1Width + 2)) + '┴' + ('─' * ($col2Width + 2)) + '┴' + ('─' * ($col3Width + 2)) + '┘'
+    $border = '+' + ('-' * ($col1Width + 2)) + '+' + ('-' * ($col2Width + 2)) + '+' + ('-' * ($col3Width + 2)) + '+'
+    $sep    = '+' + ('-' * ($col1Width + 2)) + '+' + ('-' * ($col2Width + 2)) + '+' + ('-' * ($col3Width + 2)) + '+'
+    $footer = '+' + ('-' * ($col1Width + 2)) + '+' + ('-' * ($col2Width + 2)) + '+' + ('-' * ($col3Width + 2)) + '+'
 
     $rowFmt = '| {0,-' + $col1Width + '} | {1,' + $col2Width + '} | {2,-' + $col3Width + '} |'
 
