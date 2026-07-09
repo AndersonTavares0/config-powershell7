@@ -577,20 +577,21 @@ function Set-WindowsTerminalFont {
 }
 
 function Install-AlacrittyConfig {
-    $configDir = Join-Path $env:APPDATA 'alacritty'
-    if (-not (Test-Path $configDir)) {
-        New-Item -ItemType Directory -Path $configDir -Force | Out-Null
-    }
+    try {
+        $configDir = Join-Path $env:APPDATA 'alacritty'
+        if (-not (Test-Path $configDir)) {
+            New-Item -ItemType Directory -Path $configDir -Force | Out-Null
+        }
 
-    $configPath = Join-Path $configDir 'alacritty.toml'
+        $configPath = Join-Path $configDir 'alacritty.toml'
 
-    if (Test-Path $configPath) {
-        $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-        Copy-Item $configPath "$configPath.bak-$timestamp" -Force
-        Write-GuiLog "Existing Alacritty config backed up." -Type Info
-    }
+        if (Test-Path $configPath) {
+            $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+            Copy-Item $configPath "$configPath.bak-$timestamp" -Force
+            Write-GuiLog "Existing Alacritty config backed up." -Type Info
+        }
 
-    Set-Content -Path $configPath -Value @'
+        Set-Content -Path $configPath -Value @'
 [window]
 decorations = "Full"
 opacity = 0.95
@@ -657,8 +658,12 @@ program = "pwsh"
 args = ["-NoLogo"]
 '@ -Encoding UTF8 -Force
 
-    Write-GuiLog "Alacritty configured at: $configPath" -Type Ok
-    $true
+        Write-GuiLog "Alacritty configured at: $configPath" -Type Ok
+        return $true
+    } catch {
+        Write-GuiLog "Failed to configure Alacritty: $($_.Exception.Message)" -Type Warn
+        return $false
+    }
 }
 
 function Install-Alacritty {
@@ -672,8 +677,8 @@ function Install-Alacritty {
 
     if (Get-Command alacritty -ErrorAction SilentlyContinue) {
         Write-GuiLog "Configuring Alacritty..." -Type Step
-        Install-AlacrittyConfig
-        return $true
+        $configResult = Install-AlacrittyConfig
+        return $configResult
     }
     Write-GuiLog "Alacritty not found after install attempt." -Type Warn
     return $false

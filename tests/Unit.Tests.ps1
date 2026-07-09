@@ -127,6 +127,7 @@ $script:Config = [PSCustomObject]@{
     IsWindows   = $true
     IsLinux     = $false
     IsMacOS     = $false
+    ThemeName   = 'atomic'
 }
 
 $script:Config | Add-Member -NotePropertyName 'PSMajor' -NotePropertyValue $PSVersionTable.PSVersion.Major -Force
@@ -471,6 +472,71 @@ function Write-CacheSuite {
         $script:Config.ThemePath = $oldThemePath16
         Remove-MockFile $isolatedCache16
         Remove-MockFile $themeFile16
+    }
+
+    # ============================================================
+    # CACHE-17: Update-PluginCache label uses ThemeName from Config
+    # ============================================================
+    $oldCachePath17 = $script:Config.CachePath
+    $isolatedCache17 = Join-Path $script:CacheDir 'cache17.ps1'
+    $script:Config.CachePath = $isolatedCache17
+    $oldThemePath17 = $script:Config.ThemePath
+    $oldThemeName17 = $script:Config.ThemeName
+    $themeFile17 = Join-Path $script:CacheDir 'theme17.json'
+    $script:Config.ThemePath = $themeFile17
+    $script:Config.ThemeName = 'jandedobbeleer'
+    try {
+        Remove-MockFile $isolatedCache17
+        New-MockFile -Path $themeFile17 -Content '{}'
+        $script:MockCommandResults['oh-my-posh'] = [PSCustomObject]@{ Source = 'oh-my-posh.exe' }
+        Remove-Item Function:\oh-my-posh -Force -ErrorAction SilentlyContinue
+        function script:oh-my-posh { param() '' }
+        script:Update-PluginCache -zcmd $null -ocmd $script:MockCommandResults['oh-my-posh']
+        Assert-True -Condition (Test-Path $isolatedCache17) -TestName 'CACHE-17: cache file created'
+        if (Test-Path $isolatedCache17) {
+            $content17 = Get-Content $isolatedCache17 -Raw -ErrorAction SilentlyContinue
+            Assert-True -Condition ($content17 -match "StartupModules\.Add\('OMP:jandedobbeleer'\)") -TestName 'CACHE-17: label uses ThemeName from Config'
+        }
+    }
+    catch {
+        Test-Result -Name 'CACHE-17' -Passed $false -Message $_.Exception.Message
+    }
+    finally {
+        $script:Config.CachePath = $oldCachePath17
+        $script:Config.ThemePath = $oldThemePath17
+        $script:Config.ThemeName = $oldThemeName17
+        Remove-MockFile $isolatedCache17
+        Remove-MockFile $themeFile17
+    }
+
+    # ============================================================
+    # CACHE-18: Update-PluginCache label falls back to OMP:default when theme missing
+    # ============================================================
+    $oldCachePath18 = $script:Config.CachePath
+    $isolatedCache18 = Join-Path $script:CacheDir 'cache18.ps1'
+    $script:Config.CachePath = $isolatedCache18
+    $oldThemePath18 = $script:Config.ThemePath
+    $script:Config.ThemePath = Join-Path $script:CacheDir 'nonexistent_theme.json'
+    try {
+        Remove-MockFile $isolatedCache18
+        Remove-MockFile $script:Config.ThemePath
+        $script:MockCommandResults['oh-my-posh'] = [PSCustomObject]@{ Source = 'oh-my-posh.exe' }
+        Remove-Item Function:\oh-my-posh -Force -ErrorAction SilentlyContinue
+        function script:oh-my-posh { param() '' }
+        script:Update-PluginCache -zcmd $null -ocmd $script:MockCommandResults['oh-my-posh']
+        Assert-True -Condition (Test-Path $isolatedCache18) -TestName 'CACHE-18: cache file created'
+        if (Test-Path $isolatedCache18) {
+            $content18 = Get-Content $isolatedCache18 -Raw -ErrorAction SilentlyContinue
+            Assert-True -Condition ($content18 -match "StartupModules\.Add\('OMP:default'\)") -TestName 'CACHE-18: label is OMP:default when theme missing'
+        }
+    }
+    catch {
+        Test-Result -Name 'CACHE-18' -Passed $false -Message $_.Exception.Message
+    }
+    finally {
+        $script:Config.CachePath = $oldCachePath18
+        $script:Config.ThemePath = $oldThemePath18
+        Remove-MockFile $isolatedCache18
     }
 
     Write-Host "Cache suite complete." -ForegroundColor Cyan
@@ -1107,10 +1173,69 @@ if (Test-Path $script:GitModulePath) {
 }
 else { Write-Host "ERROR: git.ps1 not found" -ForegroundColor Red }
 
+# ── PSREADLINE MODULE MOCKS ───────────────────────────────────
+$script:PSReadLineOptions = @{}
+function script:Set-PSReadLineOption {
+    [CmdletBinding()]
+    param(
+        [string]$EditMode,
+        [switch]$HistoryNoDuplicates,
+        [switch]$HistorySearchCursorMovesToEnd,
+        [string]$BellStyle,
+        [int]$MaximumHistoryCount,
+        [string]$PredictionSource,
+        [string]$PredictionViewStyle
+    )
+    $script:PSReadLineOptions['EditMode'] = $EditMode
+    $script:PSReadLineOptions['PredictionSource'] = $PredictionSource
+    $script:PSReadLineOptions['PredictionViewStyle'] = $PredictionViewStyle
+}
+
+function script:Set-PSReadLineKeyHandler {
+    [CmdletBinding()]
+    param(
+        [string]$Key, [string]$Chord,
+        [string]$Function, [string]$ViMode
+    )
+}
+
+# ── PSREADLINE MODULE TESTS ───────────────────────────────────
+
+function Write-PSReadLineSuite {
+    Write-Host "`n=== PSREADLINE MODULE TESTS ===" -ForegroundColor Cyan
+
+    # PSR-01: psreadline.ps1 parses cleanly
+    $psreadlinePath = Join-Path $PSScriptRoot '..\modules\psreadline\psreadline.ps1'
+    $tokens = $null; $errors = $null
+    [System.Management.Automation.Language.Parser]::ParseFile($psreadlinePath, [ref]$tokens, [ref]$errors) | Out-Null
+    if ($errors.Count -eq 0) {
+        Test-Result -Name 'PSR-01: psreadline.ps1 parses cleanly' -Passed $true
+    } else {
+        $errMsg = ($errors | Select-Object -First 2 | ForEach-Object { "L$($_.Extent.StartLineNumber): $($_.Message)" }) -join '; '
+        Test-Result -Name 'PSR-01: psreadline.ps1 parses cleanly' -Passed $false -Message $errMsg
+    }
+
+    # PSR-02: silent when Config.ThemeName is not set (no crash)
+    try {
+        $oldWarnings = $script:MockWarnings
+        $script:MockWarnings = @()
+        . $psreadlinePath
+        $noWarning = ($script:MockWarnings.Count -eq 0)
+        Assert-True -Condition $noWarning -TestName 'PSR-02: loads without prediction warnings in headless host'
+    }
+    catch {
+        Test-Result -Name 'PSR-02: loads without prediction warnings in headless host' -Passed $false -Message $_.Exception.Message
+    }
+    finally { $script:MockWarnings = $oldWarnings }
+
+    Write-Host "PSReadLine suite complete." -ForegroundColor Cyan
+}
+
 Write-CacheSuite
 Write-SystemSuite
 Write-TextUtilsSuite
 Write-GitSuite
+Write-PSReadLineSuite
 
 # ── CLEANUP ───────────────────────────────────────────────────
 Remove-Item $script:CacheDir -Force -Recurse -ErrorAction SilentlyContinue

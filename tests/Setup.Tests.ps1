@@ -748,6 +748,67 @@ Assert-True -Condition ($depsContent -match '& \$chocolateyInstallPath') -TestNa
 Assert-True -Condition ($depsContent -match '& \$scoopInstallPath') -TestName "Scoop installer executes from temp file"
 
 # ══════════════════════════════════════════════════════════════
+# TEST SUITE: DEPS — Install-AlacrittyConfig and Install-Alacritty
+# ══════════════════════════════════════════════════════════════
+Write-Host "`nTesting Alacritty installer..." -ForegroundColor Yellow
+# Guard against scope corruption from prior test suites
+$script:TestResults = [System.Collections.Generic.List[object]]::new()
+
+$origGetExecutable = ${function:Get-Executable}
+$origGetCommand = ${function:Get-Command}
+$origInstallAlacrittyConfig = ${function:Install-AlacrittyConfig}
+
+try {
+    # Test 1: Install-AlacrittyConfig returns $true when config succeeds
+    ${function:Get-Content} = { param([string]$Path, [string]$Raw, $Encoding, $ErrorAction) return '{}' }
+    ${function:Set-Content} = { param([string]$Path, [string]$Value, [string]$Encoding) }
+    ${function:Copy-Item} = { param([string]$Path, [string]$Destination) }
+    ${function:Test-Path} = { param([string]$Path, [switch]$PathType) return $false }
+    ${function:New-Item} = { param([string]$Path, [string]$ItemType) $null }
+    ${function:Write-GuiLog} = { param([string]$Message, [string]$Type) }
+
+    $configResult = Install-AlacrittyConfig
+    Assert-True -Condition $configResult -TestName "Install-AlacrittyConfig returns true on success"
+
+    # Test 2: Install-AlacrittyConfig returns $false when Set-Content fails
+    ${function:Set-Content} = { throw 'access denied' }
+    $configResult2 = Install-AlacrittyConfig
+    Assert-False -Condition $configResult2 -TestName "Install-AlacrittyConfig returns false when Set-Content throws"
+
+    # Test 3: Install-Alacritty returns $true when alacritty found and config succeeds
+    ${function:Set-Content} = { param([string]$Path, [string]$Value, [string]$Encoding) }
+    ${function:Get-Executable} = { return [PSCustomObject]@{ Name = 'alacritty'; Path = 'C:\dummy\alacritty.exe'; Found = $true; Version = '0.13.0' } }
+    ${function:Get-Command} = { param([string]$Name, $ErrorAction) return [PSCustomObject]@{ } }
+
+    # Mock Install-AlacrittyConfig to return true for this test
+    ${function:Install-AlacrittyConfig} = { return $true }
+    $result3 = Install-Alacritty
+    Assert-True -Condition $result3 -TestName "Install-Alacritty returns true when alacritty found and config succeeds"
+
+    # Test 4: Install-Alacritty returns $false when alacritty not found and config not called
+    ${function:Get-Command} = { param([string]$Name, $ErrorAction) return $null }
+    $result4 = Install-Alacritty
+    Assert-False -Condition $result4 -TestName "Install-Alacritty returns false when alacritty not found"
+
+    # Test 5: Install-Alacritty returns $false when config fails
+    ${function:Get-Command} = { param([string]$Name, $ErrorAction) return [PSCustomObject]@{ } }
+    ${function:Install-AlacrittyConfig} = { return $false }
+    $result5 = Install-Alacritty
+    Assert-False -Condition $result5 -TestName "Install-Alacritty returns false when config fails"
+
+} finally {
+    ${function:Get-Executable} = $origGetExecutable
+    ${function:Get-Command} = $origGetCommand
+    ${function:Install-AlacrittyConfig} = $origInstallAlacrittyConfig
+    Remove-Item Function:\Test-Path -Force -ErrorAction SilentlyContinue
+    Remove-Item Function:\New-Item -Force -ErrorAction SilentlyContinue
+    Remove-Item Function:\Set-Content -Force -ErrorAction SilentlyContinue
+    Remove-Item Function:\Get-Content -Force -ErrorAction SilentlyContinue
+    Remove-Item Function:\Copy-Item -Force -ErrorAction SilentlyContinue
+    Remove-Item Function:\Write-GuiLog -Force -ErrorAction SilentlyContinue
+}
+
+# ══════════════════════════════════════════════════════════════
 # TEST SUITE: SYNTAX — All setup modules parse cleanly
 # ══════════════════════════════════════════════════════════════
 Write-Host "`nTesting Setup Module Syntax..." -ForegroundColor Yellow
