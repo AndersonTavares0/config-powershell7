@@ -24,14 +24,15 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 # ── SHARED LIBS ─────────────────────────────────────────────
-# Unblock downloaded files first (covers ZIP download scenario)
+. (Join-Path $PSScriptRoot 'lib/platform.ps1')
+. (Join-Path $PSScriptRoot 'lib/ux-helpers.ps1')
+. (Join-Path $PSScriptRoot 'lib/profile-paths.ps1')
+
+# Unblock files after libs loaded (avoids StrictMode uninitialized var)
 if ($script:IsWin) {
     Get-ChildItem -Path $PSScriptRoot -Filter '*.ps1' -Recurse -ErrorAction SilentlyContinue |
         Unblock-File -ErrorAction SilentlyContinue
 }
-. (Join-Path $PSScriptRoot 'lib/platform.ps1')
-. (Join-Path $PSScriptRoot 'lib/ux-helpers.ps1')
-. (Join-Path $PSScriptRoot 'lib/profile-paths.ps1')
 
 # Non-interactive detection: skip prompts in CI/SSH or when -NonInteractive passed
 $script:IsInteractive = [Environment]::UserInteractive -and -not $env:CI -and -not $NonInteractive

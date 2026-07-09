@@ -113,7 +113,7 @@ function script:Update-PluginCache {
     if ($ocmd) {
         try {
             $themeExists = Test-Path $script:Config.ThemePath
-            $label       = if ($themeExists) { 'OMP:atomic' } else { 'OMP:default' }
+            $label       = if ($themeExists) { "OMP:$($script:Config.ThemeName)" } else { 'OMP:default' }
             $initCmd     = if ($themeExists) {
                 oh-my-posh init pwsh --config $script:Config.ThemePath 2>&1
             } else {
