@@ -5,7 +5,7 @@
 ![PowerShell](https://img.shields.io/badge/PowerShell-7%2B-blue?logo=powershell)
 ![Windows](https://img.shields.io/badge/Windows-10%2B-blue?logo=windows)
 ![CI](https://github.com/AndersonTavares0/config-powershell7/actions/workflows/test.yml/badge.svg)
-![Tests](https://img.shields.io/badge/Tests-100_Unit-4b32c3?logo=powershell)
+![Tests](https://img.shields.io/badge/Tests-Custom_Framework-4b32c3?logo=powershell)
 ![Oh My Posh](https://img.shields.io/badge/Prompt-Oh_My_Posh-4b32c3)
 ![Zoxide](https://img.shields.io/badge/Nav-Zoxide-purple)
 ![PSReadLine](https://img.shields.io/badge/Input-PSReadLine-darkgreen?logo=powershell)
@@ -28,7 +28,7 @@ Scoop. Auto-elevates to Admin on Windows.
   validation + ~120ms OMP init + ~30ms zoxide init). Config paths resolved
   inline (no function overhead). Fingerprint uses `LastWriteTime` + file size
   (not SHA256). Boot time color-coded: Green < 300ms, Yellow < 600ms,
-  Red > 600ms. [Benchmark: ~420ms average](tests/benchmark.ps1).
+  Red > 600ms. Run `tests/benchmark.ps1` to measure your machine.
 - **TTL Cache System**: Third-party plugins (`oh-my-posh`, `zoxide`) cached
   with 24-hour TTL. Cache header includes fingerprint + Unix timestamp; valid
   TTL skips `Get-Command` and fingerprint recalculation entirely.
@@ -99,11 +99,11 @@ config-powershell7/
 │   ├── psreadline/             # PSReadLine config + keybindings
 │   └── text_utils/             # Unix-like tools (grep, sed, touch)
 └── tests/
-    ├── Unit.Tests.ps1          # 100 unit tests (cache, system, git, text)
+    ├── Unit.Tests.ps1          # Unit tests (cache, system, git, text)
     ├── POSH_THEME.Tests.ps1    # 5 env-var theme override tests
     ├── Microsoft.PowerShell_profile.Tests.ps1  # Integration tests
-    ├── Test-ProfileInstallation.ps1            # 64 post-install checks
-    ├── Setup.Tests.ps1         # 32 TDD tests for setup modules
+    ├── Test-ProfileInstallation.ps1            # Post-install checks
+    ├── Setup.Tests.ps1         # Setup module tests
     └── benchmark.ps1           # Profile boot timing benchmark
 ```
 

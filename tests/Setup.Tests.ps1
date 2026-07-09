@@ -162,6 +162,49 @@ Assert-NotNull -Value $script:RepoZipUrl -TestName "RepoZipUrl is set"
 Assert-True -Condition ($script:RepoZipUrl -match 'github\.com') -TestName "RepoZipUrl points to GitHub"
 
 # ══════════════════════════════════════════════════════════════
+# TEST SUITE: CORE — Get-FileFromUrl
+# ══════════════════════════════════════════════════════════════
+Write-Host "`nTesting Get-FileFromUrl..." -ForegroundColor Yellow
+
+$downloadTestDir = Join-Path $env:TEMP "test-download-helper-$(Get-Random)"
+$downloadTestFile = Join-Path $downloadTestDir 'download.bin'
+$originalInvokeWebRequestFunction = Get-Command Invoke-WebRequest -CommandType Function -ErrorAction SilentlyContinue
+
+try {
+    New-MockDir $downloadTestDir
+
+    ${function:Invoke-WebRequest} = {
+        param([string]$Uri, [string]$OutFile, $ErrorAction)
+        Set-Content -Path $OutFile -Value ('x' * 128) -Encoding ASCII
+    }
+    $downloadOk = Get-FileFromUrl -Url 'https://example.test/file.bin' -OutFile $downloadTestFile -MinBytes 100 -Description 'test file'
+    Assert-True -Condition $downloadOk -TestName "Get-FileFromUrl returns true for valid download"
+    Assert-True -Condition (Test-Path $downloadTestFile) -TestName "Get-FileFromUrl leaves valid download on disk"
+
+    ${function:Invoke-WebRequest} = {
+        param([string]$Uri, [string]$OutFile, $ErrorAction)
+        Set-Content -Path $OutFile -Value 'tiny' -Encoding ASCII
+    }
+    $downloadSmall = Get-FileFromUrl -Url 'https://example.test/file.bin' -OutFile $downloadTestFile -MinBytes 100 -Description 'test file'
+    Assert-False -Condition $downloadSmall -TestName "Get-FileFromUrl returns false for undersized download"
+    Assert-False -Condition (Test-Path $downloadTestFile) -TestName "Get-FileFromUrl removes undersized partial file"
+
+    Set-Content -Path $downloadTestFile -Value 'partial' -Encoding ASCII
+    ${function:Invoke-WebRequest} = {
+        throw 'network unavailable'
+    }
+    $downloadFailed = Get-FileFromUrl -Url 'https://example.test/file.bin' -OutFile $downloadTestFile -MinBytes 100 -Description 'test file'
+    Assert-False -Condition $downloadFailed -TestName "Get-FileFromUrl returns false when download throws"
+    Assert-False -Condition (Test-Path $downloadTestFile) -TestName "Get-FileFromUrl removes partial file after failure"
+} finally {
+    Remove-Item Function:\Invoke-WebRequest -Force -ErrorAction SilentlyContinue
+    if ($originalInvokeWebRequestFunction) {
+        Set-Item Function:\Invoke-WebRequest -Value $originalInvokeWebRequestFunction.ScriptBlock -ErrorAction SilentlyContinue
+    }
+    Remove-MockDir $downloadTestDir
+}
+
+# ══════════════════════════════════════════════════════════════
 # TEST SUITE: CORE — Test-DocumentsRedirected
 # ══════════════════════════════════════════════════════════════
 Write-Host "`nTesting Test-DocumentsRedirected..." -ForegroundColor Yellow
