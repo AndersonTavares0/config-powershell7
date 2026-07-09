@@ -68,6 +68,32 @@ either the WPF GUI (Windows) or the CLI menu. It performs the following:
 > Idempotent — safe to run multiple times.
 > Blocks wrapped in Try-Catch with clear messages.
 
+### Download trust model
+
+The remote installer downloads code and assets over HTTPS from official project
+sources. HTTPS protects the transport, but this project does not currently
+perform cryptographic checksum verification or signature validation for those
+downloaded files.
+
+| Asset | Source | Current validation |
+|---|---|---|
+| Bootstrapper and repository ZIP | This GitHub repository, `main` branch | HTTPS transport; repository layout checks after extraction |
+| Oh My Posh theme list and selected theme | Official Oh My Posh GitHub repository | HTTPS transport; selected theme file size sanity check |
+| FiraCode Nerd Font ZIP | Official `ryanoasis/nerd-fonts` GitHub release URL | HTTPS transport; ZIP extraction must succeed |
+| PowerShell modules | PowerShell Gallery | Repository/package manager trust |
+| WinGet packages | WinGet package sources | Package manager trust |
+| Optional Scoop or Chocolatey installer scripts | Official project installer URLs | HTTPS transport; no checksum validation |
+
+Some sources use moving references, such as repository branch downloads and Oh
+My Posh theme files from the upstream default branch. The FiraCode font URL is
+versioned, but its downloaded ZIP is still not checksum-verified by this
+installer.
+
+If you need stronger supply-chain guarantees, clone the repository manually,
+review the scripts, pin the revision you trust, and install dependencies from
+your organization's approved package sources. Future hardening could add pinned
+release downloads, published checksums, or signature verification.
+
 ### Prerequisites (manual installation)
 
 | Component | Installation | Required |
