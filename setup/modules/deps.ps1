@@ -378,28 +378,12 @@ function Install-OmpTheme {
     $themeUrl = "https://raw.githubusercontent.com/JanDeDobbeleer/oh-my-posh/main/themes/$ThemeName.omp.json"
     Write-GuiLog "Downloading theme '$ThemeName'..." -Type Step
 
-    try {
-        if ($PSVersionTable.PSVersion.Major -lt 6) {
-            [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
-        }
-        Invoke-WebRequest -Uri $themeUrl -OutFile $themeFile -ErrorAction Stop
-
-        $fileItem = Get-Item $themeFile -ErrorAction SilentlyContinue
-        if (-not $fileItem -or $fileItem.Length -lt 100) {
-            Write-GuiLog "Theme download appears corrupted (size: $($fileItem.Length) bytes)" -Type Fail
-            Remove-Item $themeFile -Force -ErrorAction SilentlyContinue
-            return $false
-        }
-
+    if (Get-FileFromUrl -Url $themeUrl -OutFile $themeFile -MinBytes 100 -Description "theme '$ThemeName'") {
         Write-GuiLog "Theme '$ThemeName' downloaded successfully." -Type Ok
         return $true
-    } catch {
-        Write-GuiLog "Failed to download theme '$ThemeName': $($_.Exception.Message)" -Type Warn
-        if (Test-Path $themeFile) {
-            Remove-Item $themeFile -Force -ErrorAction SilentlyContinue
-        }
-        return $false
     }
+
+    return $false
 }
 
 function Install-NerdFont {
@@ -416,10 +400,9 @@ function Install-NerdFont {
         $fontZip = Join-Path $env:TEMP 'FiraCode-NerdFont.zip'
         $fontDir = Join-Path $env:TEMP 'FiraCode-NerdFont'
 
-        if ($PSVersionTable.PSVersion.Major -lt 6) {
-            [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
+        if (-not (Get-FileFromUrl -Url $fontZipUrl -OutFile $fontZip -MinBytes 100 -Description 'FiraCode Nerd Font archive')) {
+            return $false
         }
-        Invoke-WebRequest -Uri $fontZipUrl -OutFile $fontZip -ErrorAction Stop
 
         if (Test-Path $fontDir) { Remove-Item $fontDir -Recurse -Force -ErrorAction SilentlyContinue }
         New-Item -ItemType Directory -Path $fontDir -Force | Out-Null
