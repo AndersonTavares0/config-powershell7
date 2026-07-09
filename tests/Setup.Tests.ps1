@@ -732,6 +732,21 @@ if ($invokeLauncherFunc) {
     Test-Skip -Name "Invoke-Launcher tests" -Reason "Function not found in AST"
 }
 
+# Verify remote package manager installers are downloaded to disk before execution
+$depsPath = Join-Path $modulesDir 'deps.ps1'
+$depsContent = Get-Content $depsPath -Raw -Encoding UTF8
+Assert-False -Condition ($depsContent -match 'Invoke-Expression') -TestName "Remote installers do not use Invoke-Expression"
+Assert-True -Condition ($depsContent -match 'Remote installer notice: Chocolatey') -TestName "Chocolatey remote installer notice is logged"
+Assert-True -Condition ($depsContent -match 'Remote installer notice: Scoop') -TestName "Scoop remote installer notice is logged"
+Assert-True -Condition ($depsContent -match 'community\.chocolatey\.org/install\.ps1') -TestName "Chocolatey installer source URL is present"
+Assert-True -Condition ($depsContent -match 'get\.scoop\.sh') -TestName "Scoop installer source URL is present"
+Assert-True -Condition ($depsContent -match 'chocolateyInstallPath') -TestName "Chocolatey installer temp path is logged/executed"
+Assert-True -Condition ($depsContent -match 'scoopInstallPath') -TestName "Scoop installer temp path is logged/executed"
+Assert-True -Condition ($depsContent -match 'Unblock-File -Path \$chocolateyInstallPath') -TestName "Chocolatey temp installer is unblocked before execution"
+Assert-True -Condition ($depsContent -match 'Unblock-File -Path \$scoopInstallPath') -TestName "Scoop temp installer is unblocked before execution"
+Assert-True -Condition ($depsContent -match '& \$chocolateyInstallPath') -TestName "Chocolatey installer executes from temp file"
+Assert-True -Condition ($depsContent -match '& \$scoopInstallPath') -TestName "Scoop installer executes from temp file"
+
 # ══════════════════════════════════════════════════════════════
 # TEST SUITE: SYNTAX — All setup modules parse cleanly
 # ══════════════════════════════════════════════════════════════
