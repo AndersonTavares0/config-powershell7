@@ -115,10 +115,28 @@ Total     443.9 ms
 Media: 414ms  Min: 398.7ms  Max: 443.9ms
 ```
 
+#### Interpreting benchmark results
+
+Each benchmark run starts a fresh `pwsh -NoProfile` process, so it measures
+profile startup rather than an already-loaded shell. Compare cold and warm cache
+runs separately:
+
+- **Cold cache:** first run after `Clear-Cache`, tool updates, theme changes, or
+  TTL expiration. This can include cache rebuild work.
+- **Warm cache:** valid TTL and unchanged fingerprint. The hot path skips
+  command discovery and fingerprint hashing.
+- **Cache/OMP cost:** the `Cache` line includes loading the generated cache and
+  dot-sourcing Oh My Posh initialization. It is expected to dominate profiles
+  that use OMP and Zoxide.
+
+Use `-Runs 10` when comparing changes. Treat the timing bands as guidance, not
+fixed guarantees, because disk, antivirus, terminal host, and plugin versions
+affect the result.
+
 ### 1. Unit Tests (cache, system, git, text)
 
-`tests/Unit.Tests.ps1` -- 100 assertions across 4 modules. Fastest
-feedback loop for development (~350ms total).
+`tests/Unit.Tests.ps1` -- Assertions across cache, system, git, and text
+utilities. Fastest feedback loop for development.
 
 ```powershell
 .\tests\Unit.Tests.ps1
@@ -126,12 +144,12 @@ feedback loop for development (~350ms total).
 
 #### Coverage
 
-| Module | Assertions | What it tests |
-|---|---|---|
-| **Cache** | 30+ | Fingerprints, TTL hot/cold path, rebuild, clear, Terminal-Icons |
-| **System** | 12+ | pubip cache/fallback, sudo sanitization |
-| **Git** | 9 | gcom/lazyg LASTEXITCODE branching |
-| **Text utils** | 10+ | sed validation/backup/cleanup, clipboard, touch |
+| Module | What it tests |
+|---|---|
+| **Cache** | Fingerprints, TTL hot/cold path, rebuild, clear, Terminal-Icons |
+| **System** | pubip cache/fallback, sudo sanitization, platform helpers |
+| **Git** | gcom/lazyg LASTEXITCODE branching and wrapper behavior |
+| **Text utils** | sed validation/backup/cleanup, clipboard, touch, which |
 
 ### 2. POSH_THEME Tests
 
@@ -150,8 +168,7 @@ feedback loop for development (~350ms total).
 
 ### 3. Setup Module Tests (TDD)
 
-`tests/Setup.Tests.ps1` -- 32-assertion TDD suite covering the installer
-modules:
+`tests/Setup.Tests.ps1` -- TDD suite covering the installer modules:
 
 ```powershell
 .\tests\Setup.Tests.ps1
@@ -172,7 +189,8 @@ modules:
 
 ### 4. Profile Installation Health Check
 
-`tests/Test-ProfileInstallation.ps1` -- 64 checks across 6 categories:
+`tests/Test-ProfileInstallation.ps1` -- Health checks across profile,
+module, loading, function, config, and cache categories:
 
 ```powershell
 .\tests\Test-ProfileInstallation.ps1 -Detailed
@@ -287,5 +305,5 @@ false-positives under `Set-StrictMode -Version Latest`.
 ---
 
 *Revision: 07/2026 (v3 -- GUI installer overhaul, theme selection, terminal
-themes, POSH_THEME env var, 100 unit tests) -- Compatible with PS 5.1+ / PS
-Core 7+ / Windows 10+ / Linux / macOS*
+themes, POSH_THEME env var, and custom test suites) -- Compatible with PS 5.1+
+/ PS Core 7+ / Windows 10+ / Linux / macOS*

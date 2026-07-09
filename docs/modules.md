@@ -233,10 +233,10 @@ config-powershell7/
 │   └── profile-paths.ps1       # Profile path resolution
 ├── tests/
 │   ├── benchmark.ps1                    # Boot timing benchmark
-│   ├── Unit.Tests.ps1                  # 100 unit tests (cache, system, git, text)
+│   ├── Unit.Tests.ps1                  # Unit tests (cache, system, git, text)
 │   ├── POSH_THEME.Tests.ps1            # 5 env-var theme tests
-│   ├── Setup.Tests.ps1                 # 32 TDD tests for setup modules
-│   ├── Test-ProfileInstallation.ps1    # 64 post-install health checks
+│   ├── Setup.Tests.ps1                 # Setup module tests
+│   ├── Test-ProfileInstallation.ps1    # Post-install health checks
 │   └── Microsoft.PowerShell_profile.Tests.ps1  # Integration tests
 └── modules/
     ├── config/config.ps1           # Centralized config (critical, first)
@@ -603,6 +603,12 @@ signature error.
 > 398ms, max 444ms). Cache module dominates at ~340ms (77% of boot). Run
 > `.\tests\benchmark.ps1` for current measurements.
 
+Interpret cold and warm cache runs separately. A cold run happens after
+`Clear-Cache`, TTL expiration, tool updates, or theme changes, and may rebuild
+the plugin cache. A warm run has a valid TTL and unchanged fingerprint, so it
+uses the hot path. The `Cache` line includes Oh My Posh initialization from the
+generated cache, so it is expected to be the largest slice when OMP is enabled.
+
 ### Applied techniques
 
 | Technique | Where | Impact |
@@ -623,14 +629,14 @@ signature error.
 
 ### Test Suites
 
-| Test Suite | Assertions | Description |
+| Test Suite | Scope | Description |
 |---|---|---|
-| `tests/Unit.Tests.ps1` | 100 | Cache, system, git, text utils |
-| `tests/POSH_THEME.Tests.ps1` | 5 | POSH_THEME env var override |
-| `tests/Setup.Tests.ps1` | 32 | TDD for installer modules |
-| `tests/Test-ProfileInstallation.ps1` | 64 | Post-install health check |
-| `tests/Microsoft.PowerShell_profile.Tests.ps1` | -- | Behavioral integration |
-| `tests/benchmark.ps1` | -- | Boot timing (fresh pwsh processes) |
+| `tests/Unit.Tests.ps1` | Unit | Cache, system, git, text utils |
+| `tests/POSH_THEME.Tests.ps1` | Theme | POSH_THEME env var override |
+| `tests/Setup.Tests.ps1` | Setup | Installer modules |
+| `tests/Test-ProfileInstallation.ps1` | Health | Post-install health check |
+| `tests/Microsoft.PowerShell_profile.Tests.ps1` | Integration | Behavioral integration |
+| `tests/benchmark.ps1` | Benchmark | Boot timing (fresh pwsh processes) |
 
 ### Running Tests
 
