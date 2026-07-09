@@ -11,7 +11,14 @@ try {
         -ErrorAction Stop
 
     if ($script:Config.PSMajor -ge 7) {
-        try { Set-PSReadLineOption -PredictionSource History -PredictionViewStyle ListView -ErrorAction Stop } catch { Write-Warning "PSReadLine: predição de histórico indisponível — $($_.Exception.Message)" }
+        try {
+            $isInteractive = -not [Console]::IsOutputRedirected
+        } catch {
+            $isInteractive = $false
+        }
+        if ($isInteractive) {
+            try { Set-PSReadLineOption -PredictionSource History -PredictionViewStyle ListView -ErrorAction Stop } catch { Write-Warning "PSReadLine: predição de histórico indisponível — $($_.Exception.Message)" }
+        }
     }
 
     Set-PSReadLineKeyHandler -Key UpArrow   -Function HistorySearchBackward
