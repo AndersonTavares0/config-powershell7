@@ -705,6 +705,29 @@ function Write-SystemSuite {
         Remove-Item Function:\Get-WindowsSystemInfo -Force -ErrorAction SilentlyContinue
     }
 
+    # ============================================================
+    # SYS-13: df on Unix-like without native df returns no output and does not throw
+    # ============================================================
+    try {
+        $oldIsWindows13 = $script:Config.IsWindows
+        $oldIsLinux13 = $script:Config.IsLinux
+        $oldIsMacOS13 = $script:Config.IsMacOS
+        $script:Config.IsWindows = $false
+        $script:Config.IsLinux = $true
+        $script:Config.IsMacOS = $false
+
+        $result13 = @(df)
+        Assert-Equal -Expected 0 -Actual $result13.Count -TestName 'SYS-13: df missing native command returns no output'
+    }
+    catch {
+        Test-Result -Name 'SYS-13: df missing native command does not throw' -Passed $false -Message $_.Exception.Message
+    }
+    finally {
+        $script:Config.IsWindows = $oldIsWindows13
+        $script:Config.IsLinux = $oldIsLinux13
+        $script:Config.IsMacOS = $oldIsMacOS13
+    }
+
     Write-Host "System suite complete." -ForegroundColor Cyan
 }
 
@@ -852,6 +875,25 @@ function Write-TextUtilsSuite {
     }
     catch { Test-Result -Name 'TEXT-09' -Passed $false -Message $_.Exception.Message }
     finally { Remove-MockFile (Join-Path $script:CacheDir 'touch09_new.txt') }
+
+    # TEXT-10: which returns command source
+    try {
+        $script:MockCommandResults['pwsh'] = [PSCustomObject]@{ Source = 'C:\Tools\pwsh.exe' }
+        $result10 = which -Cmd 'pwsh'
+        Assert-Equal -Expected 'C:\Tools\pwsh.exe' -Actual $result10 -TestName 'TEXT-10: which returns command source'
+    }
+    catch { Test-Result -Name 'TEXT-10' -Passed $false -Message $_.Exception.Message }
+    finally { $script:MockCommandResults.Remove('pwsh') }
+
+    # TEXT-11: which warns when command is missing
+    try {
+        $script:MockWarnings = @()
+        $result11 = which -Cmd 'missing-tool'
+        Assert-True -Condition ($null -eq $result11) -TestName 'TEXT-11: which returns no source for missing command'
+        Assert-True -Condition ($script:MockWarnings.Count -ge 1) -TestName 'TEXT-11: which warns when command is missing'
+        Assert-True -Condition ($script:MockWarnings[0] -match 'missing-tool') -TestName 'TEXT-11: which warning names missing command'
+    }
+    catch { Test-Result -Name 'TEXT-11' -Passed $false -Message $_.Exception.Message }
 
     Write-Host "Text Utils suite complete." -ForegroundColor Cyan
 }
@@ -1015,6 +1057,36 @@ function Write-GitSuite {
     }
     catch { Test-Result -Name 'GIT-09' -Passed $false -Message $_.Exception.Message }
     finally { if ($savedCI09) { $env:CI = $savedCI09 } else { Remove-Item Env:CI -ErrorAction SilentlyContinue } }
+
+    # GIT-10: gcmt forwards commit message to git commit -m
+    try {
+        $script:MockGitCalls = @()
+        $script:MockGitExitCodes = @(0)
+        gcmt -Message 'ship it'
+        Assert-Equal -Expected 1 -Actual $script:MockGitCalls.Count -TestName 'GIT-10: gcmt makes one git call'
+        Assert-Equal -Expected 'commit -m ship it' -Actual ($script:MockGitCalls[0].Args -join ' ') -TestName 'GIT-10: gcmt forwards git commit arguments'
+    }
+    catch { Test-Result -Name 'GIT-10' -Passed $false -Message $_.Exception.Message }
+
+    # GIT-11: gco forwards branch to git checkout
+    try {
+        $script:MockGitCalls = @()
+        $script:MockGitExitCodes = @(0)
+        gco -Branch 'feature/test'
+        Assert-Equal -Expected 1 -Actual $script:MockGitCalls.Count -TestName 'GIT-11: gco makes one git call'
+        Assert-Equal -Expected 'checkout feature/test' -Actual ($script:MockGitCalls[0].Args -join ' ') -TestName 'GIT-11: gco forwards git checkout arguments'
+    }
+    catch { Test-Result -Name 'GIT-11' -Passed $false -Message $_.Exception.Message }
+
+    # GIT-12: gdiff forwards to git diff
+    try {
+        $script:MockGitCalls = @()
+        $script:MockGitExitCodes = @(0)
+        gdiff
+        Assert-Equal -Expected 1 -Actual $script:MockGitCalls.Count -TestName 'GIT-12: gdiff makes one git call'
+        Assert-Equal -Expected 'diff' -Actual ($script:MockGitCalls[0].Args -join ' ') -TestName 'GIT-12: gdiff forwards git diff arguments'
+    }
+    catch { Test-Result -Name 'GIT-12' -Passed $false -Message $_.Exception.Message }
 
     Write-Host "Git suite complete." -ForegroundColor Cyan
 }
