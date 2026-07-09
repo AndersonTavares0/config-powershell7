@@ -52,31 +52,41 @@ function Get-WingetPath {
     return $null
 }
 
+function Enable-Tls12 {
+    if ($PSVersionTable.PSVersion.Major -lt 6) {
+        $current = [System.Net.ServicePointManager]::SecurityProtocol
+        [System.Net.ServicePointManager]::SecurityProtocol = $current -bor [System.Net.SecurityProtocolType]::Tls12
+    }
+}
+
 function Get-FileFromUrl {
     param(
         [Parameter(Mandatory = $true)]
         [string]$Url,
         [Parameter(Mandatory = $true)]
-        [string]$OutFile
+        [string]$OutFile,
+        [long]$MinBytes = 1,
+        [string]$Description = 'file'
     )
     Write-GuiLog "Downloading from $Url..." -Type Step
     try {
-        if ($PSVersionTable.PSVersion.Major -lt 6) {
-            [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
-        }
+        Enable-Tls12
         Invoke-WebRequest -Uri $Url -OutFile $OutFile -ErrorAction Stop
-        if (Test-Path $OutFile -ErrorAction SilentlyContinue) {
-            $fileItem = Get-Item $OutFile -ErrorAction SilentlyContinue
-            if ($fileItem) {
-                $size = $fileItem.Length
-                Write-GuiLog "Downloaded $([Math]::Round($size / 1KB, 1)) KB" -Type Ok
-                return $true
-            }
+
+        $fileItem = Get-Item $OutFile -ErrorAction SilentlyContinue
+        if ($fileItem -and $fileItem.Length -ge $MinBytes) {
+            $size = $fileItem.Length
+            Write-GuiLog "Downloaded $([Math]::Round($size / 1KB, 1)) KB" -Type Ok
+            return $true
         }
-        Write-GuiLog "Downloaded file not found: $OutFile" -Type Fail
+
+        $sizeText = if ($fileItem) { "$($fileItem.Length) bytes" } else { 'missing' }
+        Write-GuiLog "Downloaded $Description appears invalid (size: $sizeText)." -Type Fail
+        Remove-Item $OutFile -Force -ErrorAction SilentlyContinue
         return $false
     } catch {
         Write-GuiLog "Download failed: $($_.Exception.Message)" -Type Fail
+        Remove-Item $OutFile -Force -ErrorAction SilentlyContinue
         return $false
     }
 }
