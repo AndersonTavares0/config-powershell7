@@ -29,7 +29,9 @@ $WinTermPaths = @(
     "$([Environment]::GetFolderPath('LocalApplicationData'))\Microsoft\Windows Terminal\settings.json"
 )
 
-# Terminal theme data (same source as setup/modules/deps.ps1)
+# Legacy standalone terminal theme data.
+# The primary setup installer source is setup/modules/deps.ps1. Keep this copy
+# local so install.ps1 remains runnable without dot-sourcing setup modules.
 $script:TerminalThemeDataLegacy = [ordered]@{
     'Catppuccin Mocha' = @{
         Type = 'dark'; Description = 'Dark purple theme from Catppuccin project'

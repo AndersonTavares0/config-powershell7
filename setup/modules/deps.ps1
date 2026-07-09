@@ -86,6 +86,9 @@ function Get-OmpThemeList {
 }
 
 #region Terminal theme definitions
+# Canonical terminal theme data for the primary setup installer.
+# Legacy install.ps1 keeps a standalone copy to avoid coupling the legacy path
+# to setup module load order.
 $script:TerminalThemeData = $null
 function Initialize-TerminalThemes {
     if ($script:TerminalThemeData) { return }
