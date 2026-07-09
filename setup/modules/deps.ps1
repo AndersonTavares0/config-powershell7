@@ -676,6 +676,7 @@ args = ["-NoLogo"]
 '@ -Encoding UTF8 -Force
 
     Write-GuiLog "Alacritty configured at: $configPath" -Type Ok
+    $true
 }
 
 function Install-Alacritty {
@@ -690,9 +691,10 @@ function Install-Alacritty {
     if (Get-Command alacritty -ErrorAction SilentlyContinue) {
         Write-GuiLog "Configuring Alacritty..." -Type Step
         Install-AlacrittyConfig
-    } else {
-        Write-GuiLog "Alacritty not found after install attempt." -Type Warn
+        return $true
     }
+    Write-GuiLog "Alacritty not found after install attempt." -Type Warn
+    return $false
 }
 
 function Install-Chocolatey {

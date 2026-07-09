@@ -67,13 +67,14 @@ if (-not (Test-Path $themePath) -and $poshTheme -ne 'atomic') {
 }
 
 $script:Config = [PSCustomObject]@{
-    IsWindows   = $script:IsWin
-    IsLinux     = $script:IsLnx
-    IsMacOS     = $script:IsMac
-    IsAdmin     = $script:IsAdmin
-    PSMajor     = $psMajor
-    CachePath   = $cachePath
-    ThemePath   = $themePath
-    StartDirectory = $env:POWERSHELL_START_DIR
+    IsWindows       = $script:IsWin
+    IsLinux         = $script:IsLnx
+    IsMacOS         = $script:IsMac
+    IsAdmin         = $script:IsAdmin
+    PSMajor         = $psMajor
+    CachePath       = $cachePath
+    ThemePath       = $themePath
+    ThemeName       = $poshTheme
+    StartDirectory  = $env:POWERSHELL_START_DIR
     CacheTTLMinutes = 1440
 }
