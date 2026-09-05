@@ -4,8 +4,29 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### CI
+- `validate.yml`: full validation workflow (suites on PR, disposable-runner
+  end-to-end installer on manual dispatch with idempotency, theme-change,
+  child-shell, failure-propagation, and uninstall checks)
+
 ### Added
-- (nothing yet)
+- Managed Alacritty configuration with PowerShell 7 shell, Nerd Font, theme
+  fragments, validation, legacy YAML migration, and reversible user overrides
+- Regression coverage for repeat installs, profile preservation, path escaping,
+  Alacritty adoption, and configuration restoration
+
+### Changed
+- Installer now targets the PowerShell 7 `CurrentUserAllHosts` profile and
+  updates a marked block without replacing user-owned profile content
+- Remote installs use the latest stable GitHub Release and stage repository
+  replacement before activation
+- Default managed repository location moved from Documents to
+  `LocalApplicationData` to avoid OneDrive redirection
+- `install.cmd` now invokes the modular `setup.ps1` flow
+- Execution policy is inspected and reported instead of changed silently
+- Profile load guards now use process-local PowerShell variables, preventing
+  child shells from skipping profile initialization
+- Alacritty is enabled by default and requires version 0.14 or newer
 
 ## [v0.3] — 2026-07-07
 

@@ -94,11 +94,14 @@ if (-not $Quiet) {
 # ══════════════════════════════════════════════════════════════
 if (-not $Quiet) { Write-Host "  Profile Integrity" -ForegroundColor Cyan }
 
-$profilePath = $PROFILE
+$allHostsProperty = $PROFILE.PSObject.Properties['CurrentUserAllHosts']
+$allHostsProfile = if ($allHostsProperty) { $allHostsProperty.Value } else { $null }
+$profilePath = if ($allHostsProfile -and (Test-Path $allHostsProfile)) { $allHostsProfile } else { $PROFILE }
 if (Test-Path $profilePath) {
     $content = Get-Content $profilePath -Raw -ErrorAction SilentlyContinue
 
-    if ($content -match "\. `"[^`"]*Microsoft\.PowerShell_profile\.ps1`"") {
+    if ($content -match '(?m)^# >>> config-powershell7 >>>\s*$' -and
+        $content -match '(?m)^\.\s+(?:''[^'']*Microsoft\.PowerShell_profile\.ps1''|"[^"]*Microsoft\.PowerShell_profile\.ps1")\s*$') {
         script:Add-Check 'Profile' 'Type' 'PASS' 'Profile dot-sources the config'
     }
     elseif ($content -match 'POWERSHELL PROFILE' -and $content -match 'modules/config/config\.ps1') {
@@ -121,8 +124,12 @@ if (-not $Quiet) { Write-Host "  Module Syntax" -ForegroundColor Cyan }
 $moduleDir = $null
 if (Test-Path $profilePath) {
     $profContent = Get-Content $profilePath -Raw -ErrorAction SilentlyContinue
-    # Try to extract __ProfileRepoRoot from the generated profile
-    if ($profContent -match '\$env:__PROFILE_REPO_ROOT\s*=\s*"([^"]+)"') {
+    if ($profContent -match "(?m)^\.\s+'((?:[^']|'')*Microsoft\.PowerShell_profile\.ps1)'\s*$") {
+        $sourcePath = $Matches[1].Replace("''", "'")
+        $moduleDir = Join-Path (Split-Path $sourcePath -Parent) 'modules'
+    }
+    # Legacy generated profile.
+    elseif ($profContent -match '\$env:__PROFILE_REPO_ROOT\s*=\s*"([^"]+)"') {
         $moduleDir = Join-Path $Matches[1] 'modules'
     }
     else {
@@ -157,7 +164,7 @@ if (-not $Quiet) { Write-Host "  Profile Loading" -ForegroundColor Cyan }
 $loadTimer = [System.Diagnostics.Stopwatch]::StartNew()
 $loadError = $null
 try {
-    $env:__PROFILE_LOADED = $null
+    Remove-Variable -Name '__CONFIG_POWERSHELL7_PROFILE_LOADED' -Scope Global -ErrorAction SilentlyContinue
     . $profilePath 2>$null
     $loadTimer.Stop()
     $loadMs = [math]::Round($loadTimer.Elapsed.TotalMilliseconds, 0)
@@ -172,11 +179,26 @@ try {
     else {
         script:Add-Check 'Load' 'Performance' 'FAIL' "${loadMs}ms exceeds 500ms threshold"
     }
-}
-catch {
+} catch {
     $loadTimer.Stop()
     $loadError = $_.Exception.Message
     script:Add-Check 'Load' 'ProfileSource' 'FAIL' $loadError
+}
+
+$effectivePolicy = Get-ExecutionPolicy -ErrorAction SilentlyContinue
+$policyStatus = if ($effectivePolicy -in @('Bypass', 'RemoteSigned', 'Unrestricted')) { 'PASS' } else { 'FAIL' }
+script:Add-Check 'Policy' 'Effective' $policyStatus $effectivePolicy
+
+if ($script:IsWin) {
+    $alacritty = Get-Command alacritty -ErrorAction SilentlyContinue
+    if ($alacritty) {
+        $alacrittyConfig = if ($env:APPDATA) { Join-Path $env:APPDATA 'alacritty\alacritty.toml' } else { $null }
+        $configStatus = if ($alacrittyConfig -and (Test-Path $alacrittyConfig)) { 'PASS' } else { 'WARN' }
+        script:Add-Check 'Alacritty' 'Executable' 'PASS' $alacritty.Source
+        script:Add-Check 'Alacritty' 'Config' $configStatus $(if ($alacrittyConfig) { $alacrittyConfig } else { 'APPDATA is not set' })
+    } else {
+        script:Add-Check 'Alacritty' 'Executable' 'WARN' 'Alacritty is not installed or not available in PATH'
+    }
 }
 
 # ══════════════════════════════════════════════════════════════

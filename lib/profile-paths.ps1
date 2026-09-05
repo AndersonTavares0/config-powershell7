@@ -6,8 +6,11 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 function script:Get-TargetProfilePath {
-    if ($PROFILE -and $PROFILE.CurrentUserCurrentHost) {
-        return $PROFILE.CurrentUserCurrentHost
+    if ($PROFILE) {
+        $allHosts = $PROFILE.PSObject.Properties['CurrentUserAllHosts']
+        if ($allHosts -and $allHosts.Value) {
+            return $allHosts.Value
+        }
     }
     if ($script:IsLnx) {
         $linuxPath = Join-Path $HOME '.config/powershell/Microsoft.PowerShell_profile.ps1'

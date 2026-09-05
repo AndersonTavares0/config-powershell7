@@ -269,71 +269,10 @@ function Set-WindowsTerminalColorScheme {
 
 function Set-AlacrittyColorScheme {
     param([string]$ThemeName)
-    $theme = Get-TerminalThemeData -Name $ThemeName
-    if (-not $theme) { Write-GuiLog "Terminal theme '$ThemeName' not found." -Type Warn; return $false }
-
-    $configDir = Join-Path $env:APPDATA 'alacritty'
-    if (-not (Test-Path $configDir)) { New-Item -ItemType Directory -Path $configDir -Force | Out-Null }
-    $configPath = Join-Path $configDir 'alacritty.toml'
-
-    if (Test-Path $configPath) {
-        $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-        Copy-Item $configPath "$configPath.bak-$timestamp" -Force
-    }
-
-    $colors = $theme.Ala
-    $colorLines = @(
-        "[colors.primary]",
-        "background = `"$($colors.primary.background)`"",
-        "foreground = `"$($colors.primary.foreground)`"",
-        "",
-        "[colors.normal]",
-        "black   = `"$($colors.normal.black)`"",
-        "red     = `"$($colors.normal.red)`"",
-        "green   = `"$($colors.normal.green)`"",
-        "yellow  = `"$($colors.normal.yellow)`"",
-        "blue    = `"$($colors.normal.blue)`"",
-        "magenta = `"$($colors.normal.magenta)`"",
-        "cyan    = `"$($colors.normal.cyan)`"",
-        "white   = `"$($colors.normal.white)`"",
-        "",
-        "[colors.bright]",
-        "black   = `"$($colors.bright.black)`"",
-        "red     = `"$($colors.bright.red)`"",
-        "green   = `"$($colors.bright.green)`"",
-        "yellow  = `"$($colors.bright.yellow)`"",
-        "blue    = `"$($colors.bright.blue)`"",
-        "magenta = `"$($colors.bright.magenta)`"",
-        "cyan    = `"$($colors.bright.cyan)`"",
-        "white   = `"$($colors.bright.white)`""
-    )
-
-    try {
-        if (Test-Path $configPath) {
-            $existing = Get-Content $configPath -Raw -Encoding UTF8
-            $colorSectionStart = $existing.IndexOf('[colors.primary]')
-            if ($colorSectionStart -ge 0) {
-                $colorSectionEnd = $existing.IndexOf('[[', $colorSectionStart + 1)
-                if ($colorSectionEnd -lt 0) { $colorSectionEnd = $existing.IndexOf('[', $existing.IndexOf('[', 1) + 1) }
-                if ($colorSectionEnd -lt 0) { $colorSectionEnd = $existing.Length }
-                # Replace colors, keep other sections
-                $newContent = $existing.Substring(0, $colorSectionStart) + ($colorLines -join "`r`n") + "`r`n`r`n" + $existing.Substring($colorSectionEnd).TrimStart()
-            } else {
-                # No colors section — append before first [[ or end
-                $lastSection = $existing.LastIndexOf('[', $existing.LastIndexOf('[') - 1)
-                if ($lastSection -le 0) { $lastSection = $existing.Length }
-                $newContent = $existing.Substring(0, $lastSection).TrimEnd() + "`r`n`r`n" + ($colorLines -join "`r`n") + "`r`n`r`n" + $existing.Substring($lastSection).TrimStart()
-            }
-            Set-Content -Path $configPath -Value $newContent -Encoding UTF8 -Force
-        } else {
-            Set-Content -Path $configPath -Value (($colorLines -join "`r`n") + "`r`n") -Encoding UTF8 -Force
-        }
-        Write-GuiLog "Alacritty theme set to '$ThemeName'." -Type Ok
-        return $true
-    } catch {
-        Write-GuiLog "Failed to set Alacritty color scheme: $($_.Exception.Message)" -Type Warn
-        return $false
-    }
+    $alacritty = Get-AlacrittyExecutable
+    $pwshPath = Get-PwshExecutablePath
+    if (-not $alacritty -or -not $pwshPath) { return $false }
+    return Install-AlacrittyConfig -ThemeName $ThemeName -AlacrittyPath $alacritty.Path -PwshPath $pwshPath
 }
 
 function Install-CompleteConfig {
@@ -576,22 +515,175 @@ function Set-WindowsTerminalFont {
     }
 }
 
-function Install-AlacrittyConfig {
+function ConvertTo-AlacrittyTomlString {
+    param([Parameter(Mandatory = $true)][string]$Value)
+    return '"' + $Value.Replace('\', '\\').Replace('"', '\"') + '"'
+}
+
+function Set-AlacrittyContentIfChanged {
+    param([string]$Path, [string]$Content)
+    if ((Test-Path $Path -PathType Leaf) -and [System.IO.File]::ReadAllText($Path) -ceq $Content) { return $false }
+    [System.IO.File]::WriteAllText($Path, $Content, (New-Object System.Text.UTF8Encoding($false)))
+    return $true
+}
+
+function Get-AlacrittyExecutable {
+    $candidates = New-Object System.Collections.Generic.List[string]
+    $detected = @()
+    $command = Get-Command alacritty -ErrorAction SilentlyContinue
+    if ($command -and $command.Source) { $candidates.Add($command.Source) }
+    if ($env:LOCALAPPDATA) { $candidates.Add((Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Links\alacritty.exe')) }
+    if ($env:ProgramFiles) { $candidates.Add((Join-Path $env:ProgramFiles 'Alacritty\alacritty.exe')) }
+
+    foreach ($candidate in ($candidates | Select-Object -Unique)) {
+        if (-not (Test-Path $candidate -PathType Leaf)) { continue }
+        try {
+            $absolutePath = [System.IO.Path]::GetFullPath($candidate)
+            $versionText = (& $absolutePath --version 2>$null | Select-Object -First 1)
+            if ($versionText -and $versionText -match '(\d+\.\d+\.\d+)') {
+                $detected += [PSCustomObject]@{ Path = $absolutePath; Version = [version]$Matches[1] }
+            }
+        } catch {
+            Write-GuiLog "Could not inspect Alacritty at '$candidate': $($_.Exception.Message)" -Type Warn
+        }
+    }
+    return $detected | Sort-Object Version -Descending | Select-Object -First 1
+}
+
+function Get-PwshExecutablePath {
+    $candidates = @()
+    $command = Get-Command pwsh -ErrorAction SilentlyContinue
+    if ($command -and $command.Source) { $candidates += $command.Source }
+    if ($PSHOME) { $candidates += Join-Path $PSHOME 'pwsh.exe' }
+    if ($env:ProgramFiles) { $candidates += Join-Path $env:ProgramFiles 'PowerShell\7\pwsh.exe' }
+    foreach ($candidate in ($candidates | Select-Object -Unique)) {
+        if (Test-Path $candidate -PathType Leaf) { return [System.IO.Path]::GetFullPath($candidate) }
+    }
+    Write-GuiLog 'PowerShell 7 executable not found. Alacritty configuration requires an absolute pwsh path.' -Type Warn
+    return $null
+}
+
+function Get-AlacrittyThemeContent {
+    param([string]$ThemeName)
+    $theme = Get-TerminalThemeData -Name $ThemeName
+    if (-not $theme) { return $null }
+    $colors = $theme.Ala
+    return @"
+[colors.primary]
+background = "$($colors.primary.background)"
+foreground = "$($colors.primary.foreground)"
+
+[colors.normal]
+black = "$($colors.normal.black)"
+red = "$($colors.normal.red)"
+green = "$($colors.normal.green)"
+yellow = "$($colors.normal.yellow)"
+blue = "$($colors.normal.blue)"
+magenta = "$($colors.normal.magenta)"
+cyan = "$($colors.normal.cyan)"
+white = "$($colors.normal.white)"
+
+[colors.bright]
+black = "$($colors.bright.black)"
+red = "$($colors.bright.red)"
+green = "$($colors.bright.green)"
+yellow = "$($colors.bright.yellow)"
+blue = "$($colors.bright.blue)"
+magenta = "$($colors.bright.magenta)"
+cyan = "$($colors.bright.cyan)"
+white = "$($colors.bright.white)"
+"@
+}
+
+function Test-AlacrittyCandidateConfig {
+    param([string]$AlacrittyPath, [string]$ConfigDir, [string]$BaseContent, [string]$ThemeContent, [string]$UserContent)
+    if (-not $AlacrittyPath -or -not (Test-Path $AlacrittyPath -PathType Leaf)) {
+        Write-GuiLog 'Alacritty executable is required to validate managed configuration.' -Type Warn
+        return $false
+    }
+    $id = [guid]::NewGuid().ToString('N')
+    $candidatePaths = @(
+        (Join-Path $ConfigDir ".config-powershell7-$id-base.toml"),
+        (Join-Path $ConfigDir ".config-powershell7-$id-theme.toml"),
+        (Join-Path $ConfigDir ".config-powershell7-$id-user.toml"),
+        (Join-Path $ConfigDir ".config-powershell7-$id.toml"),
+        (Join-Path $ConfigDir ".config-powershell7-$id.stdout"),
+        (Join-Path $ConfigDir ".config-powershell7-$id.stderr")
+    )
     try {
+        $utf8 = New-Object System.Text.UTF8Encoding($false)
+        [System.IO.File]::WriteAllText($candidatePaths[0], $BaseContent, $utf8)
+        [System.IO.File]::WriteAllText($candidatePaths[1], $ThemeContent, $utf8)
+        [System.IO.File]::WriteAllText($candidatePaths[2], $UserContent, $utf8)
+        $imports = $candidatePaths[0..2] | ForEach-Object { ConvertTo-AlacrittyTomlString $_ }
+        $candidateWrapper = "[general]`nimport = [`n    " + ($imports -join ",`n    ") + "`n]`n"
+        [System.IO.File]::WriteAllText($candidatePaths[3], $candidateWrapper, $utf8)
+        $arguments = @('migrate', '--dry-run', '--config-file', ('"' + $candidatePaths[3] + '"'))
+        $process = Start-Process -FilePath $AlacrittyPath -ArgumentList $arguments -NoNewWindow -Wait -PassThru `
+            -RedirectStandardOutput $candidatePaths[4] -RedirectStandardError $candidatePaths[5] -ErrorAction Stop
+        return $process.ExitCode -eq 0
+    } catch {
+        Write-GuiLog "Alacritty configuration validation failed: $($_.Exception.Message)" -Type Warn
+        return $false
+    } finally {
+        foreach ($path in $candidatePaths) { if (Test-Path $path) { Remove-Item $path -Force -ErrorAction SilentlyContinue } }
+    }
+}
+
+function ConvertFrom-AlacrittyYaml {
+    param([string]$AlacrittyPath, [string]$LegacyPath)
+    $id = [guid]::NewGuid().ToString('N')
+    $outputPath = Join-Path (Split-Path $LegacyPath -Parent) ".config-powershell7-migrate-$id.stdout"
+    $errorPath = Join-Path (Split-Path $LegacyPath -Parent) ".config-powershell7-migrate-$id.stderr"
+    try {
+        $arguments = @('migrate', '--dry-run', '--config-file', ('"' + $LegacyPath + '"'))
+        $process = Start-Process -FilePath $AlacrittyPath -ArgumentList $arguments -NoNewWindow -Wait -PassThru `
+            -RedirectStandardOutput $outputPath -RedirectStandardError $errorPath -ErrorAction Stop
+        if ($process.ExitCode -ne 0 -or -not (Test-Path $outputPath -PathType Leaf)) { return $null }
+        $output = [System.IO.File]::ReadAllText($outputPath)
+        if ([string]::IsNullOrWhiteSpace($output)) { return $null }
+        $tomlLines = New-Object System.Collections.Generic.List[string]
+        $insideToml = $false
+        foreach ($line in ($output -split '\r?\n')) {
+            if ($line -match '^v-----Start TOML ') { $insideToml = $true; continue }
+            if ($line -match '^\^-----End TOML ') { break }
+            if ($insideToml) { $tomlLines.Add($line) }
+        }
+        if ($tomlLines.Count -eq 0) { return $null }
+        return (($tomlLines -join "`n").Trim() + "`n")
+    } catch {
+        Write-GuiLog "Could not migrate legacy Alacritty YAML: $($_.Exception.Message)" -Type Warn
+        return $null
+    } finally {
+        foreach ($path in @($outputPath, $errorPath)) { if (Test-Path $path) { Remove-Item $path -Force -ErrorAction SilentlyContinue } }
+    }
+}
+
+function Install-AlacrittyConfig {
+    param(
+        [string]$ThemeName = 'Catppuccin Mocha',
+        [string]$AlacrittyPath,
+        [string]$PwshPath
+    )
+    try {
+        if (-not $env:APPDATA) { throw 'APPDATA is not set.' }
+        if (-not $PwshPath) { $PwshPath = Get-PwshExecutablePath }
+        if (-not $PwshPath) { return $false }
+        $themeContent = Get-AlacrittyThemeContent -ThemeName $ThemeName
+        if ($null -eq $themeContent) { throw "Terminal theme '$ThemeName' not found." }
+
         $configDir = Join-Path $env:APPDATA 'alacritty'
-        if (-not (Test-Path $configDir)) {
-            New-Item -ItemType Directory -Path $configDir -Force | Out-Null
-        }
-
+        $ownedDir = Join-Path $configDir 'config-powershell7'
+        [System.IO.Directory]::CreateDirectory($ownedDir) | Out-Null
         $configPath = Join-Path $configDir 'alacritty.toml'
-
-        if (Test-Path $configPath) {
-            $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-            Copy-Item $configPath "$configPath.bak-$timestamp" -Force
-            Write-GuiLog "Existing Alacritty config backed up." -Type Info
-        }
-
-        Set-Content -Path $configPath -Value @'
+        $userPath = Join-Path $configDir 'alacritty.user.toml'
+        $basePath = Join-Path $ownedDir 'base.toml'
+        $themePath = Join-Path $ownedDir 'theme.toml'
+        $statePath = Join-Path $ownedDir 'state.txt'
+        $marker = '# Managed by config-powershell7. Edit alacritty.user.toml for overrides.'
+        $imports = @($basePath, $themePath, $userPath) | ForEach-Object { ConvertTo-AlacrittyTomlString $_ }
+        $wrapperContent = $marker + "`n[general]`nimport = [`n    " + ($imports -join ",`n    ") + "`n]`n"
+        $baseContent = @"
 [window]
 decorations = "Full"
 opacity = 0.95
@@ -624,40 +716,48 @@ style = "Italic"
 family = "FiraCode Nerd Font"
 style = "Bold Italic"
 
-[colors.primary]
-background = "#1E1E2E"
-foreground = "#CDD6F4"
-
-[colors.normal]
-black   = "#45475A"
-red     = "#F38BA8"
-green   = "#A6E3A1"
-yellow  = "#F9E2AF"
-blue    = "#89B4FA"
-magenta = "#F5C2E7"
-cyan    = "#94E2D5"
-white   = "#BAC2DE"
-
-[colors.bright]
-black   = "#585B70"
-red     = "#F38BA8"
-green   = "#A6E3A1"
-yellow  = "#F9E2AF"
-blue    = "#89B4FA"
-magenta = "#F5C2E7"
-cyan    = "#94E2D5"
-white   = "#A6ADC8"
-
-[[keyboard.bindings]]
-action = "Paste"
-key = "V"
-mods = "Control|Shift"
-
 [terminal.shell]
-program = "pwsh"
+program = $(ConvertTo-AlacrittyTomlString $PwshPath)
 args = ["-NoLogo"]
-'@ -Encoding UTF8 -Force
+"@
 
+        $existingContent = if (Test-Path $configPath -PathType Leaf) { [System.IO.File]::ReadAllText($configPath) } else { $null }
+        $managed = $null -ne $existingContent -and $existingContent.StartsWith($marker, [System.StringComparison]::Ordinal)
+        if ($null -ne $existingContent -and -not $managed) {
+            $userContent = $existingContent
+        } elseif (Test-Path $userPath -PathType Leaf) {
+            $userContent = [System.IO.File]::ReadAllText($userPath)
+        } else {
+            $legacyPath = @((Join-Path $configDir 'alacritty.yml'), (Join-Path $configDir 'alacritty.yaml')) |
+                Where-Object { Test-Path $_ -PathType Leaf } | Select-Object -First 1
+            if ($legacyPath) {
+                if (-not $AlacrittyPath) { throw "Legacy YAML found at '$legacyPath', but Alacritty is unavailable to migrate it safely." }
+                $userContent = ConvertFrom-AlacrittyYaml -AlacrittyPath $AlacrittyPath -LegacyPath $legacyPath
+                if ($null -eq $userContent) { throw "Legacy YAML migration failed; '$legacyPath' was left unchanged." }
+            } else {
+                $userContent = ''
+            }
+        }
+
+        if (-not (Test-AlacrittyCandidateConfig -AlacrittyPath $AlacrittyPath -ConfigDir $configDir -BaseContent $baseContent -ThemeContent $themeContent -UserContent $userContent)) {
+            throw 'Candidate configuration was rejected by Alacritty.'
+        }
+
+        if ($null -ne $existingContent -and -not $managed) {
+            $backupPath = "$configPath.config-powershell7.bak"
+            $suffix = 0
+            while (Test-Path $backupPath) { $suffix++; $backupPath = "$configPath.config-powershell7.bak.$suffix" }
+            [System.IO.File]::Copy($configPath, $backupPath, $false)
+            Set-AlacrittyContentIfChanged -Path $statePath -Content "adopted=$backupPath`n" | Out-Null
+            Write-GuiLog "Existing Alacritty TOML preserved at: $backupPath" -Type Info
+        } elseif (-not (Test-Path $statePath -PathType Leaf)) {
+            Set-AlacrittyContentIfChanged -Path $statePath -Content "created=true`n" | Out-Null
+        }
+
+        Set-AlacrittyContentIfChanged -Path $userPath -Content $userContent | Out-Null
+        Set-AlacrittyContentIfChanged -Path $basePath -Content $baseContent | Out-Null
+        Set-AlacrittyContentIfChanged -Path $themePath -Content $themeContent | Out-Null
+        Set-AlacrittyContentIfChanged -Path $configPath -Content $wrapperContent | Out-Null
         Write-GuiLog "Alacritty configured at: $configPath" -Type Ok
         return $true
     } catch {
@@ -666,22 +766,60 @@ args = ["-NoLogo"]
     }
 }
 
+function Uninstall-AlacrittyConfig {
+    try {
+        if (-not $env:APPDATA) { return $true }
+        $configDir = Join-Path $env:APPDATA 'alacritty'
+        $ownedDir = Join-Path $configDir 'config-powershell7'
+        $configPath = Join-Path $configDir 'alacritty.toml'
+        $userPath = Join-Path $configDir 'alacritty.user.toml'
+        $marker = '# Managed by config-powershell7. Edit alacritty.user.toml for overrides.'
+        if (-not (Test-Path $ownedDir -PathType Container)) { return $true }
+        $isManaged = (Test-Path $configPath -PathType Leaf) -and
+            [System.IO.File]::ReadAllText($configPath).StartsWith($marker, [System.StringComparison]::Ordinal)
+        if ($isManaged) {
+            if (Test-Path $userPath -PathType Leaf) {
+                $userContent = [System.IO.File]::ReadAllText($userPath)
+                if ([string]::IsNullOrEmpty($userContent)) { Remove-Item $configPath -Force }
+                else { [System.IO.File]::WriteAllText($configPath, $userContent, (New-Object System.Text.UTF8Encoding($false))) }
+                Remove-Item $userPath -Force
+            } else {
+                Remove-Item $configPath -Force
+            }
+            Write-GuiLog 'Alacritty user configuration restored.' -Type Ok
+        } else {
+            Write-GuiLog 'Alacritty config is not project-managed; leaving it unchanged.' -Type Warn
+            return $false
+        }
+        Remove-Item $ownedDir -Recurse -Force
+        return $true
+    } catch {
+        Write-GuiLog "Failed to restore Alacritty configuration: $($_.Exception.Message)" -Type Warn
+        return $false
+    }
+}
+
 function Install-Alacritty {
-    $existing = Get-Executable -Name 'alacritty'
-    if (-not $existing) {
-        $null = Install-WingetPackage -Id 'Alacritty.Alacritty' -DisplayName 'Alacritty'
-    } else {
-        $verStr = if ($existing.Version) { " $($existing.Version)" } else { '' }
-        Write-GuiLog "Alacritty already installed: $($existing.Path)$verStr" -Type Ok
+    param([string]$ThemeName = 'Catppuccin Mocha')
+    if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT -or
+        [Environment]::OSVersion.Version.Major -lt 10 -or -not [Environment]::Is64BitOperatingSystem) {
+        Write-GuiLog 'Alacritty managed setup requires Windows 10/11 x64.' -Type Warn
+        return $false
     }
 
-    if (Get-Command alacritty -ErrorAction SilentlyContinue) {
-        Write-GuiLog "Configuring Alacritty..." -Type Step
-        $configResult = Install-AlacrittyConfig
-        return $configResult
+    $alacritty = Get-AlacrittyExecutable
+    if (-not $alacritty -or $alacritty.Version -lt [version]'0.14.0') {
+        if ($alacritty) { Write-GuiLog "Alacritty $($alacritty.Version) is below required version 0.14.0; upgrading..." -Type Step }
+        if (-not (Install-WingetPackage -Id 'Alacritty.Alacritty' -DisplayName 'Alacritty')) { return $false }
+        $alacritty = Get-AlacrittyExecutable
     }
-    Write-GuiLog "Alacritty not found after install attempt." -Type Warn
-    return $false
+    if (-not $alacritty) { Write-GuiLog 'Alacritty executable not found after install attempt.' -Type Warn; return $false }
+    if ($alacritty.Version -lt [version]'0.14.0') { Write-GuiLog "Alacritty $($alacritty.Version) does not meet required version 0.14.0." -Type Warn; return $false }
+
+    $pwshPath = Get-PwshExecutablePath
+    if (-not $pwshPath) { return $false }
+    Write-GuiLog "Alacritty $($alacritty.Version) found at $($alacritty.Path)." -Type Ok
+    return Install-AlacrittyConfig -ThemeName $ThemeName -AlacrittyPath $alacritty.Path -PwshPath $pwshPath
 }
 
 function Install-Chocolatey {
@@ -757,7 +895,6 @@ function Install-Scoop {
     if (-not $existing) {
         Write-GuiLog "Installing Scoop..." -Type Step
         try {
-            Set-ExecutionPolicy RemoteSigned -Scope CurrentUser -Force -ErrorAction Stop
             Enable-Tls12
             $scoopInstallUrl = 'https://get.scoop.sh'
             $scoopInstallPath = Join-Path $env:TEMP "config-pwsh7-install-scoop-$([guid]::NewGuid().ToString('N')).ps1"

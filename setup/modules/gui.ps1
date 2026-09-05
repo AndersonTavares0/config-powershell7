@@ -273,7 +273,7 @@ function Show-Gui {
                     </Border>
                 </Grid>
             </Border>
-            <CheckBox x:Name="ChkAlacritty" Style="{StaticResource CheckBoxLabel}" IsChecked="False" Margin="0,6,0,3">
+            <CheckBox x:Name="ChkAlacritty" Style="{StaticResource CheckBoxLabel}" IsChecked="True" Margin="0,6,0,3">
                 Install Alacritty terminal emulator
             </CheckBox>
             <CheckBox x:Name="ChkScoop" Style="{StaticResource CheckBoxLabel}" IsChecked="False" Margin="0,6,0,3">
@@ -493,6 +493,8 @@ function Show-Gui {
     $chkTerminalTheme.Add_Unchecked({
         $terminalThemeSection.Visibility = [System.Windows.Visibility]::Collapsed
     })
+    $chkThemeAla.Add_Checked({ $chkAlacritty.IsChecked = $true })
+    $chkAlacritty.Add_Unchecked({ $chkThemeAla.IsChecked = $false })
 
     # Load OMP theme list in background async (via Start-Job)
     $txtThemeCount.Text = "Loading themes..."
@@ -500,13 +502,18 @@ function Show-Gui {
     function Start-OmpThemeLoad {
         $script:ThemeJob = Start-Job -ScriptBlock {
             try {
-                Enable-Tls12
+                if ($PSVersionTable.PSVersion.Major -lt 6) {
+                    $currentProtocol = [System.Net.ServicePointManager]::SecurityProtocol
+                    [System.Net.ServicePointManager]::SecurityProtocol = $currentProtocol -bor [System.Net.SecurityProtocolType]::Tls12
+                }
                 $apiUrl = 'https://api.github.com/repos/JanDeDobbeleer/oh-my-posh/contents/themes'
                 $items = Invoke-RestMethod -Uri $apiUrl -ErrorAction Stop
                 @($items | Where-Object { $_.name -like '*.omp.json' } |
                     ForEach-Object { $_.name -replace '\.omp\.json$', '' } |
                     Sort-Object)
-            } catch { $null }
+            } catch {
+                Write-Error "Failed to load OMP themes: $($_.Exception.Message)"
+            }
         } -Name 'OmpThemeLoad'
     }
 
@@ -634,7 +641,9 @@ function Show-Gui {
             . (Join-Path $SetupDir 'modules/orchestrator.ps1')
 
             if ($NeedDownload) {
-                Download-Repo -TargetDir $RepoPath
+                if (-not (Download-Repo -TargetDir $RepoPath)) {
+                    throw "Repository download failed: $RepoPath"
+                }
             }
 
             Start-ProfileInstall @Params
@@ -661,7 +670,7 @@ function Show-Gui {
             TerminalThemeName = $selTermTheme
             TerminalThemeWT   = $chkThemeWT.IsChecked -and $chkTerminalTheme.IsChecked
             TerminalThemeAla  = $chkThemeAla.IsChecked -and $chkTerminalTheme.IsChecked
-            InstallAlacritty  = $chkAlacritty.IsChecked
+            InstallAlacritty  = $chkAlacritty.IsChecked -or $chkThemeAla.IsChecked
             InstallTopgrade   = $chkTopgrade.IsChecked
             InstallScoop      = $chkScoop.IsChecked
             ScoopBuckets      = $txtScoopBuckets.Text
@@ -707,6 +716,7 @@ function Show-Gui {
 
             . (Join-Path $SetupDir '../lib/executable.ps1')
             . (Join-Path $SetupDir 'modules/core.ps1')
+            . (Join-Path $SetupDir 'modules/deps.ps1')
             . (Join-Path $SetupDir 'modules/profile.ps1')
             . (Join-Path $SetupDir 'modules/orchestrator.ps1')
 

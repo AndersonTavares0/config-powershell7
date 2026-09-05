@@ -15,16 +15,16 @@ if (-not (Get-Variable -Name 'IsWin' -Scope Script -ErrorAction SilentlyContinue
 
 $script:RepoOwner  = 'AndersonTavares0'
 $script:RepoName   = 'config-powershell7'
-$script:RepoBranch = 'main'
-$script:RepoZipUrl = "https://github.com/$script:RepoOwner/$script:RepoName/archive/refs/heads/$script:RepoBranch.zip"
+$script:RepoZipUrl = "https://api.github.com/repos/$script:RepoOwner/$script:RepoName/releases/latest"
 
 function Write-GuiLog {
     param(
         [string]$Message,
         [string]$Type = 'Info'
     )
-    if ($script:SyncHash) {
-        $script:SyncHash.LogMessages.Add(@{ Message = $Message; Type = $Type; Time = Get-Date })
+    $syncHash = Get-Variable -Name SyncHash -Scope Script -ValueOnly -ErrorAction SilentlyContinue
+    if ($syncHash) {
+        $syncHash.LogMessages.Add(@{ Message = $Message; Type = $Type; Time = Get-Date })
     }
     $prefix = switch ($Type) {
         'Ok'   { '[OK]' }
@@ -95,36 +95,41 @@ function Download-Repo {
     param([string]$TargetDir)
 
     $zipPath = Join-Path $env:TEMP "$($script:RepoName)-archive.zip"
-    $extractDir = Join-Path $env:TEMP "$($script:RepoName)-extract"
-
-    $ok = Get-FileFromUrl -Url $script:RepoZipUrl -OutFile $zipPath
-    if (-not $ok) {
-        Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
-        return $false
-    }
+    $extractDir = $null
+    $previousDir = $null
+    $movedPrevious = $false
 
     try {
-        Write-GuiLog "Extracting to $TargetDir..." -Type Step
+        $TargetDir = [System.IO.Path]::GetFullPath($TargetDir)
+        $parentDir = Split-Path $TargetDir -Parent
+        $id = [guid]::NewGuid().ToString('N')
+        $extractDir = Join-Path $parentDir ".$($script:RepoName)-stage-$id"
+        $previousDir = Join-Path $parentDir ".$($script:RepoName)-previous-$id"
+        Enable-Tls12
+        $release = Invoke-RestMethod -Uri $script:RepoZipUrl -ErrorAction Stop
+        if (-not $release.tag_name -or -not $release.zipball_url) {
+            throw 'Latest GitHub release metadata is incomplete.'
+        }
+        $ok = Get-FileFromUrl -Url $release.zipball_url -OutFile $zipPath
+        if (-not $ok) { return $false }
 
-        if (Test-Path $extractDir -ErrorAction SilentlyContinue) {
-            Remove-Item $extractDir -Recurse -Force -ErrorAction SilentlyContinue
-        }
-        if (Test-Path $TargetDir -ErrorAction SilentlyContinue) {
-            Remove-Item $TargetDir -Recurse -Force -ErrorAction SilentlyContinue
-        }
+        Write-GuiLog "Extracting to $TargetDir..." -Type Step
+        if (-not (Test-Path $parentDir)) { New-Item -ItemType Directory -Force -Path $parentDir | Out-Null }
+        New-Item -ItemType Directory -Force -Path $extractDir | Out-Null
 
         Add-Type -AssemblyName System.IO.Compression.FileSystem
         [System.IO.Compression.ZipFile]::ExtractToDirectory($zipPath, $extractDir)
 
         $innerDir = Get-ChildItem $extractDir -Directory -ErrorAction SilentlyContinue | Select-Object -First 1
-        if (-not $innerDir) {
-            Write-GuiLog "Extraction failed: no directory found in archive" -Type Fail
-            return $false
+        if (-not $innerDir -or -not (Test-Path (Join-Path $innerDir.FullName 'Microsoft.PowerShell_profile.ps1'))) {
+            throw 'Downloaded release does not contain a valid profile repository.'
+        }
+        Set-Content -Path (Join-Path $innerDir.FullName '.config-powershell7-version') -Value $release.tag_name -Encoding ASCII
+        if (Test-Path $TargetDir) {
+            Move-Item $TargetDir $previousDir -Force
+            $movedPrevious = $true
         }
         Move-Item $innerDir.FullName $TargetDir -Force
-
-        Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
-        Remove-Item $extractDir -Recurse -Force -ErrorAction SilentlyContinue
 
         # Unblock downloaded files to avoid ExecutionPolicy errors
         Write-GuiLog "Unblocking script files..." -Type Step
@@ -133,6 +138,10 @@ function Download-Repo {
         Write-GuiLog "Files unblocked." -Type Ok
 
         if (Test-Path (Join-Path $TargetDir 'Microsoft.PowerShell_profile.ps1') -ErrorAction SilentlyContinue) {
+            if ($movedPrevious -and (Test-Path $previousDir)) {
+                Remove-Item $previousDir -Recurse -Force
+                $movedPrevious = $false
+            }
             Write-GuiLog "Repository ready at: $TargetDir" -Type Ok
             return $true
         }
@@ -140,7 +149,15 @@ function Download-Repo {
         return $false
     } catch {
         Write-GuiLog "Extraction failed: $($_.Exception.Message)" -Type Fail
+        if ($movedPrevious -and (Test-Path $previousDir)) {
+            if (Test-Path $TargetDir) { Remove-Item $TargetDir -Recurse -Force -ErrorAction SilentlyContinue }
+            Move-Item $previousDir $TargetDir -Force -ErrorAction SilentlyContinue
+            $movedPrevious = $false
+        }
         return $false
+    } finally {
+        Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
+        if ($extractDir) { Remove-Item $extractDir -Recurse -Force -ErrorAction SilentlyContinue }
     }
 }
 

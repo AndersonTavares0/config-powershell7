@@ -18,8 +18,8 @@ irm https://github.com/AndersonTavares0/config-powershell7/raw/main/setup.ps1 | 
 ```
 
 Installs PS7, Git, Oh My Posh, Zoxide, FiraCode Nerd Font, PSReadLine,
-Terminal-Icons, and optionally Alacritty, terminal color themes, Topgrade, and
-Scoop. Auto-elevates to Admin on Windows.
+Terminal-Icons, and Alacritty. Topgrade and Scoop remain optional. Package
+installers can request UAC when their WinGet manifest requires machine scope.
 
 ## Key Technical Features
 
@@ -39,20 +39,19 @@ Scoop. Auto-elevates to Admin on Windows.
 - **POSH_THEME Env Var**: Runtime OMP theme selection via
   `$env:POSH_THEME` — overrides the theme chosen at install time. Set it in
   `$PROFILE` or per-session to switch themes without reinstalling.
-- **Universal Installer**: Auto-elevation to Admin, WinGet with
+- **Universal Installer**: Per-user orchestration, WinGet with
   `--silent --accept-source-agreements --accept-package-agreements`, dynamic
-  paths via `[Environment]::GetFolderPath` (OneDrive-proof), idempotent (safe
-  to run multiple times).
+  paths via `[Environment]::GetFolderPath`, stable GitHub Release downloads,
+  and convergent repeat runs.
 - **Zero-Elevation Profile**: No symlinks, no UAC prompts. The installer
-  writes a lightweight `$PROFILE` file that dot-sources the repository via
-  `$env:__PROFILE_REPO_ROOT`, ensuring 100% path resolution without Admin
-  privileges.
+  maintains a lightweight block in `$PROFILE.CurrentUserAllHosts` that
+  dot-sources the repository without replacing user content.
 - **Strict-Mode Compliant**: Entire codebase passes
   `Set-StrictMode -Version Latest` — zero uninitialized variables, no hidden
-  scoping. No bare `catch {}`. Globals use environment variables
-  (`$env:__PROFILE_LOADED`, `$env:__PROFILE_REPO_ROOT`).
-- **Cross-Platform**: Full support for Windows, Linux (Fedora), and macOS with
-  graceful degradation per platform.
+  scoping. No bare `catch {}`. Profile load guards stay process-local and are
+  not inherited by child shells.
+- **Windows Target**: Installer support covers Windows 10/11 x64 with
+  PowerShell 7 and Alacritty. Profile modules retain graceful platform checks.
 - **Dynamic Boot Summary**: Clean boot report with platform info, loaded
   modules, and admin status.
 
@@ -120,8 +119,8 @@ system → psreadline → text_utils
 irm https://github.com/AndersonTavares0/config-powershell7/raw/main/setup.ps1 | iex
 ```
 
-> Auto-elevates to Admin, detects interactive vs headless, guides you through
-> theme selection.
+> Detects interactive versus headless use and guides theme selection. WinGet
+> package installers can request UAC independently.
 
 **Option B — WPF GUI (Windows):**
 
@@ -133,7 +132,7 @@ cd config-powershell7
 
 > Full graphical installer with OMP theme preview and terminal color swatches.
 
-**Option C — Legacy (headless/CI):**
+**Option C — Headless/CI compatibility wrapper:**
 
 ```powershell
 .\install.ps1 -NonInteractive

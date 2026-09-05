@@ -256,9 +256,9 @@ The execution order when opening a new session:
 
 ```
 1. PowerShell loads $PROFILE automatically.
-2. Guard: checks $env:__PROFILE_LOADED to prevent double-loading.
+2. Guard: checks a process-local global variable to prevent double-loading.
 3. Stopwatch starts for performance measurement.
-4. Resolves repository root via $env:__PROFILE_REPO_ROOT or $PSScriptRoot.
+4. Resolves repository root via $PSScriptRoot.
 5. Loads config module (critical -- must succeed, return on failure).
 6. Loads remaining modules in try/catch (non-critical):
    - cache:    TTL check -> hot path or rebuild -> dot-source cache

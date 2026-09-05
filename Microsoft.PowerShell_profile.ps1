@@ -11,19 +11,15 @@ $ErrorActionPreference = 'Stop'
 # PS 5.1+ / PS Core 7+ | Revisão: 05/2026
 # ============================================================
 
-# Previne execução duplicada se o usuário tiver o perfil
-# vinculado em múltiplos locais (AllHosts + CurrentHost)
-if ($env:__PROFILE_LOADED) { return }
-$env:__PROFILE_LOADED = '1'
+# Previne execução duplicada no mesmo processo sem vazar estado para processos filhos.
+if (Get-Variable -Name '__CONFIG_POWERSHELL7_PROFILE_LOADED' -Scope Global -ErrorAction SilentlyContinue) { return }
 
 # ── STOPWATCH ────────────────────────────────────────────────
 $script:BootTimer = [System.Diagnostics.Stopwatch]::StartNew()
 
 # ── ROOT DO REPOSITÓRIO ──────────────────────────────────────
-# Quando dot-sourced via $PROFILE, $PSScriptRoot resolve para o
-# diretório do PROFILE e não do repositório. O instalador define
-# $env:__PROFILE_REPO_ROOT com o caminho correto antes do dot-source.
-$script:ProfileRoot = if ($env:__PROFILE_REPO_ROOT) { $env:__PROFILE_REPO_ROOT } else { $PSScriptRoot }
+# $PSScriptRoot pertence a este arquivo mesmo quando carregado por dot-source.
+$script:ProfileRoot = $PSScriptRoot
 
 # ── PLATFORM DETECTION (inline, before config.ps1 loads) ─────
 if ($PSVersionTable.PSVersion.Major -ge 6) {
@@ -60,7 +56,7 @@ if ($script:IsWin) {
 # ── UNBLOCK DOWNLOADED FILES (Windows only) ──────────────────
 # Remove Zone.Identifier from ZIP downloads to avoid ExecutionPolicy errors.
 # Skipped in CI (no Zone.Identifier on checkout) and after first run.
-if ($script:IsWin -and -not $env:__PROFILE_UNBLOCKED -and -not $env:CI) {
+if ($script:IsWin -and -not (Get-Variable -Name '__CONFIG_POWERSHELL7_PROFILE_UNBLOCKED' -Scope Global -ErrorAction SilentlyContinue) -and -not $env:CI) {
     try {
         $sampleFile = Get-ChildItem -Path $script:ProfileRoot -Filter '*.ps1' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
         if ($sampleFile -and $sampleFile.GetIsZoneIdentifier()) {
@@ -70,7 +66,7 @@ if ($script:IsWin -and -not $env:__PROFILE_UNBLOCKED -and -not $env:CI) {
     } catch {
         # GetIsZoneIdentifier may not be available on all PS versions; skip check
     }
-    $env:__PROFILE_UNBLOCKED = '1'
+    $global:__CONFIG_POWERSHELL7_PROFILE_UNBLOCKED = $true
 }
 
 # ── LISTA DE MÓDULOS CARREGADOS (consumida pelo cache) ───────
@@ -86,6 +82,7 @@ $script:StartupModules = [System.Collections.Generic.List[string]]::new()
 $configPath = Join-Path $script:ProfileRoot 'modules/config/config.ps1'
 if (Test-Path $configPath) {
     . $configPath
+    $global:__CONFIG_POWERSHELL7_PROFILE_LOADED = $true
 } else {
     Write-Warning "Config module not found: $configPath"
     return
