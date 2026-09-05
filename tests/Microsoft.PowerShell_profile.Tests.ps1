@@ -96,7 +96,7 @@ Write-Host "========================================`n" -ForegroundColor Cyan
 Write-Host "Loading profile..." -ForegroundColor Yellow
 $profileTimer = [System.Diagnostics.Stopwatch]::StartNew()
 try {
-    $env:__PROFILE_LOADED = $null
+    Remove-Variable -Name '__CONFIG_POWERSHELL7_PROFILE_LOADED' -Scope Global -ErrorAction SilentlyContinue
     . $PROFILE
     $profileTimer.Stop()
     $bootMs = [math]::Round($profileTimer.Elapsed.TotalMilliseconds, 0)
@@ -123,7 +123,7 @@ Test-Result -Name "Cold boot -lt 2000ms (measured: ${bootMs}ms)" `
 # Test P2: Second boot (cache hit) should be faster
 $secondTimer = [System.Diagnostics.Stopwatch]::StartNew()
 try {
-    $env:__PROFILE_LOADED = $null
+    Remove-Variable -Name '__CONFIG_POWERSHELL7_PROFILE_LOADED' -Scope Global -ErrorAction SilentlyContinue
     . $PROFILE
     $secondTimer.Stop()
     $secondMs = [math]::Round($secondTimer.Elapsed.TotalMilliseconds, 0)
