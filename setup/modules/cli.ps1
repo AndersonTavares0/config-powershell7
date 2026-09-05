@@ -117,19 +117,25 @@ function Start-CliMenu {
             Write-Host ""
             Write-Host "Starting installation... This may take several minutes." -ForegroundColor Yellow
             Write-Host ""
-            Start-ProfileInstall -RepoPath $RepoPath -ThemeName $themeName `
+            $installResult = Start-ProfileInstall -RepoPath $RepoPath -ThemeName $themeName `
+                -InstallAlacritty $true `
                 -TerminalThemeName $terminalTheme `
                 -TerminalThemeWT $termThemeWT `
                 -TerminalThemeAla $termThemeAla
             Write-Host ""
-            Write-Host "Done! Restart your terminal to apply all changes." -ForegroundColor Green
+            if ($installResult) {
+                Write-Host "Done! Restart your terminal to apply all changes." -ForegroundColor Green
+            } else {
+                Write-Host "Installation finished with failures. Review the summary above." -ForegroundColor Red
+            }
         }
         '2' {
             Write-Host ""
             Write-Host "Starting uninstall..." -ForegroundColor Yellow
-            Start-ProfileUninstall -RepoPath $RepoPath
+            $uninstallResult = Start-ProfileUninstall -RepoPath $RepoPath
             Write-Host ""
-            Write-Host "Done!" -ForegroundColor Green
+            if ($uninstallResult) { Write-Host "Done!" -ForegroundColor Green }
+            else { Write-Host "Uninstall finished with failures." -ForegroundColor Red }
         }
         '3' {
             Write-Host "Exiting." -ForegroundColor Gray

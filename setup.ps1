@@ -7,7 +7,7 @@
 
     Remote flow (irm | iex):
         - Shows summary of what the installer does
-        - Asks for install directory (default: ~/Documents/config-powershell7)
+        - Asks for install directory (default: LocalApplicationData/config-powershell7)
         - Requests explicit consent before downloading
         - Downloads repo and invokes the local installer
 
@@ -27,12 +27,14 @@
 .NOTES
     Requires Windows 10+ with PowerShell 5.1+.
     Uses winget for package installation.
-    No admin elevation required.
+    The orchestrator does not elevate itself. Individual packages can request UAC.
 #>
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '')]
 param(
-    [switch]$NonInteractive
+    [switch]$NonInteractive,
+    [string]$ThemeName = '',
+    [switch]$InstallAlacritty
 )
 
 Set-StrictMode -Version Latest
@@ -51,16 +53,19 @@ if ($PSVersionTable.PSVersion.Major -ge 6) {
 }
 
 if (-not $isWin) {
-    Write-Host "This installer is for Windows only. For Linux, use install.ps1." -ForegroundColor Red
+    Write-Host "This installer supports Windows 10/11 x64 only." -ForegroundColor Red
     return
 }
 
 # Constants
 $repoOwner   = 'AndersonTavares0'
 $repoName    = 'config-powershell7'
-$repoBranch  = 'main'
-$repoZipUrl  = "https://github.com/$repoOwner/$repoName/archive/refs/heads/$repoBranch.zip"
-$repoDefaultDir = Join-Path ([Environment]::GetFolderPath('MyDocuments')) $repoName
+$repoReleaseUrl = "https://api.github.com/repos/$repoOwner/$repoName/releases/latest"
+$localAppData = [Environment]::GetFolderPath('LocalApplicationData')
+if ([string]::IsNullOrWhiteSpace($localAppData)) {
+    $localAppData = Join-Path ([Environment]::GetFolderPath('UserProfile')) 'AppData\Local'
+}
+$repoDefaultDir = Join-Path $localAppData $repoName
 
 # Helpers
 
@@ -70,61 +75,133 @@ function Test-IsValidRepo {
 }
 
 function Invoke-Launcher {
-    param([string]$RepoPath)
+    param(
+        [string]$RepoPath,
+        [switch]$NonInteractive,
+        [string]$ThemeName = '',
+        [switch]$InstallAlacritty
+    )
     $setupEntryPoint = Join-Path $RepoPath 'setup\setup.ps1'
     if (-not (Test-Path $setupEntryPoint)) {
         Write-Host "Setup directory not found. The repository may be outdated." -ForegroundColor Red
-        return
+        return $false
     }
-    . $setupEntryPoint -RepoPath $RepoPath
+
+    if ($PSVersionTable.PSVersion.Major -lt 7) {
+        $pwshCommand = Get-Command pwsh -ErrorAction SilentlyContinue
+        $pwshPath = if ($pwshCommand) { $pwshCommand.Source } else { Join-Path $env:ProgramFiles 'PowerShell\7\pwsh.exe' }
+        if (-not (Test-Path $pwshPath -PathType Leaf)) {
+            $wingetCommand = Get-Command winget -ErrorAction SilentlyContinue
+            $wingetPath = if ($wingetCommand) { $wingetCommand.Source } else {
+                Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'Microsoft\WindowsApps\winget.exe'
+            }
+            if (-not (Test-Path $wingetPath -PathType Leaf)) {
+                Write-Host 'PowerShell 7 and WinGet are unavailable. Install PowerShell 7, then retry.' -ForegroundColor Red
+                return $false
+            }
+            Write-Host 'Installing PowerShell 7 before configuring its profile...' -ForegroundColor Cyan
+            & $wingetPath install --id Microsoft.PowerShell --exact --source winget --accept-source-agreements --accept-package-agreements
+            if ($LASTEXITCODE -ne 0 -or -not (Test-Path $pwshPath -PathType Leaf)) {
+                Write-Host 'PowerShell 7 installation failed.' -ForegroundColor Red
+                return $false
+            }
+        }
+
+        $launcherArgs = @('-NoProfile', '-File', $setupEntryPoint, '-RepoPath', $RepoPath)
+        if ($NonInteractive) { $launcherArgs += '-NonInteractive' }
+        if ($ThemeName) { $launcherArgs += @('-ThemeName', $ThemeName) }
+        if ($InstallAlacritty) { $launcherArgs += '-InstallAlacritty' }
+        & $pwshPath @launcherArgs
+        return $LASTEXITCODE -eq 0
+    }
+    . $setupEntryPoint -RepoPath $RepoPath -NonInteractive:$NonInteractive `
+        -ThemeName $ThemeName -InstallAlacritty:$InstallAlacritty
+    return $true
+}
+
+$script:LatestRepoRelease = $null
+function Get-LatestRepoRelease {
+    if ($script:LatestRepoRelease) { return $script:LatestRepoRelease }
+    $script:LatestRepoRelease = Invoke-RestMethod -Uri $repoReleaseUrl -ErrorAction Stop
+    if (-not $script:LatestRepoRelease.tag_name -or -not $script:LatestRepoRelease.zipball_url) {
+        throw 'Latest GitHub release metadata is incomplete.'
+    }
+    return $script:LatestRepoRelease
+}
+
+function Test-RepoReleaseCurrent {
+    param([string]$Path)
+    $versionPath = Join-Path $Path '.config-powershell7-version'
+    if (-not (Test-Path $versionPath -PathType Leaf)) { return $false }
+    $installedVersion = (Get-Content $versionPath -Raw -ErrorAction SilentlyContinue).Trim()
+    $latestRelease = Get-LatestRepoRelease
+    return $installedVersion -eq $latestRelease.tag_name
 }
 
 function Download-Repo {
     param([string]$TargetDir)
 
     $zipPath    = Join-Path $env:TEMP "$repoName.zip"
-    $extractDir = Join-Path $env:TEMP "$repoName-extract"
+    $extractDir = $null
+    $previousDir = $null
+    $movedPrevious = $false
 
     try {
-        Write-Host "Downloading repository..." -ForegroundColor Cyan
-        Invoke-WebRequest -Uri $repoZipUrl -OutFile $zipPath -ErrorAction Stop
-
-        if (Test-Path $extractDir) { Remove-Item $extractDir -Recurse -Force -ErrorAction SilentlyContinue }
-
-        # Ensure parent directory exists before extraction
+        $TargetDir = [System.IO.Path]::GetFullPath($TargetDir)
         $parentDir = Split-Path $TargetDir -Parent
+        $id = [guid]::NewGuid().ToString('N')
+        $extractDir = Join-Path $parentDir ".$repoName-stage-$id"
+        $previousDir = Join-Path $parentDir ".$repoName-previous-$id"
+        Write-Host "Resolving latest stable release..." -ForegroundColor Cyan
+        $release = Get-LatestRepoRelease
+
+        Write-Host "Downloading release $($release.tag_name)..." -ForegroundColor Cyan
+        Invoke-WebRequest -Uri $release.zipball_url -OutFile $zipPath -ErrorAction Stop
+
         if (-not (Test-Path $parentDir)) {
             New-Item -ItemType Directory -Force -Path $parentDir | Out-Null
         }
-
-        if (Test-Path $TargetDir) { Remove-Item $TargetDir -Recurse -Force -ErrorAction SilentlyContinue }
+        New-Item -ItemType Directory -Force -Path $extractDir | Out-Null
 
         Add-Type -AssemblyName System.IO.Compression.FileSystem
         [System.IO.Compression.ZipFile]::ExtractToDirectory($zipPath, $extractDir)
 
         $innerDir = Get-ChildItem $extractDir -Directory | Select-Object -First 1
-        if ($innerDir) {
-            Move-Item $innerDir.FullName $TargetDir -Force
-        } else {
-            Move-Item $extractDir $TargetDir -Force
+        if (-not $innerDir -or -not (Test-IsValidRepo $innerDir.FullName)) {
+            throw 'Downloaded release does not contain a valid profile repository.'
         }
+        Set-Content -Path (Join-Path $innerDir.FullName '.config-powershell7-version') -Value $release.tag_name -Encoding ASCII
 
-        Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
-        Remove-Item $extractDir -Recurse -Force -ErrorAction SilentlyContinue
+        if (Test-Path $TargetDir) {
+            Move-Item $TargetDir $previousDir -Force
+            $movedPrevious = $true
+        }
+        Move-Item $innerDir.FullName $TargetDir -Force
 
         Write-Host "Unblocking script files..." -ForegroundColor Cyan
         Get-ChildItem -Path $TargetDir -Filter '*.ps1' -Recurse -ErrorAction SilentlyContinue |
             Unblock-File -ErrorAction SilentlyContinue
         Write-Host "Files unblocked." -ForegroundColor Green
 
+        if (-not (Test-IsValidRepo $TargetDir)) { throw 'Activated repository failed validation.' }
+        if ($movedPrevious -and (Test-Path $previousDir)) {
+            Remove-Item $previousDir -Recurse -Force
+            $movedPrevious = $false
+        }
+
         Write-Host "Repository downloaded to: $TargetDir" -ForegroundColor Green
         return $true
     } catch {
         Write-Host "Failed to download repository: $($_.Exception.Message)" -ForegroundColor Red
-        # Clean up partial download
-        Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
-        Remove-Item $extractDir -Recurse -Force -ErrorAction SilentlyContinue
+        if ($movedPrevious -and (Test-Path $previousDir)) {
+            if (Test-Path $TargetDir) { Remove-Item $TargetDir -Recurse -Force -ErrorAction SilentlyContinue }
+            Move-Item $previousDir $TargetDir -Force -ErrorAction SilentlyContinue
+            $movedPrevious = $false
+        }
         return $false
+    } finally {
+        Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
+        if ($extractDir) { Remove-Item $extractDir -Recurse -Force -ErrorAction SilentlyContinue }
     }
 }
 
@@ -141,7 +218,9 @@ if ($localRepoPath) {
     # Unblock files in existing repo (covers git clone or manual copy)
     Get-ChildItem -Path $localRepoPath -Filter '*.ps1' -Recurse -ErrorAction SilentlyContinue |
         Unblock-File -ErrorAction SilentlyContinue
-    Invoke-Launcher -RepoPath $localRepoPath
+    $launcherOk = Invoke-Launcher -RepoPath $localRepoPath -NonInteractive:$NonInteractive `
+        -ThemeName $ThemeName -InstallAlacritty:$InstallAlacritty
+    if (-not $launcherOk) { throw 'Installation failed. Review messages above.' }
     return
 }
 
@@ -163,7 +242,7 @@ if (-not $isHeadless) {
     Write-Host "The installer can configure:" -ForegroundColor White
     Write-Host "  - PowerShell 7, Git, Oh My Posh, Zoxide" -ForegroundColor Gray
     Write-Host "  - FiraCode Nerd Font, PowerShell modules" -ForegroundColor Gray
-    Write-Host "  - Optional: Alacritty, terminal themes, Topgrade, Scoop" -ForegroundColor Gray
+    Write-Host "  - Alacritty; optional terminal themes, Topgrade, Scoop" -ForegroundColor Gray
     Write-Host ""
 
     # Ask install directory
@@ -179,11 +258,14 @@ if (-not $isHeadless) {
     # Check if directory exists
     if (Test-Path $repoPath) {
         if (Test-IsValidRepo $repoPath) {
-            # Valid repo already exists - skip download, go straight to launcher
-            Write-Host "Repository found at: $repoPath" -ForegroundColor Green
-            Write-Host "Launching installer..." -ForegroundColor Cyan
-            Invoke-Launcher -RepoPath $repoPath
-            return
+            if (Test-RepoReleaseCurrent $repoPath) {
+                Write-Host "Current stable release found at: $repoPath" -ForegroundColor Green
+                $launcherOk = Invoke-Launcher -RepoPath $repoPath -NonInteractive:$NonInteractive `
+                    -ThemeName $ThemeName -InstallAlacritty:$InstallAlacritty
+                if (-not $launcherOk) { throw 'Installation failed. Review messages above.' }
+                return
+            }
+            Write-Host "Installed repository needs stable release update: $repoPath" -ForegroundColor Yellow
         }
         # Directory exists but is not a valid repo - ask before replacing
         Write-Host "Directory exists but is not a valid repo: $repoPath" -ForegroundColor Yellow
@@ -205,17 +287,22 @@ if (-not $isHeadless) {
     # Headless mode - use defaults
     $repoPath = $repoDefaultDir
     if (Test-Path $repoPath -and (Test-IsValidRepo $repoPath)) {
-        Invoke-Launcher -RepoPath $repoPath
-        return
+        if (Test-RepoReleaseCurrent $repoPath) {
+            $launcherOk = Invoke-Launcher -RepoPath $repoPath -NonInteractive:$NonInteractive `
+                -ThemeName $ThemeName -InstallAlacritty:$InstallAlacritty
+            if (-not $launcherOk) { throw 'Installation failed. Review messages above.' }
+            return
+        }
     }
 }
 
 # Download repository
 $downloadOk = Download-Repo -TargetDir $repoPath
 if (-not $downloadOk) {
-    Write-Host "Installation aborted due to download failure." -ForegroundColor Red
-    return
+    throw 'Installation aborted due to download failure.'
 }
 
 # Launch installer
-Invoke-Launcher -RepoPath $repoPath
+$launcherOk = Invoke-Launcher -RepoPath $repoPath -NonInteractive:$NonInteractive `
+    -ThemeName $ThemeName -InstallAlacritty:$InstallAlacritty
+if (-not $launcherOk) { throw 'Installation failed. Review messages above.' }

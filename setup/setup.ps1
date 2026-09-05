@@ -1,7 +1,12 @@
 #Requires -Version 5.1
 # Module loader and launcher - called by root setup.ps1 after repo is resolved
 
-param([string]$RepoPath)
+param(
+    [string]$RepoPath,
+    [switch]$NonInteractive,
+    [string]$ThemeName = '',
+    [switch]$InstallAlacritty
+)
 
 $setupDir = Join-Path $RepoPath 'setup'
 $modulesDir = Join-Path $setupDir 'modules'
@@ -21,7 +26,11 @@ try {
     $canShowGui = $false
 }
 
-if (-not $canShowGui -or ($Host.Name -notmatch 'ConsoleHost' -and $env:CI)) {
+if ($NonInteractive) {
+    $installResult = Start-ProfileInstall -RepoPath $RepoPath -ThemeName $ThemeName `
+        -InstallAlacritty $true
+    if (-not $installResult) { throw 'One or more required installation steps failed.' }
+} elseif (-not $canShowGui -or ($Host.Name -notmatch 'ConsoleHost' -and $env:CI)) {
     Start-CliMenu -RepoPath $RepoPath
 } else {
     Show-Gui -SetupDir $setupDir -RepoPath $RepoPath
