@@ -235,8 +235,8 @@ the custom test suites on a Windows runner.
 
 All test suites use a custom framework (not Pester) with these functions:
 `Test-Result`, `Test-Skip`, `Assert-True`, `Assert-Equal`, `Assert-NotNull`,
-`Assert-False`. Tests dynamically verify `$env:__PROFILE_LOADED` and evaluate
-the profile in isolation to prevent side-effects, guaranteeing zero
+`Assert-False`. Tests dynamically verify the process-local load guard and
+evaluate the profile in isolation to prevent side-effects, guaranteeing zero
 false-positives under `Set-StrictMode -Version Latest`.
 
 ### Platform handling in tests

@@ -4,10 +4,13 @@
 
 - **Entrypoint**: `Microsoft.PowerShell_profile.ps1` -- dot-sourced by
   `$PROFILE` (or via installer stub)
-- **Double-load guard**: `$env:__PROFILE_LOADED` -- profile returns early if
-  already set
-- **Repo root resolution**: `$script:ProfileRoot` uses
-  `$env:__PROFILE_REPO_ROOT`, falls back to `$PSScriptRoot`
+- **Double-load guard**: process-local
+  `$global:__CONFIG_POWERSHELL7_PROFILE_LOADED`; child shells do not inherit it
+- **Repo root resolution**: `$script:ProfileRoot` uses `$PSScriptRoot`
+- **Installer profile target**: `$PROFILE.CurrentUserAllHosts`; installer owns
+  only its marked block and preserves surrounding user content
+- **Managed install root**: Windows defaults to
+  `[Environment]::GetFolderPath('LocalApplicationData')\config-powershell7`
 - **Loading order is critical**: config (0) -> cache (1) -> navigation -> git
   -> system -> psreadline -> text_utils
 - **Config is mandatory**: missing `modules/config/config.ps1` causes early
@@ -34,8 +37,8 @@
 
 - `Set-StrictMode -Version Latest` everywhere -- no uninitialized vars, no
   hidden scoping
-- `$script:` scope for module-private vars, `$env:` for `__PROFILE_REPO_ROOT`
-  and `__PROFILE_LOADED`
+- `$script:` scope for module-private vars; process-local `$global:` variables
+  only for profile load and unblock guards
 - `#Requires -Version 5.1` at top of all runnable scripts
 - `[SuppressMessageAttribute('PSAvoidUsingWriteHost', '')]` on `param()`
   blocks (not file-level)

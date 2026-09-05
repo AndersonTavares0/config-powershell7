@@ -5,8 +5,8 @@
 The profile uses a modular architecture for maintainability and organization.
 The main file `Microsoft.PowerShell_profile.ps1` acts as a **Loader**:
 
-1.  It identifies the repository root via `$env:__PROFILE_REPO_ROOT` (set by
-    the installer) or `$PSScriptRoot` as fallback.
+1.  It identifies the repository root from `$PSScriptRoot`, including when the
+    file is loaded through dot-sourcing.
 2.  Automatically loads scripts from `modules/` via *dot-sourcing* in strict
     order: **config -> cache -> navigation -> git -> system -> psreadline ->
     text_utils**.
@@ -47,25 +47,27 @@ irm https://github.com/AndersonTavares0/config-powershell7/raw/main/setup.ps1 | 
 The script detects whether you are in an interactive terminal and launches
 either the WPF GUI (Windows) or the CLI menu. It performs the following:
 
-1.  **Elevates to Administrator** automatically (UAC on Windows)
+1.  **Runs orchestration as the current user**; individual package installers
+    can request UAC when required
 2.  **Installs dependencies via WinGet** — PowerShell 7, Git, Oh My Posh,
     Zoxide
-3.  **Downloads the repository** to
-    `[Environment]::GetFolderPath('MyDocuments')\config-powershell7`
+3.  **Downloads the latest stable release** to
+    `[Environment]::GetFolderPath('LocalApplicationData')\config-powershell7`
 4.  **Installs FiraCode Nerd Font** via Shell API
-5.  **Configures Windows Terminal** with FiraCode as default font
+5.  **Configures Alacritty** with PowerShell 7, FiraCode Nerd Font, and
+    managed TOML fragments while preserving user settings
 6.  **Prompts for OMP theme selection** — live list fetched from GitHub API
     with search and preview
 7.  **Prompts for terminal color theme** — choose from Catppuccin Mocha/Latte,
     Dracula, Nord, Tokyo Night, One Half Dark for Windows Terminal and/or
     Alacritty
 8.  **Downloads the selected OMP theme** with validation
-9.  **Optionally installs Alacritty**, Topgrade (universal package updater),
-    and Scoop
-10. **Links the profile** via dot-source, configuring `$env:POSH_THEME`
+9.  **Optionally installs Topgrade** and Scoop
+10. **Maintains a marked block** in `$PROFILE.CurrentUserAllHosts`
 
-> Dynamic paths via `[Environment]::GetFolderPath` — works with OneDrive.
-> Idempotent — safe to run multiple times.
+> Managed source files stay outside Documents and OneDrive. PowerShell's small
+> profile entrypoint can still reside in redirected Documents.
+> Convergent — repeating the same selection does not rewrite managed files.
 > Blocks wrapped in Try-Catch with clear messages.
 
 ### Download trust model
@@ -77,22 +79,21 @@ downloaded files.
 
 | Asset | Source | Current validation |
 |---|---|---|
-| Bootstrapper and repository ZIP | This GitHub repository, `main` branch | HTTPS transport; repository layout checks after extraction |
+| Bootstrapper and repository ZIP | This GitHub repository, latest stable release | HTTPS transport; staged repository layout checks before activation |
 | Oh My Posh theme list and selected theme | Official Oh My Posh GitHub repository | HTTPS transport; selected theme file size sanity check |
 | FiraCode Nerd Font ZIP | Official `ryanoasis/nerd-fonts` GitHub release URL | HTTPS transport; ZIP extraction must succeed |
 | PowerShell modules | PowerShell Gallery | Repository/package manager trust |
 | WinGet packages | WinGet package sources | Package manager trust |
 | Optional Scoop or Chocolatey installer scripts | Official project installer URLs | HTTPS transport; no checksum validation |
 
-Some sources use moving references, such as repository branch downloads and Oh
-My Posh theme files from the upstream default branch. The FiraCode font URL is
-versioned, but its downloaded ZIP is still not checksum-verified by this
-installer.
+Some dependency sources still use moving references, including Oh My Posh theme
+files from its upstream default branch. The repository and FiraCode downloads
+are not independently signature-verified by this installer.
 
 If you need stronger supply-chain guarantees, clone the repository manually,
 review the scripts, pin the revision you trust, and install dependencies from
-your organization's approved package sources. Future hardening could add pinned
-release downloads, published checksums, or signature verification.
+your organization's approved package sources. Future hardening could add
+published checksums or signature verification.
 
 ### Prerequisites (manual installation)
 
@@ -127,15 +128,17 @@ cd config-powershell7
 >
 > **Windows GUI:** Double-click `install.cmd` or run `.\setup.ps1`
 >
-> **CLI menu:** `.\setup.ps1 -CLI`
+> **Headless:** `.\setup.ps1 -NonInteractive`
 >
 > **Legacy headless:** `.\install.ps1 -NonInteractive`
 
-The installer writes a lightweight `$PROFILE` file that dot-sources the
-repository profile via `$env:__PROFILE_REPO_ROOT`. No symlinks.
+The installer maintains a lightweight marked block in
+`$PROFILE.CurrentUserAllHosts`. It preserves content outside that block and
+uses no symlinks.
 
 The installer performs these steps:
-1.  **ExecutionPolicy** — sets `RemoteSigned` at `CurrentUser` scope
+1.  **ExecutionPolicy** — reports the effective policy and Group Policy
+    conflicts without changing policy silently
 2.  **Dependency installation** — winget packages (PS7, Git, Oh My Posh,
     Zoxide), Nerd Font, PS modules (Terminal-Icons, PSReadLine), and optional
     Alacritty, Topgrade, Scoop
@@ -143,7 +146,7 @@ The installer performs these steps:
     theme chosen from curated list
 4.  **Backup** — if an existing non-ours profile exists, backs it up with a
     unique timestamp
-5.  **Profile link** — writes the dot-source profile file to `$PROFILE`
+5.  **Profile link** — updates only the managed block in the all-hosts profile
 6.  **Cache setup** — generates TTL cache on first load
 
 > **Chocolatey** is no longer in the GUI flow but remains available via the
@@ -171,7 +174,6 @@ If you prefer not to use the script:
 2.  **Link via Dot-Source:**
     Add these lines to your `$PROFILE`:
     ```powershell
-    $env:__PROFILE_REPO_ROOT = "C:\Path\To\Your\config-powershell7"
     . "C:\Path\To\Your\config-powershell7\Microsoft.PowerShell_profile.ps1"
     ```
 
