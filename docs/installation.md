@@ -84,7 +84,7 @@ downloaded files.
 | FiraCode Nerd Font ZIP | Official `ryanoasis/nerd-fonts` GitHub release URL | HTTPS transport; ZIP extraction must succeed |
 | PowerShell modules | PowerShell Gallery | Repository/package manager trust |
 | WinGet packages | WinGet package sources | Package manager trust |
-| Optional Scoop or Chocolatey installer scripts | Official project installer URLs | HTTPS transport; no checksum validation |
+| Optional Scoop installer script | Official project installer URL | HTTPS transport; no checksum validation |
 
 Some dependency sources still use moving references, including Oh My Posh theme
 files from its upstream default branch. The repository and FiraCode downloads
@@ -149,8 +149,8 @@ The installer performs these steps:
 5.  **Profile link** — updates only the managed block in the all-hosts profile
 6.  **Cache setup** — generates TTL cache on first load
 
-> **Chocolatey** is no longer in the GUI flow but remains available via the
-> legacy `install.ps1 -NonInteractive`.
+> **Chocolatey** support was removed. No entry point ever reached it, and it was
+> the only code that changed the process execution policy. Use Scoop or WinGet.
 
 ### install.cmd (batch/PowerShell hybrid)
 

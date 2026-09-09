@@ -864,6 +864,10 @@ try {
     $cliContent = Get-Content (Join-Path $modulesDir 'cli.ps1') -Raw
     Assert-True -Condition ($guiContent -match 'x:Name="ChkAlacritty"[^>]+IsChecked="True"') -TestName 'GUI enables Alacritty by default'
     Assert-True -Condition ($guiContent -match '\$chkThemeAla\.Add_Checked\(\{ \$chkAlacritty\.IsChecked = \$true \}\)') -TestName 'GUI theme selection enables complete Alacritty setup'
+# Nothing reads the background runspace's error stream, so an escaping error would
+# leave the window disabled forever waiting for InstallComplete.
+$guiRunspaceCatches = ([regex]::Matches($guiContent, '\$SyncHash\.InstallComplete = \$true')).Count
+Assert-True -Condition ($guiRunspaceCatches -ge 2) -TestName 'GUI runspaces always release the UI on failure'
     Assert-True -Condition ($cliContent -match 'Install Alacritty terminal emulator\? \(y/n\) \[y\]') -TestName 'CLI offers Alacritty with yes default'
     Assert-True -Condition ($cliContent -match '-InstallAlacritty \$installAlacritty') -TestName 'CLI passes the chosen Alacritty option'
     Assert-True -Condition ($cliContent -match '\$installAlacritty = \$termThemeAla') -TestName 'CLI theme selection implies Alacritty'

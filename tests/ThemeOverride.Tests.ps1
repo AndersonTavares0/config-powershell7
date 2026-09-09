@@ -51,6 +51,8 @@ try {
         -TestName "POSH-04: missing theme file falls back to atomic"
     Assert-True -Condition (($capturedWarn | Out-String) -match 'nonexistent_test_theme') `
         -TestName "POSH-05: warning mentions missing theme name"
+    Assert-True -Condition ($script:Config.ThemeName -eq 'atomic') `
+        -TestName "POSH-06: fallback reports the theme actually in use"
 }
 finally {
     Remove-Item $testThemeFile -Force -ErrorAction SilentlyContinue

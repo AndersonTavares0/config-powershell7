@@ -18,8 +18,8 @@ Current posture:
   repository.
 - FiraCode Nerd Font downloads use the official `ryanoasis/nerd-fonts` release
   URL.
-- WinGet, PowerShell Gallery, Scoop, and Chocolatey flows trust their package
-  manager or official installer source.
+- WinGet, PowerShell Gallery, and Scoop flows trust their package manager or
+  official installer source.
 - The installer performs basic sanity checks where implemented, such as theme
   file size validation and successful archive extraction.
 

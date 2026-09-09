@@ -72,7 +72,7 @@ fault tolerance:
 config-powershell7/
 ├── .github/workflows/          # CI/CD (GitHub Actions)
 ├── Microsoft.PowerShell_profile.ps1 # Entrypoint Profile (Loader)
-├── install.ps1                 # Legacy installer (irm | iex, admin elevation)
+├── install.ps1                 # Compatibility wrapper that forwards to setup.ps1
 ├── setup.ps1                   # Main installer entry point (GUI or CLI)
 ├── uninstall.ps1               # Safe uninstaller (backup + cache cleanup)
 ├── install.cmd / uninstall.cmd # Double-click launchers (Windows)

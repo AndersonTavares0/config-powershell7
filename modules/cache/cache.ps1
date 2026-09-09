@@ -37,10 +37,10 @@ Set-Alias icons Import-TerminalIcons
 function script:Get-ThemeFingerprint {
     $result = @()
     $result += $script:Config.ThemePath
-    $result += [int](Test-Path $script:Config.ThemePath)
-    if (Test-Path $script:Config.ThemePath) {
+    $result += [int](Test-Path -LiteralPath $script:Config.ThemePath)
+    if (Test-Path -LiteralPath $script:Config.ThemePath) {
         try {
-            $info = Get-Item $script:Config.ThemePath -ErrorAction SilentlyContinue
+            $info = Get-Item -LiteralPath $script:Config.ThemePath -ErrorAction SilentlyContinue
             if ($info) {
                 $result += "$($info.Length):$($info.LastWriteTimeUtc.Ticks)"
             }
@@ -103,7 +103,12 @@ function script:Update-PluginCache {
 
     if ($zcmd) {
         try {
-            [void]$buf.AppendLine((zoxide init powershell 2>&1 | Out-String))
+            # 2>&1 captura o stderr como texto: sem checar o exit code, a mensagem de
+            # erro entraria no cache e seria dot-sourced em toda sessão seguinte.
+            $global:LASTEXITCODE = 0
+            $zoxideInit = zoxide init powershell 2>&1 | Out-String
+            if ($LASTEXITCODE -ne 0) { throw "zoxide init retornou código $LASTEXITCODE." }
+            [void]$buf.AppendLine($zoxideInit)
             [void]$buf.AppendLine("`$script:StartupModules.Add('Zoxide')")
         } catch {
             Write-Warning "Update-PluginCache: zoxide init falhou — Zoxide não inicializado. $_"
@@ -112,14 +117,16 @@ function script:Update-PluginCache {
 
     if ($ocmd) {
         try {
-            $themeExists = Test-Path $script:Config.ThemePath
+            $themeExists = Test-Path -LiteralPath $script:Config.ThemePath
             $label       = if ($themeExists) { "OMP:$($script:Config.ThemeName)" } else { 'OMP:default' }
-            $initCmd     = if ($themeExists) {
-                oh-my-posh init pwsh --config $script:Config.ThemePath 2>&1
+            $global:LASTEXITCODE = 0
+            $ompInit     = if ($themeExists) {
+                oh-my-posh init pwsh --config $script:Config.ThemePath 2>&1 | Out-String
             } else {
-                oh-my-posh init pwsh 2>&1
+                oh-my-posh init pwsh 2>&1 | Out-String
             }
-            [void]$buf.AppendLine(($initCmd | Out-String))
+            if ($LASTEXITCODE -ne 0) { throw "oh-my-posh init retornou código $LASTEXITCODE." }
+            [void]$buf.AppendLine($ompInit)
             [void]$buf.AppendLine("`$script:StartupModules.Add('$label')")
         } catch {
             Write-Warning "Update-PluginCache: oh-my-posh init falhou — Oh My Posh não inicializado. $_"
@@ -152,7 +159,9 @@ function script:Initialize-PluginCache {
             if ($ageMin -lt $script:Config.CacheTTLMinutes) {
                 # TTL válido — valida fingerprint do tema antes do early return
                 $themeEnding = (script:Get-ThemeFingerprint) -join '|'
-                if ($cachedFP.EndsWith($themeEnding)) {
+                # Ordinal: a comparação padrão de String.EndsWith é sensível à cultura,
+                # e caminhos de tema não devem depender do locale da máquina.
+                if ($cachedFP.EndsWith($themeEnding, [System.StringComparison]::Ordinal)) {
                     . $script:Config.CachePath
                     return
                 }

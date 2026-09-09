@@ -170,6 +170,8 @@ try {
     $loadMs = [math]::Round($loadTimer.Elapsed.TotalMilliseconds, 0)
     script:Add-Check 'Load' 'ProfileSource' 'PASS' "Loaded in ${loadMs}ms"
 
+    # Boot time depends on disk and CPU speed, so it is reported, never failed.
+    # tests/benchmark.ps1 is the tool for tracking performance regressions.
     if ($loadMs -lt 200) {
         script:Add-Check 'Load' 'Performance' 'PASS' "${loadMs}ms < 200ms target"
     }
@@ -177,7 +179,7 @@ try {
         script:Add-Check 'Load' 'Performance' 'WARN' "${loadMs}ms (target: < 200ms)"
     }
     else {
-        script:Add-Check 'Load' 'Performance' 'FAIL' "${loadMs}ms exceeds 500ms threshold"
+        script:Add-Check 'Load' 'Performance' 'WARN' "${loadMs}ms is well above the 200ms target — run tests/benchmark.ps1"
     }
 } catch {
     $loadTimer.Stop()
@@ -185,8 +187,10 @@ try {
     script:Add-Check 'Load' 'ProfileSource' 'FAIL' $loadError
 }
 
+# A locked-down policy is a property of the host, not a broken install, so it is
+# reported as a warning here just like the installer reports it.
 $effectivePolicy = Get-ExecutionPolicy -ErrorAction SilentlyContinue
-$policyStatus = if ($effectivePolicy -in @('Bypass', 'RemoteSigned', 'Unrestricted')) { 'PASS' } else { 'FAIL' }
+$policyStatus = if ($effectivePolicy -in @('Bypass', 'RemoteSigned', 'Unrestricted')) { 'PASS' } else { 'WARN' }
 script:Add-Check 'Policy' 'Effective' $policyStatus $effectivePolicy
 
 if ($script:IsWin) {
@@ -337,8 +341,6 @@ if ($Detailed) {
     Total   = $total
     Results = $script:Results
 }
-
-if ($failed -gt 0) { exit 1 } else { exit 0 }
 
 if ($failed -gt 0) { exit 1 } else { exit 0 }
 

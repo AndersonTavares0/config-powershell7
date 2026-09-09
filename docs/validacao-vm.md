@@ -66,6 +66,23 @@ deviation stops the section and blocks release.
 
 1. Run the installer with an unreachable repository path.
 2. [PASS] Non-zero exit, no partial managed state left active.
+3. In the GUI, point the repository path at an unreadable location and install.
+4. [PASS] The window reports the failure and re-enables its controls; it never
+   stays stuck on `Installing...`.
+
+## 7. Restricted host
+
+1. Roll back to snapshot. Run as a standard user, no administrator rights, with
+   `Set-ExecutionPolicy AllSigned -Scope CurrentUser`.
+2. Install.
+3. [PASS] FiraCode Nerd Font installs per user (present in
+   `%LOCALAPPDATA%\Microsoft\Windows\Fonts` and under
+   `HKCU:\Software\Microsoft\Windows NT\CurrentVersion\Fonts`), with no UAC prompt
+   for the font step.
+4. [PASS] The execution policy is reported as a skipped step and is left
+   unchanged; the install still reports overall success.
+5. [PASS] On a machine without Windows Terminal, its color scheme and font steps
+   are skipped rather than failed.
 
 ## Sign-off
 

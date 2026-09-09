@@ -75,6 +75,25 @@ All notable changes to this project will be documented in this file.
   stalls and denies enumeration to non-elevated users
 - Downloads use `-UseBasicParsing` and suppress progress rendering, avoiding the
   Internet Explorer dependency and the slow path on Windows PowerShell 5.1
+- Bare `sudo` aborted instead of opening an elevated session: with no arguments
+  the parameter is `$null`, and reading `.Count` on it fails under strict mode
+- `nf` silently truncated an existing file (`New-Item -Force` overwrites); it now
+  refuses and points at `touch`
+- A failing `zoxide` or `oh-my-posh` init wrote its own error text into the
+  plugin cache, which was then dot-sourced by every later session. Both init
+  calls now check the exit code before the output is cached
+- Theme fingerprint comparison is ordinal, so cache validity no longer depends
+  on the machine's locale
+- `Config.ThemeName` follows `ThemePath` when a missing theme falls back to
+  `atomic`; the boot summary used to name a theme that was not in use
+- Theme and start-directory paths are checked with `-LiteralPath`, so a value
+  containing `[`, `]` or `*` is no longer treated as a wildcard
+- GUI install and uninstall runspaces catch their own errors. Nothing reads
+  their error stream, so an escaping error left the window disabled and stuck on
+  `Installing...` forever
+- `Test-ProfileInstallation.ps1`: boot time and a restrictive execution policy
+  are reported as warnings instead of failing the health check, and the
+  duplicated exit block was removed
 - Profile no longer leaks `Set-StrictMode -Version Latest` and
   `$ErrorActionPreference = 'Stop'` into the interactive session. Dot-sourcing
   runs in the caller's scope, so every routine non-terminating error became

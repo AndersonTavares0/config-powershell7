@@ -636,19 +636,32 @@ function Show-Gui {
             $script:RepoName = $RepoName
             $global:PROFILE = $ProfilePath
 
-            . (Join-Path $SetupDir '../lib/executable.ps1')
-            . (Join-Path $SetupDir 'modules/core.ps1')
-            . (Join-Path $SetupDir 'modules/deps.ps1')
-            . (Join-Path $SetupDir 'modules/profile.ps1')
-            . (Join-Path $SetupDir 'modules/orchestrator.ps1')
+            # Nothing reads this runspace's error stream, and the UI only re-enables
+            # itself once InstallComplete is set. An error escaping here would leave
+            # the window stuck on "Installing..." forever.
+            try {
+                . (Join-Path $SetupDir '../lib/executable.ps1')
+                . (Join-Path $SetupDir 'modules/core.ps1')
+                . (Join-Path $SetupDir 'modules/deps.ps1')
+                . (Join-Path $SetupDir 'modules/profile.ps1')
+                . (Join-Path $SetupDir 'modules/orchestrator.ps1')
 
-            if ($NeedDownload) {
-                if (-not (Download-Repo -TargetDir $RepoPath)) {
-                    throw "Repository download failed: $RepoPath"
+                if ($NeedDownload) {
+                    if (-not (Download-Repo -TargetDir $RepoPath)) {
+                        throw "Repository download failed: $RepoPath"
+                    }
                 }
-            }
 
-            Start-ProfileInstall @Params
+                Start-ProfileInstall @Params
+            } catch {
+                $SyncHash.LogMessages.Add(@{
+                    Message = "CRITICAL ERROR: $($_.Exception.Message)"
+                    Type    = 'Fail'
+                    Time    = Get-Date
+                })
+                $SyncHash.InstallFailed = $true
+                $SyncHash.InstallComplete = $true
+            }
         })
 
         $ps.AddParameter('SetupDir', $SetupDir)
@@ -716,13 +729,25 @@ function Show-Gui {
             $script:SyncHash = $SyncHash
             $global:PROFILE = $ProfilePath
 
-            . (Join-Path $SetupDir '../lib/executable.ps1')
-            . (Join-Path $SetupDir 'modules/core.ps1')
-            . (Join-Path $SetupDir 'modules/deps.ps1')
-            . (Join-Path $SetupDir 'modules/profile.ps1')
-            . (Join-Path $SetupDir 'modules/orchestrator.ps1')
+            # Same reason as the install runspace: an escaping error would never
+            # reach the UI and the window would stay stuck on "Removing...".
+            try {
+                . (Join-Path $SetupDir '../lib/executable.ps1')
+                . (Join-Path $SetupDir 'modules/core.ps1')
+                . (Join-Path $SetupDir 'modules/deps.ps1')
+                . (Join-Path $SetupDir 'modules/profile.ps1')
+                . (Join-Path $SetupDir 'modules/orchestrator.ps1')
 
-            Start-ProfileUninstall -RepoPath $RepoPath
+                Start-ProfileUninstall -RepoPath $RepoPath
+            } catch {
+                $SyncHash.LogMessages.Add(@{
+                    Message = "CRITICAL ERROR: $($_.Exception.Message)"
+                    Type    = 'Fail'
+                    Time    = Get-Date
+                })
+                $SyncHash.InstallFailed = $true
+                $SyncHash.InstallComplete = $true
+            }
         })
         $ps.AddParameter('SetupDir', $SetupDir)
         $ps.AddParameter('RepoPath', $repoPath)

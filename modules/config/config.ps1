@@ -46,21 +46,26 @@ $cachePath = if ($isLinuxOrMac) {
 
 $poshTheme = if ($env:CONFIG_PWSH7_THEME) { $env:CONFIG_PWSH7_THEME } else { 'atomic' }
 
+# -LiteralPath em toda checagem de tema: nomes vindos de env var podem conter
+# [ ] ou *, que Test-Path trataria como wildcard.
 $themePath = if ($isLinuxOrMac) {
     $xdgData = if ($env:XDG_DATA_HOME) { $env:XDG_DATA_HOME } else { Join-Path $HOME '.local/share' }
     $t = Join-Path $xdgData "poshthemes/$poshTheme.omp.json"
-    if (Test-Path $t) { $t }
+    if (Test-Path -LiteralPath $t) { $t }
     else { Join-Path $HOME ".poshthemes/$poshTheme.omp.json" }
 } else {
     Join-Path $HOME ".poshthemes\$poshTheme.omp.json"
 }
 
-if (-not (Test-Path $themePath) -and $poshTheme -ne 'atomic') {
+if (-not (Test-Path -LiteralPath $themePath) -and $poshTheme -ne 'atomic') {
     Write-Warning "Oh My Posh theme '$poshTheme' not found at '$themePath'. Falling back to 'atomic'."
+    # ThemeName acompanha ThemePath: o rótulo do boot summary informaria o tema
+    # pedido enquanto o prompt já usa o de fallback.
+    $poshTheme = 'atomic'
     if ($isLinuxOrMac) {
         $xdgData = if ($env:XDG_DATA_HOME) { $env:XDG_DATA_HOME } else { Join-Path $HOME '.local/share' }
         $t = Join-Path $xdgData 'poshthemes/atomic.omp.json'
-        $themePath = if (Test-Path $t) { $t } else { Join-Path $HOME '.poshthemes/atomic.omp.json' }
+        $themePath = if (Test-Path -LiteralPath $t) { $t } else { Join-Path $HOME '.poshthemes/atomic.omp.json' }
     } else {
         $themePath = Join-Path $HOME '.poshthemes\atomic.omp.json'
     }
