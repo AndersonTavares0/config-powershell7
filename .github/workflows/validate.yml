@@ -1,6 +1,8 @@
 name: Full Validation
 
 on:
+  push:
+    branches: [main]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -35,8 +37,15 @@ jobs:
           if (-not $module) {
             Install-Module PSScriptAnalyzer -Force -SkipPublisherCheck -Scope CurrentUser
           }
-          $errors = Invoke-ScriptAnalyzer -Path . -Recurse -Severity Error
+          $results = Invoke-ScriptAnalyzer -Path . -Recurse -Severity Error, Warning
+          $warnings = @($results | Where-Object { $_.Severity -eq 'Warning' })
+          if ($warnings) {
+            Write-Host "##[warning]$($warnings.Count) PSScriptAnalyzer warning(s) found:"
+            $warnings | Format-Table -AutoSize
+          }
+          $errors = @($results | Where-Object { $_.Severity -eq 'Error' })
           if ($errors) {
+            Write-Host "##[error]$($errors.Count) PSScriptAnalyzer error(s) found:"
             $errors | Format-Table -AutoSize
             exit 1
           }
@@ -47,10 +56,10 @@ jobs:
           $ErrorActionPreference = 'Stop'
           & ./tests/Unit.Tests.ps1 -Verbose
 
-      - name: POSH_THEME tests
+      - name: CONFIG_PWSH7_THEME tests
         run: |
           $ErrorActionPreference = 'Stop'
-          & ./tests/POSH_THEME.Tests.ps1 -Verbose
+          & ./tests/ThemeOverride.Tests.ps1 -Verbose
 
       - name: Setup module tests
         run: |

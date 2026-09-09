@@ -160,12 +160,12 @@ else {
 }
 
 # ══════════════════════════════════════════════════════════════
-# TEST SUITE: POSH_THEME ENV VAR
+# TEST SUITE: CONFIG_PWSH7_THEME ENV VAR
 # ══════════════════════════════════════════════════════════════
-Write-Host "`nTesting POSH_THEME Environment Variable..." -ForegroundColor Yellow
+Write-Host "`nTesting CONFIG_PWSH7_THEME Environment Variable..." -ForegroundColor Yellow
 
 if ($null -ne $script:Config) {
-    $savedPoshTheme = $env:POSH_THEME
+    $savedPoshTheme = $env:CONFIG_PWSH7_THEME
     $configPath = Join-Path $script:ProfileRoot 'modules/config/config.ps1'
     $testThemeDir = Join-Path $HOME '.poshthemes'
     $testThemeFile = Join-Path $testThemeDir 'test_theme.omp.json'
@@ -173,22 +173,22 @@ if ($null -ne $script:Config) {
     try {
         New-MockFile -Path $testThemeFile -Content '{"name":"test_theme"}'
 
-        $env:POSH_THEME = 'test_theme'
+        $env:CONFIG_PWSH7_THEME = 'test_theme'
         . $configPath
         Assert-True -Condition ($script:Config.ThemePath -match 'test_theme\.omp\.json$') `
             -TestName "POSH-01: env var overrides default theme"
 
-        $env:POSH_THEME = $null
+        $env:CONFIG_PWSH7_THEME = $null
         . $configPath
         Assert-True -Condition ($script:Config.ThemePath -match 'atomic\.omp\.json$') `
             -TestName "POSH-02: unset env var uses atomic"
 
-        $env:POSH_THEME = ''
+        $env:CONFIG_PWSH7_THEME = ''
         . $configPath
         Assert-True -Condition ($script:Config.ThemePath -match 'atomic\.omp\.json$') `
             -TestName "POSH-03: empty env var treated as unset"
 
-        $env:POSH_THEME = 'nonexistent_test_theme'
+        $env:CONFIG_PWSH7_THEME = 'nonexistent_test_theme'
         $capturedWarn = . $configPath 3>&1
         Assert-True -Condition ($script:Config.ThemePath -match 'atomic\.omp\.json$') `
             -TestName "POSH-04: missing theme file falls back to atomic"
@@ -197,12 +197,12 @@ if ($null -ne $script:Config) {
     }
     finally {
         Remove-MockFile -Path $testThemeFile
-        $env:POSH_THEME = $savedPoshTheme
+        $env:CONFIG_PWSH7_THEME = $savedPoshTheme
         . $configPath
     }
 }
 else {
-    Test-Skip -Name "POSH_THEME tests" -Reason "Config object is null"
+    Test-Skip -Name "CONFIG_PWSH7_THEME tests" -Reason "Config object is null"
 }
 
 # ══════════════════════════════════════════════════════════════

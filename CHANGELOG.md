@@ -5,9 +5,19 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### CI
-- `validate.yml`: full validation workflow (suites on PR, disposable-runner
+- `validate.yml`: full validation workflow (suites on push/PR, disposable-runner
   end-to-end installer on manual dispatch with idempotency, theme-change,
   child-shell, failure-propagation, and uninstall checks)
+
+### Removed
+- `test.yml`: `validate.yml` already ran the same analyzer and suites on the
+  same events, so every push and pull request paid for both
+- `lib/profile-paths.ps1`: never dot-sourced; `Get-ProfilePath` in
+  `setup/modules/profile.ps1` is the live implementation
+- `Install-Chocolatey`: unreachable from every entry point, and the only code
+  left in the project that called `Set-ExecutionPolicy`
+- `Install-CompleteConfig` and `Set-AlacrittyColorScheme`: unreachable wrappers
+  around the managed Alacritty and Windows Terminal configuration
 
 ### Added
 - Managed Alacritty configuration with PowerShell 7 shell, Nerd Font, theme
@@ -37,6 +47,13 @@ All notable changes to this project will be documented in this file.
 - Nerd Font installation is per-user (no elevation) and counts only fonts that
   were actually written
 - Windows Terminal `settings.json` is backed up once before it is rewritten
+- Installing the Nerd Font now also sets it as the Windows Terminal font face;
+  before, the font was installed but never applied
+- **Breaking:** the runtime theme override is `$env:CONFIG_PWSH7_THEME`, not
+  `$env:POSH_THEME`. `POSH_THEME` belongs to oh-my-posh, which uses it for a
+  full config path, so a child shell inherited a path where this project
+  expected a bare theme name. `tests/POSH_THEME.Tests.ps1` is now
+  `tests/ThemeOverride.Tests.ps1`
 
 ### Fixed
 - Headless install aborted immediately: an ungrouped `Test-Path $repoPath -and`
@@ -58,6 +75,10 @@ All notable changes to this project will be documented in this file.
   stalls and denies enumeration to non-elevated users
 - Downloads use `-UseBasicParsing` and suppress progress rendering, avoiding the
   Internet Explorer dependency and the slow path on Windows PowerShell 5.1
+- Profile no longer leaks `Set-StrictMode -Version Latest` and
+  `$ErrorActionPreference = 'Stop'` into the interactive session. Dot-sourcing
+  runs in the caller's scope, so every routine non-terminating error became
+  terminating; both now apply only while the profile loads
 
 ## [v0.3] — 2026-07-07
 

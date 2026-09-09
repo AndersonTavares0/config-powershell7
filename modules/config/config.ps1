@@ -44,7 +44,7 @@ $cachePath = if ($isLinuxOrMac) {
     Join-Path $HOME '.cache_pwsh_plugins.ps1'
 }
 
-$poshTheme = if ($env:POSH_THEME) { $env:POSH_THEME } else { 'atomic' }
+$poshTheme = if ($env:CONFIG_PWSH7_THEME) { $env:CONFIG_PWSH7_THEME } else { 'atomic' }
 
 $themePath = if ($isLinuxOrMac) {
     $xdgData = if ($env:XDG_DATA_HOME) { $env:XDG_DATA_HOME } else { Join-Path $HOME '.local/share' }

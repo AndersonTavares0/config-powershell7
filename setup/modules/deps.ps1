@@ -1,5 +1,5 @@
 #Requires -Version 5.1
-# Dependency installers: winget, PS7, Git, OMP, Zoxide, NerdFont, PSModules, Alacritty, Chocolatey, Scoop
+# Dependency installers: winget, PS7, Git, OMP, Zoxide, NerdFont, PSModules, Alacritty, Scoop
 
 function Install-WingetPackage {
     param(
@@ -280,19 +280,6 @@ function Set-WindowsTerminalColorScheme {
     }
 }
 
-function Set-AlacrittyColorScheme {
-    param([string]$ThemeName)
-    $alacritty = Get-AlacrittyExecutable
-    $pwshPath = Get-PwshExecutablePath
-    if (-not $alacritty -or -not $pwshPath) { return $false }
-    return Install-AlacrittyConfig -ThemeName $ThemeName -AlacrittyPath $alacritty.Path -PwshPath $pwshPath
-}
-
-function Install-CompleteConfig {
-    param([string]$ThemeName)
-    Set-WindowsTerminalColorScheme -ThemeName $ThemeName
-    Set-AlacrittyColorScheme -ThemeName $ThemeName
-}
 #endregion
 
 function Install-OmpTheme {
@@ -853,72 +840,6 @@ function Install-Alacritty {
     if (-not $pwshPath) { return $false }
     Write-GuiLog "Alacritty $($alacritty.Version) found at $($alacritty.Path)." -Type Ok
     return Install-AlacrittyConfig -ThemeName $ThemeName -AlacrittyPath $alacritty.Path -PwshPath $pwshPath
-}
-
-function Install-Chocolatey {
-    param([string[]]$Sources = @())
-
-    $existing = Get-Command choco -ErrorAction SilentlyContinue
-    if ($existing) {
-        Write-GuiLog "Chocolatey already installed: $($existing.Source)" -Type Ok
-        return $true
-    }
-
-    $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-
-    if (-not $isAdmin) {
-        Write-GuiLog "Chocolatey requires administrator privileges to install to the default path." -Type Warn
-        Write-GuiLog "Install manually as Administrator or run this installer as Admin." -Type Info
-        return $false
-    }
-
-    Write-GuiLog "Installing Chocolatey..." -Type Step
-    try {
-        Set-ExecutionPolicy Bypass -Scope Process -Force -ErrorAction Stop
-        Enable-Tls12
-        $chocolateyInstallUrl = 'https://community.chocolatey.org/install.ps1'
-        $chocolateyInstallPath = Join-Path $env:TEMP "config-pwsh7-install-chocolatey-$([guid]::NewGuid().ToString('N')).ps1"
-        Write-GuiLog "Remote installer notice: Chocolatey setup executes the official script from $chocolateyInstallUrl." -Type Warn
-        Write-GuiLog "Downloading Chocolatey installer to: $chocolateyInstallPath" -Type Info
-        Invoke-WebRequest -Uri $chocolateyInstallUrl -OutFile $chocolateyInstallPath -UseBasicParsing -ErrorAction Stop
-        Unblock-File -Path $chocolateyInstallPath -ErrorAction SilentlyContinue
-        & $chocolateyInstallPath
-
-        $chocoBin = 'C:\ProgramData\chocolatey\bin'
-        if (Test-Path $chocoBin) {
-            $currentPath = [Environment]::GetEnvironmentVariable('PATH', 'Process')
-            if ($currentPath -notmatch [regex]::Escape($chocoBin)) {
-                [Environment]::SetEnvironmentVariable('PATH', "$currentPath;$chocoBin", 'Process')
-                $env:PATH = "$env:PATH;$chocoBin"
-            }
-        }
-
-        if (Get-Command choco -ErrorAction SilentlyContinue) {
-            Write-GuiLog "Chocolatey installed." -Type Ok
-        } else {
-            Write-GuiLog "Chocolatey installed but not in PATH. Restart terminal." -Type Warn
-            return $false
-        }
-    } catch {
-        Write-GuiLog "Chocolatey install failed: $($_.Exception.Message)" -Type Warn
-        return $false
-    }
-
-    foreach ($source in $Sources) {
-        $trimmed = $source.Trim()
-        if (-not $trimmed) { continue }
-        $sourceName = ($trimmed -replace 'https?://', '' -replace '[^a-zA-Z0-9]', '-').Trim('-')
-        if (-not $sourceName) { $sourceName = "custom-$(Get-Random -Maximum 9999)" }
-        Write-GuiLog "Adding Chocolatey source: $trimmed" -Type Info
-        try {
-            choco source add -n $sourceName -s $trimmed --priority=1 2>&1 | Out-Null
-            Write-GuiLog "Source added: $sourceName" -Type Ok
-        } catch {
-            Write-GuiLog "Failed to add source: $($_.Exception.Message)" -Type Warn
-        }
-    }
-
-    return $true
 }
 
 function Install-Scoop {

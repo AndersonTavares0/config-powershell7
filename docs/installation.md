@@ -179,7 +179,7 @@ If you prefer not to use the script:
 
 3.  **Set an OMP theme (optional):**
     ```powershell
-    $env:POSH_THEME = 'jandedobbeleer'
+    $env:CONFIG_PWSH7_THEME = 'jandedobbeleer'
     ```
 
 ---
@@ -210,12 +210,12 @@ The uninstaller:
 
 During installation, you can select from the full list of OMP themes fetched
 live from the GitHub API. The installer downloads the selected theme, validates
-it, and sets `$env:POSH_THEME` in your profile stub.
+it, and sets `$env:CONFIG_PWSH7_THEME` in your profile stub.
 
 To change themes after installation:
 
 ```powershell
-$env:POSH_THEME = 'montys'
+$env:CONFIG_PWSH7_THEME = 'montys'
 ```
 
 The profile reads this variable at boot. Empty or unset falls back to

@@ -304,7 +304,7 @@ try {
     $result4 = Install-Profile -RepoPath $testThemeDir -ThemeName 'jandedobbeleer'
     Assert-True -Condition $result4 -TestName "Install-Profile with ThemeName returns true"
     $content4 = Get-Content $testThemeProfilePath -Raw
-    Assert-True -Condition ($content4 -match 'POSH_THEME') -TestName "Install-Profile with ThemeName includes POSH_THEME in stub"
+    Assert-True -Condition ($content4 -match 'CONFIG_PWSH7_THEME') -TestName "Install-Profile with ThemeName includes CONFIG_PWSH7_THEME in stub"
     Assert-True -Condition ($content4 -match 'jandedobbeleer') -TestName "Install-Profile with ThemeName includes theme name in stub"
 
     $result5 = Install-Profile -RepoPath $testThemeDir -ThemeName 'atomic'
@@ -777,16 +777,12 @@ Assert-True -Condition ($entryText -match "Set-StrictMode -Version Latest") `
 $depsPath = Join-Path $modulesDir 'deps.ps1'
 $depsContent = Get-Content $depsPath -Raw -Encoding UTF8
 Assert-False -Condition ($depsContent -match 'Invoke-Expression') -TestName "Remote installers do not use Invoke-Expression"
-Assert-True -Condition ($depsContent -match 'Remote installer notice: Chocolatey') -TestName "Chocolatey remote installer notice is logged"
 Assert-True -Condition ($depsContent -match 'Remote installer notice: Scoop') -TestName "Scoop remote installer notice is logged"
-Assert-True -Condition ($depsContent -match 'community\.chocolatey\.org/install\.ps1') -TestName "Chocolatey installer source URL is present"
 Assert-True -Condition ($depsContent -match 'get\.scoop\.sh') -TestName "Scoop installer source URL is present"
-Assert-True -Condition ($depsContent -match 'chocolateyInstallPath') -TestName "Chocolatey installer temp path is logged/executed"
 Assert-True -Condition ($depsContent -match 'scoopInstallPath') -TestName "Scoop installer temp path is logged/executed"
-Assert-True -Condition ($depsContent -match 'Unblock-File -Path \$chocolateyInstallPath') -TestName "Chocolatey temp installer is unblocked before execution"
 Assert-True -Condition ($depsContent -match 'Unblock-File -Path \$scoopInstallPath') -TestName "Scoop temp installer is unblocked before execution"
-Assert-True -Condition ($depsContent -match '& \$chocolateyInstallPath') -TestName "Chocolatey installer executes from temp file"
 Assert-True -Condition ($depsContent -match '& \$scoopInstallPath') -TestName "Scoop installer executes from temp file"
+Assert-False -Condition ($depsContent -match 'Set-ExecutionPolicy') -TestName "Installer never mutates the execution policy"
 
 # ══════════════════════════════════════════════════════════════
 # TEST SUITE: DEPS — Install-AlacrittyConfig and Install-Alacritty

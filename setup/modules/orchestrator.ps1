@@ -139,8 +139,17 @@ function Start-ProfileInstall {
             Write-GuiLog "[$step/$totalSteps] Checking FiraCode Nerd Font..." -Type Step
             $rFont = Install-NerdFont
             Add-Result -Name 'FiraCode Nerd Font' -Success $rFont -Detail $(if ($rFont) { 'installed' } else { 'failed' })
+
+            # Installing the font is not enough: Windows Terminal keeps its own face name.
+            if ($rFont -and (Get-WindowsTerminalSettingsPath)) {
+                $rWTFont = Set-WindowsTerminalFont
+                Add-Result -Name 'WT Font Face' -Success $rWTFont -Detail $(if ($rWTFont) { 'FiraCode Nerd Font' } else { 'failed' })
+            } else {
+                Add-Result -Name 'WT Font Face' -Success $false -Detail 'Windows Terminal not installed' -Status 'skip'
+            }
         } else {
             Add-Result -Name 'FiraCode Nerd Font' -Success $false -Detail 'not selected' -Status 'skip'
+            Add-Result -Name 'WT Font Face' -Success $false -Detail 'not selected' -Status 'skip'
         }
 
         if ($InstallModules) {
@@ -160,7 +169,7 @@ function Start-ProfileInstall {
         }
 
         if ($InstallOMP) {
-            # config.ps1 falls back to 'atomic' when POSH_THEME is unset, so the default
+            # config.ps1 falls back to 'atomic' when CONFIG_PWSH7_THEME is unset, so the default
             # install has to fetch that theme too or the prompt starts unthemed.
             $effectiveTheme = if ($ThemeName) { $ThemeName } else { 'atomic' }
             $step++

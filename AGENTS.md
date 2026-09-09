@@ -24,7 +24,7 @@
 - **Platform detection split**: `lib/platform.ps1` is for standalone scripts;
   modules use inline detection in config.ps1 via `$script:Config`
 - **Shared libs** in `lib/`: `platform.ps1` (detection), `ux-helpers.ps1`
-  (Write-Ok/Warn/Fail/Info/Step), `profile-paths.ps1` (Get-TargetProfilePath)
+  (Write-Ok/Warn/Fail/Info/Step), `executable.ps1` (Get-Executable)
 - **Plugin boot cache** (`modules/cache/cache.ps1`): 24h TTL skips
   `Get-Command` + `Get-FileHash` on hot path (~5ms validation, ~120ms OMP
   init). Uses `LastWriteTime` + file size (not SHA256) for fingerprint. Cache
@@ -48,11 +48,13 @@
   `[Environment]::GetFolderPath` (saves ~2-6ms at boot)
 - No bare `catch {}` -- always log `$_.Exception.Message`
 
-## POSH_THEME
+## CONFIG_PWSH7_THEME
 
-- `$env:POSH_THEME` overrides the OMP theme at runtime. Profile reads it
-  each session. Unset/empty falls back to `atomic`. The installer sets this
-  in the profile stub.
+- `$env:CONFIG_PWSH7_THEME` overrides the OMP theme at runtime. Profile reads
+  it each session. Unset/empty falls back to `atomic`. The installer sets this
+  in the profile stub. Deliberately not `POSH_THEME`: that name belongs to
+  oh-my-posh, which uses it for a full config path, so a child shell would
+  inherit a path where this project expects a bare theme name.
 
 ## Commands
 
@@ -84,17 +86,17 @@ Custom framework (not Pester) -- functions: `Test-Result`, `Test-Skip`,
 
 ```powershell
 .\tests\Unit.Tests.ps1                              # unit tests (fastest feedback)
-.\tests\POSH_THEME.Tests.ps1                        # 5 POSH_THEME env-var tests
+.\tests\ThemeOverride.Tests.ps1                     # 5 CONFIG_PWSH7_THEME env-var tests
 .\tests\Test-ProfileInstallation.ps1 -Detailed      # post-install health checks
 .\tests\Microsoft.PowerShell_profile.Tests.ps1 -Verbose  # Behavioral integration
 .\tests\Setup.Tests.ps1 -Verbose                     # setup module tests
 .\tests\benchmark.ps1 -Runs 10                       # profile boot timing; compare cold/warm cache
 ```
 
-CI (`.github/workflows/test.yml`) roda em push/PR na `main`: setup profile ->
-PSScriptAnalyzer -> unit tests. Windows-only runner. PSScriptAnalyzer:
-**erros bloqueiam CI, warnings sao informativos** (~184 warnings
-preexistentes ignorados).
+CI (`.github/workflows/validate.yml`) roda em push/PR na `main`: setup profile
+-> PSScriptAnalyzer -> todas as suites. Windows-only runner. PSScriptAnalyzer:
+**erros bloqueiam CI, warnings sao informativos**. O job `installer`
+(instalacao end-to-end em runner descartavel) roda so em `workflow_dispatch`.
 
 ## Governance files
 

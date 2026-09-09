@@ -4,7 +4,7 @@
 
 ![PowerShell](https://img.shields.io/badge/PowerShell-7%2B-blue?logo=powershell)
 ![Windows](https://img.shields.io/badge/Windows-10%2B-blue?logo=windows)
-![CI](https://github.com/AndersonTavares0/config-powershell7/actions/workflows/test.yml/badge.svg)
+![CI](https://github.com/AndersonTavares0/config-powershell7/actions/workflows/validate.yml/badge.svg)
 ![Tests](https://img.shields.io/badge/Tests-Custom_Framework-4b32c3?logo=powershell)
 ![Oh My Posh](https://img.shields.io/badge/Prompt-Oh_My_Posh-4b32c3)
 ![Zoxide](https://img.shields.io/badge/Nav-Zoxide-purple)
@@ -36,8 +36,8 @@ installers can request UAC when their WinGet manifest requires machine scope.
   theme selection (live prompt preview from GitHub), terminal color theme
   selection (Windows Terminal + Alacritty) with color swatch preview, progress
   bar, synchronized logging, and CLI fallback for headless/CI environments.
-- **POSH_THEME Env Var**: Runtime OMP theme selection via
-  `$env:POSH_THEME` — overrides the theme chosen at install time. Set it in
+- **CONFIG_PWSH7_THEME Env Var**: Runtime OMP theme selection via
+  `$env:CONFIG_PWSH7_THEME` — overrides the theme chosen at install time. Set it in
   `$PROFILE` or per-session to switch themes without reinstalling.
 - **Universal Installer**: Per-user orchestration, WinGet with
   `--silent --accept-source-agreements --accept-package-agreements`, dynamic
@@ -88,7 +88,7 @@ config-powershell7/
 ├── lib/
 │   ├── platform.ps1            # Cross-platform detection + elevation
 │   ├── ux-helpers.ps1          # Console output helpers
-│   └── profile-paths.ps1       # Profile path resolution
+│   └── executable.ps1          # Executable discovery and version probing
 ├── modules/
 │   ├── config/                 # Centralized config (critical, loaded first)
 │   ├── cache/                  # TTL cache engine & lazy loaders
@@ -99,7 +99,7 @@ config-powershell7/
 │   └── text_utils/             # Unix-like tools (grep, sed, touch)
 └── tests/
     ├── Unit.Tests.ps1          # Unit tests (cache, system, git, text)
-    ├── POSH_THEME.Tests.ps1    # 5 env-var theme override tests
+    ├── ThemeOverride.Tests.ps1 # 5 env-var theme override tests
     ├── Microsoft.PowerShell_profile.Tests.ps1  # Integration tests
     ├── Test-ProfileInstallation.ps1            # Post-install checks
     ├── Setup.Tests.ps1         # Setup module tests
@@ -155,13 +155,13 @@ cd config-powershell7
 - **Zoxide** (optional — smart directory navigation)
 - **Terminal-Icons** (optional — file icons in listings)
 
-## POSH_THEME (Runtime Theme Override)
+## CONFIG_PWSH7_THEME (Runtime Theme Override)
 
-Set `$env:POSH_THEME` to switch your Oh My Posh theme at runtime without
+Set `$env:CONFIG_PWSH7_THEME` to switch your Oh My Posh theme at runtime without
 reinstalling:
 
 ```powershell
-$env:POSH_THEME = 'montys'
+$env:CONFIG_PWSH7_THEME = 'montys'
 ```
 
 The profile reads this variable each session. Unset or empty falls back to the
