@@ -54,7 +54,7 @@ function Start-ProfileInstall {
         if ($InstallZoxide) { $totalSteps++ }
         if ($InstallFont)   { $totalSteps++ }
         if ($InstallModules) { $totalSteps++ }
-        if ($ThemeName -and $InstallOMP) { $totalSteps++ }
+        if ($InstallOMP) { $totalSteps++ }
         $totalSteps++
         if ($InstallAlacritty)   { $totalSteps++ }
         if ($TerminalThemeName) {
@@ -85,7 +85,10 @@ function Start-ProfileInstall {
         } else {
             Write-GuiLog "Effective ExecutionPolicy '$currentPolicy' can block this unsigned profile. Review Get-ExecutionPolicy -List." -Type Warn
         }
-        Add-Result -Name 'ExecutionPolicy' -Success $policyAllowsProfile -Detail $currentPolicy
+        # Reported, never mutated. A locked-down policy is a warning about the host,
+        # not an installation failure, so it must not fail the whole run.
+        Add-Result -Name 'ExecutionPolicy' -Success $policyAllowsProfile -Detail $currentPolicy `
+            -Status $(if ($policyAllowsProfile) { 'ok' } else { 'skip' })
 
         if ($InstallPS7) {
             $step++
@@ -156,11 +159,14 @@ function Start-ProfileInstall {
             Add-Result -Name 'PowerShell Modules' -Success $false -Detail 'not selected' -Status 'skip'
         }
 
-        if ($ThemeName -and $InstallOMP) {
+        if ($InstallOMP) {
+            # config.ps1 falls back to 'atomic' when POSH_THEME is unset, so the default
+            # install has to fetch that theme too or the prompt starts unthemed.
+            $effectiveTheme = if ($ThemeName) { $ThemeName } else { 'atomic' }
             $step++
-            Write-GuiLog "[$step/$totalSteps] Downloading OMP theme '$ThemeName'..." -Type Step
-            $rTheme = Install-OmpTheme -ThemeName $ThemeName
-            Add-Result -Name "OMP Theme ($ThemeName)" -Success $rTheme -Detail $(if ($rTheme) { 'downloaded' } else { 'failed' })
+            Write-GuiLog "[$step/$totalSteps] Downloading OMP theme '$effectiveTheme'..." -Type Step
+            $rTheme = Install-OmpTheme -ThemeName $effectiveTheme
+            Add-Result -Name "OMP Theme ($effectiveTheme)" -Success $rTheme -Detail $(if ($rTheme) { 'downloaded' } else { 'failed' })
         } else {
             Add-Result -Name 'OMP Theme' -Success $false -Detail 'not selected' -Status 'skip'
         }
@@ -186,8 +192,14 @@ function Start-ProfileInstall {
             if ($TerminalThemeWT) {
                 $step++
                 Write-GuiLog "[$step/$totalSteps] Applying terminal theme '$TerminalThemeName' to Windows Terminal..." -Type Step
-                $rWTTheme = Set-WindowsTerminalColorScheme -ThemeName $TerminalThemeName
-                Add-Result -Name "WT Color Scheme ($TerminalThemeName)" -Success $rWTTheme -Detail $(if ($rWTTheme) { 'configured' } else { 'failed' })
+                if (-not (Get-WindowsTerminalSettingsPath)) {
+                    # Windows Terminal is optional on Windows 10; its absence is not an install failure.
+                    Write-GuiLog 'Windows Terminal is not installed; skipping its color scheme.' -Type Warn
+                    Add-Result -Name "WT Color Scheme ($TerminalThemeName)" -Success $false -Detail 'Windows Terminal not installed' -Status 'skip'
+                } else {
+                    $rWTTheme = Set-WindowsTerminalColorScheme -ThemeName $TerminalThemeName
+                    Add-Result -Name "WT Color Scheme ($TerminalThemeName)" -Success $rWTTheme -Detail $(if ($rWTTheme) { 'configured' } else { 'failed' })
+                }
             } else {
                 Add-Result -Name "WT Color Scheme" -Success $false -Detail 'not selected' -Status 'skip'
             }

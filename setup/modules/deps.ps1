@@ -204,19 +204,31 @@ function Get-TerminalThemeData {
     return $script:TerminalThemeData[$Name]
 }
 
+function Get-WindowsTerminalSettingsPath {
+    $knownPaths = @(
+        "$env:LOCALAPPDATA\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json",
+        "$env:LOCALAPPDATA\Packages\Microsoft.WindowsTerminalPreview_8wekyb3d8bbwe\LocalState\settings.json",
+        "$env:LOCALAPPDATA\Microsoft\Windows Terminal\settings.json"
+    )
+    return $knownPaths | Where-Object { Test-Path $_ -PathType Leaf } | Select-Object -First 1
+}
+
+function Backup-WindowsTerminalSettings {
+    param([string]$SettingsPath)
+    # Rewriting settings.json through ConvertTo-Json drops the JSON comments Windows
+    # Terminal ships by default, so keep one recoverable copy of the original.
+    $backupPath = "$SettingsPath.config-powershell7.bak"
+    if (Test-Path $backupPath -PathType Leaf) { return }
+    Copy-Item -LiteralPath $SettingsPath -Destination $backupPath -Force
+    Write-GuiLog "Windows Terminal settings backed up: $backupPath" -Type Info
+}
+
 function Set-WindowsTerminalColorScheme {
     param([string]$ThemeName, [string]$SettingsPath)
     $theme = Get-TerminalThemeData -Name $ThemeName
     if (-not $theme) { Write-GuiLog "Terminal theme '$ThemeName' not found." -Type Warn; return $false }
 
-    if (-not $SettingsPath) {
-        $knownPaths = @(
-            "$env:LOCALAPPDATA\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json",
-            "$env:LOCALAPPDATA\Packages\Microsoft.WindowsTerminalPreview_8wekyb3d8bbwe\LocalState\settings.json",
-            "$env:LOCALAPPDATA\Microsoft\Windows Terminal\settings.json"
-        )
-        $SettingsPath = $knownPaths | Where-Object { Test-Path $_ -PathType Leaf } | Select-Object -First 1
-    }
+    if (-not $SettingsPath) { $SettingsPath = Get-WindowsTerminalSettingsPath }
     if (-not $SettingsPath) { Write-GuiLog "Windows Terminal settings.json not found." -Type Info; return $false }
 
     try {
@@ -241,7 +253,7 @@ function Set-WindowsTerminalColorScheme {
         if (-not $settings.schemes) {
             $settings | Add-Member -Name 'schemes' -Value @($scheme) -MemberType NoteProperty -Force
         } else {
-            $existing = $settings.schemes | Where-Object { $_.name -eq $ThemeName }
+            $existing = @($settings.schemes | Where-Object { $_.name -eq $ThemeName })[0]
             if ($existing) {
                 $idx = [array]::IndexOf($settings.schemes, $existing)
                 $settings.schemes[$idx] = $scheme
@@ -258,7 +270,8 @@ function Set-WindowsTerminalColorScheme {
         }
         $settings.profiles.defaults | Add-Member -Name 'colorScheme' -Value $ThemeName -MemberType NoteProperty -Force
 
-        $settings | ConvertTo-Json -Depth 15 | Set-Content $SettingsPath -Encoding UTF8 -Force
+        Backup-WindowsTerminalSettings -SettingsPath $SettingsPath
+        [System.IO.File]::WriteAllText($SettingsPath, ($settings | ConvertTo-Json -Depth 15), (New-Object System.Text.UTF8Encoding($false)))
         Write-GuiLog "Windows Terminal color scheme set to '$ThemeName'." -Type Ok
         return $true
     } catch {
@@ -326,19 +339,40 @@ function Install-OmpTheme {
     return $false
 }
 
+function Add-FontResource {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    # Registry alone only takes effect at next logon; AddFontResourceW publishes the
+    # font to the running session so a terminal restart is enough.
+    if (-not ('ConfigPowerShell7.NativeFonts' -as [type])) {
+        Add-Type -Namespace 'ConfigPowerShell7' -Name 'NativeFonts' -MemberDefinition @'
+[System.Runtime.InteropServices.DllImport("gdi32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+public static extern int AddFontResourceW(string lpszFilename);
+'@
+    }
+    return [ConfigPowerShell7.NativeFonts]::AddFontResourceW($Path)
+}
+
+function Test-NerdFontPresent {
+    try {
+        Add-Type -AssemblyName System.Drawing -ErrorAction Stop
+        return @([System.Drawing.FontFamily]::Families | Where-Object { $_.Name -match 'FiraCode Nerd' }).Count -gt 0
+    } catch {
+        Write-GuiLog "Could not enumerate installed fonts: $($_.Exception.Message)" -Type Warn
+        return $false
+    }
+}
+
 function Install-NerdFont {
-    Add-Type -AssemblyName System.Drawing -ErrorAction SilentlyContinue
-    $existingFamilies = [System.Drawing.FontFamily]::Families | Where-Object { $_.Name -match 'FiraCode Nerd' }
-    if ($existingFamilies) {
-        Write-GuiLog "FiraCode Nerd Font already installed ($($existingFamilies.Count) variant(s))." -Type Ok
+    if (Test-NerdFontPresent) {
+        Write-GuiLog 'FiraCode Nerd Font already installed.' -Type Ok
         return $true
     }
 
     Write-GuiLog "Installing FiraCode Nerd Font..." -Type Step
+    $fontZip = Join-Path $env:TEMP 'FiraCode-NerdFont.zip'
+    $fontDir = Join-Path $env:TEMP 'FiraCode-NerdFont'
     try {
         $fontZipUrl = 'https://github.com/ryanoasis/nerd-fonts/releases/download/v3.3.0/FiraCode.zip'
-        $fontZip = Join-Path $env:TEMP 'FiraCode-NerdFont.zip'
-        $fontDir = Join-Path $env:TEMP 'FiraCode-NerdFont'
 
         if (-not (Get-FileFromUrl -Url $fontZipUrl -OutFile $fontZip -MinBytes 100 -Description 'FiraCode Nerd Font archive')) {
             return $false
@@ -350,33 +384,38 @@ function Install-NerdFont {
         Add-Type -AssemblyName System.IO.Compression.FileSystem
         [System.IO.Compression.ZipFile]::ExtractToDirectory($fontZip, $fontDir)
 
-        Add-Type -AssemblyName System.Windows.Forms
-        $shell = New-Object -ComObject Shell.Application
-        $fontsFolder = $shell.Namespace(0x14)
+        # Per-user install (Windows 10 1809+). The Shell.Application route targets the
+        # machine-wide Fonts folder, needs elevation, and reports no error when it is denied.
+        $userFontDir = Join-Path $env:LOCALAPPDATA 'Microsoft\Windows\Fonts'
+        $userFontKey = 'HKCU:\Software\Microsoft\Windows NT\CurrentVersion\Fonts'
+        New-Item -ItemType Directory -Force -Path $userFontDir | Out-Null
+        if (-not (Test-Path $userFontKey)) { New-Item -Path $userFontKey -Force | Out-Null }
 
         $installedCount = 0
         foreach ($fontFile in (Get-ChildItem $fontDir -Filter '*.ttf' -Recurse)) {
             try {
-                $fontsFolder.CopyHere($fontFile.FullName, 0x14)
+                $destination = Join-Path $userFontDir $fontFile.Name
+                Copy-Item -LiteralPath $fontFile.FullName -Destination $destination -Force
+                Set-ItemProperty -Path $userFontKey -Name "$($fontFile.BaseName) (TrueType)" -Value $destination -Force
+                $null = Add-FontResource -Path $destination
                 $installedCount++
             } catch {
                 Write-GuiLog "Could not install font $($fontFile.Name): $($_.Exception.Message)" -Type Warn
             }
         }
 
-        Remove-Item $fontZip -Force -ErrorAction SilentlyContinue
-        Remove-Item $fontDir -Recurse -Force -ErrorAction SilentlyContinue
-
         if ($installedCount -gt 0) {
-            Write-GuiLog "FiraCode Nerd Font installed ($installedCount variants)." -Type Ok
+            Write-GuiLog "FiraCode Nerd Font installed ($installedCount variants). Restart the terminal to use it." -Type Ok
             return $true
-        } else {
-            Write-GuiLog "No font files were installed." -Type Warn
-            return $false
         }
+        Write-GuiLog "No font files were installed." -Type Warn
+        return $false
     } catch {
         Write-GuiLog "Failed to install Nerd Font: $($_.Exception.Message)" -Type Warn
         return $false
+    } finally {
+        Remove-Item $fontZip -Force -ErrorAction SilentlyContinue
+        Remove-Item $fontDir -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
 
@@ -446,16 +485,9 @@ function Set-WindowsTerminalFont {
 
     $fontName = 'FiraCode Nerd Font'
 
-    if (-not $SettingsPath) {
-        $knownPaths = @(
-            "$env:LOCALAPPDATA\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json",
-            "$env:LOCALAPPDATA\Packages\Microsoft.WindowsTerminalPreview_8wekyb3d8bbwe\LocalState\settings.json",
-            "$env:LOCALAPPDATA\Microsoft\Windows Terminal\settings.json"
-        )
-        $SettingsPath = $knownPaths | Where-Object { Test-Path $_ -PathType Leaf } | Select-Object -First 1
-    }
+    if (-not $SettingsPath) { $SettingsPath = Get-WindowsTerminalSettingsPath }
 
-    if (-not $settingsPath) {
+    if (-not $SettingsPath) {
         Write-GuiLog "Windows Terminal settings.json not found." -Type Info
         return $false
     }
@@ -503,7 +535,8 @@ function Set-WindowsTerminalFont {
         }
 
         if ($changed) {
-            $settings | ConvertTo-Json -Depth 10 | Set-Content $settingsPath -Encoding UTF8 -Force
+            Backup-WindowsTerminalSettings -SettingsPath $SettingsPath
+            [System.IO.File]::WriteAllText($SettingsPath, ($settings | ConvertTo-Json -Depth 15), (New-Object System.Text.UTF8Encoding($false)))
             Write-GuiLog "Windows Terminal font set to $fontName." -Type Ok
         } else {
             Write-GuiLog "Windows Terminal already using $fontName." -Type Ok

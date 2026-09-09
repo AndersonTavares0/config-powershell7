@@ -5,6 +5,9 @@ on:
     branches: [main]
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   suites:
     runs-on: windows-latest
@@ -101,7 +104,7 @@ jobs:
       - name: Install via PowerShell 7 (NonInteractive)
         run: |
           $ErrorActionPreference = 'Stop'
-          & ./setup.ps1 -NonInteractive
+          & ./setup.ps1 -NonInteractive -InstallAlacritty
 
       - name: Verify managed block and capture state hashes
         run: |
@@ -128,7 +131,7 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          & ./setup.ps1 -NonInteractive
+          & ./setup.ps1 -NonInteractive -InstallAlacritty
           # NOTE: under 5.1, $PROFILE points at WindowsPowerShell. The managed
           # profile lives at the PS7 path captured in the previous step.
           $stateDir = if ($env:RUNNER_TEMP) { $env:RUNNER_TEMP } else { $env:TEMP }
@@ -147,7 +150,7 @@ jobs:
       - name: Theme change converges
         run: |
           $ErrorActionPreference = 'Stop'
-          & ./setup.ps1 -NonInteractive -ThemeName 'jandedobbeleer'
+          & ./setup.ps1 -NonInteractive -InstallAlacritty -ThemeName 'jandedobbeleer'
           $content = Get-Content $PROFILE.CurrentUserAllHosts -Raw -ErrorAction Stop
           if ($content -notmatch 'jandedobbeleer') { throw 'Theme change did not converge to managed profile.' }
           if ($content -notmatch 'CI-OWNED-USER-CONTENT-DO-NOT-REMOVE') { throw 'Theme change destroyed user content.' }
@@ -157,7 +160,7 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           . $PROFILE.CurrentUserAllHosts
-          pwsh -NoProfile:$false -Command "if (-not (Get-Command docs -ErrorAction SilentlyContinue)) { exit 1 }"
+          pwsh -Command "if (-not (Get-Command docs -ErrorAction SilentlyContinue)) { exit 1 }"
           Write-Host 'Child pwsh loaded profile functions.'
 
       - name: Component failure propagates (exit code)

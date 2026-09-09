@@ -539,7 +539,9 @@ function Show-Gui {
         }
     }
 
-    $logIndex = 0
+    # Script-scoped: an event handler that assigns $logIndex would create its own local
+    # copy each tick and replay the whole log buffer forever.
+    $script:LogIndex = 0
     $timer = [System.Windows.Threading.DispatcherTimer]::new()
     $timer.Interval = [TimeSpan]::FromMilliseconds(200)
     $timer.Add_Tick({
@@ -547,8 +549,8 @@ function Show-Gui {
         Check-OmpThemeLoad
 
         $sync = $script:SyncHash
-        while ($logIndex -lt $sync.LogMessages.Count) {
-            $entry = $sync.LogMessages[$logIndex]
+        while ($script:LogIndex -lt $sync.LogMessages.Count) {
+            $entry = $sync.LogMessages[$script:LogIndex]
             $timeStr = $entry.Time.ToString('HH:mm:ss')
             $paragraph = New-Object System.Windows.Documents.Paragraph
             $paragraph.Margin = New-Object System.Windows.Thickness(0)
@@ -560,7 +562,7 @@ function Show-Gui {
             $msgRun.Foreground = $colors[$entry.Type]
             $paragraph.Inlines.Add($msgRun)
             $txtLog.Document.Blocks.Add($paragraph)
-            $logIndex++
+            $script:LogIndex++
         }
         $txtLog.ScrollToEnd()
         if ($sync.Progress) { $txtProgress.Text = $sync.Progress }
@@ -616,7 +618,7 @@ function Show-Gui {
         $script:SyncHash.InstallFailed = $false
         $script:SyncHash.IsRunning = $true
         $script:SyncHash.LogMessages.Clear()
-        $logIndex = 0
+        $script:LogIndex = 0
         $txtLog.Document.Blocks.Clear()
         $txtStatus.Text = 'Installing...'
         $txtStatus.Foreground = $colors.Warn
@@ -700,7 +702,7 @@ function Show-Gui {
         $script:SyncHash.InstallFailed = $false
         $script:SyncHash.IsRunning = $true
         $script:SyncHash.LogMessages.Clear()
-        $logIndex = 0
+        $script:LogIndex = 0
         $txtLog.Document.Blocks.Clear()
         $txtStatus.Text = 'Removing...'
         $txtStatus.Foreground = $colors.Warn

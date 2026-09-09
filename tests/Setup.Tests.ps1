@@ -760,6 +760,19 @@ if ($invokeLauncherFunc) {
     Test-Skip -Name "Invoke-Launcher tests" -Reason "Function not found in AST"
 }
 
+# The headless branch must group Test-Path before -and; unparenthesised it binds
+# '-and' as a Test-Path parameter and aborts every non-interactive install.
+$bootText = Get-Content $bootstrapperPath -Raw -Encoding UTF8
+Assert-True -Condition ($bootText -match '\(Test-Path \$repoPath\) -and \(Test-IsValidRepo \$repoPath\)') `
+    -TestName "Headless repo check groups Test-Path before -and"
+
+# The launcher entry point must forward the switch instead of forcing Alacritty on.
+$entryText = Get-Content (Join-Path $setupDir 'setup.ps1') -Raw -Encoding UTF8
+Assert-True -Condition ($entryText -match '-InstallAlacritty \(\[bool\]\$InstallAlacritty\)') `
+    -TestName "Setup entry point forwards -InstallAlacritty"
+Assert-True -Condition ($entryText -match "Set-StrictMode -Version Latest") `
+    -TestName "Setup entry point sets its own strict mode for the pwsh -File relaunch"
+
 # Verify remote package manager installers are downloaded to disk before execution
 $depsPath = Join-Path $modulesDir 'deps.ps1'
 $depsContent = Get-Content $depsPath -Raw -Encoding UTF8
@@ -855,7 +868,9 @@ try {
     $cliContent = Get-Content (Join-Path $modulesDir 'cli.ps1') -Raw
     Assert-True -Condition ($guiContent -match 'x:Name="ChkAlacritty"[^>]+IsChecked="True"') -TestName 'GUI enables Alacritty by default'
     Assert-True -Condition ($guiContent -match '\$chkThemeAla\.Add_Checked\(\{ \$chkAlacritty\.IsChecked = \$true \}\)') -TestName 'GUI theme selection enables complete Alacritty setup'
-    Assert-True -Condition ($cliContent -match '-InstallAlacritty \$true') -TestName 'CLI install-all includes Alacritty'
+    Assert-True -Condition ($cliContent -match 'Install Alacritty terminal emulator\? \(y/n\) \[y\]') -TestName 'CLI offers Alacritty with yes default'
+    Assert-True -Condition ($cliContent -match '-InstallAlacritty \$installAlacritty') -TestName 'CLI passes the chosen Alacritty option'
+    Assert-True -Condition ($cliContent -match '\$installAlacritty = \$termThemeAla') -TestName 'CLI theme selection implies Alacritty'
     Assert-True -Condition ($depsContent -match "\[version\]'0\.14\.0'") -TestName 'Alacritty installer enforces minimum version 0.14.0'
 } finally {
     ${function:Get-Executable} = $origGetExecutable

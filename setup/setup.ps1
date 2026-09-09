@@ -8,6 +8,11 @@ param(
     [switch]$InstallAlacritty
 )
 
+# Set explicitly: the PS 5.1 relaunch enters through `pwsh -File`, which does not
+# inherit the preferences the root setup.ps1 established for the dot-sourced path.
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
 $setupDir = Join-Path $RepoPath 'setup'
 $modulesDir = Join-Path $setupDir 'modules'
 
@@ -28,7 +33,7 @@ try {
 
 if ($NonInteractive) {
     $installResult = Start-ProfileInstall -RepoPath $RepoPath -ThemeName $ThemeName `
-        -InstallAlacritty $true
+        -InstallAlacritty ([bool]$InstallAlacritty)
     if (-not $installResult) { throw 'One or more required installation steps failed.' }
 } elseif (-not $canShowGui -or ($Host.Name -notmatch 'ConsoleHost' -and $env:CI)) {
     Start-CliMenu -RepoPath $RepoPath

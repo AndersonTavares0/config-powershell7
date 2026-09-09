@@ -59,12 +59,13 @@ if ($script:IsWin) {
 if ($script:IsWin -and -not (Get-Variable -Name '__CONFIG_POWERSHELL7_PROFILE_UNBLOCKED' -Scope Global -ErrorAction SilentlyContinue) -and -not $env:CI) {
     try {
         $sampleFile = Get-ChildItem -Path $script:ProfileRoot -Filter '*.ps1' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
-        if ($sampleFile -and $sampleFile.GetIsZoneIdentifier()) {
+        $hasZone = $sampleFile -and (Get-Item -LiteralPath $sampleFile.FullName -Stream 'Zone.Identifier' -ErrorAction SilentlyContinue)
+        if ($hasZone) {
             Get-ChildItem -Path $script:ProfileRoot -Filter '*.ps1' -Recurse -ErrorAction SilentlyContinue |
                 Unblock-File -ErrorAction SilentlyContinue
         }
     } catch {
-        # GetIsZoneIdentifier may not be available on all PS versions; skip check
+        # Alternate data streams are unavailable on non-NTFS volumes; skip the check.
     }
     $global:__CONFIG_POWERSHELL7_PROFILE_UNBLOCKED = $true
 }

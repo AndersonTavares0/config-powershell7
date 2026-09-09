@@ -42,11 +42,14 @@ function Get-WingetPath {
 
     $localAppData = [Environment]::GetFolderPath('LocalApplicationData')
     $winApps = Join-Path $localAppData 'Microsoft\WindowsApps\winget.exe'
-    if (Test-Path $winApps -ErrorAction SilentlyContinue) { return $winApps }
+    if (Test-Path $winApps -PathType Leaf) { return $winApps }
 
-    $programFiles = Join-Path $env:ProgramFiles 'WindowsApps'
-    if (Test-Path $programFiles -ErrorAction SilentlyContinue) {
-        $wingetAlt = Get-ChildItem $programFiles -Filter 'winget.exe' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+    # Targeted, not recursive: WindowsApps holds thousands of files and denies
+    # enumeration to non-elevated users, so a -Recurse scan there stalls and finds nothing.
+    if ($env:ProgramFiles) {
+        $packageGlob = Join-Path $env:ProgramFiles 'WindowsApps\Microsoft.DesktopAppInstaller_*_x64__8wekyb3d8bbwe\winget.exe'
+        $wingetAlt = Get-Item -Path $packageGlob -ErrorAction SilentlyContinue |
+            Sort-Object Name -Descending | Select-Object -First 1
         if ($wingetAlt) { return $wingetAlt.FullName }
     }
     return $null
@@ -69,9 +72,14 @@ function Get-FileFromUrl {
         [string]$Description = 'file'
     )
     Write-GuiLog "Downloading from $Url..." -Type Step
+    # Progress rendering makes Invoke-WebRequest an order of magnitude slower on PS 5.1.
+    $previousProgress = $ProgressPreference
+    $ProgressPreference = 'SilentlyContinue'
     try {
         Enable-Tls12
-        Invoke-WebRequest -Uri $Url -OutFile $OutFile -ErrorAction Stop
+        # -UseBasicParsing: PS 5.1 otherwise needs the Internet Explorer engine, which
+        # is absent or blocked by its first-run prompt on clean Windows installs.
+        Invoke-WebRequest -Uri $Url -OutFile $OutFile -UseBasicParsing -ErrorAction Stop
 
         $fileItem = Get-Item $OutFile -ErrorAction SilentlyContinue
         if ($fileItem -and $fileItem.Length -ge $MinBytes) {
@@ -88,6 +96,8 @@ function Get-FileFromUrl {
         Write-GuiLog "Download failed: $($_.Exception.Message)" -Type Fail
         Remove-Item $OutFile -Force -ErrorAction SilentlyContinue
         return $false
+    } finally {
+        $ProgressPreference = $previousProgress
     }
 }
 

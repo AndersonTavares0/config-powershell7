@@ -17,9 +17,10 @@ pause >nul
 exit /b %install_exit%
 #>
 # PowerShell code aqui (executado quando via irm | iex)
-$p = Join-Path $env:TEMP 'config-powershell7-setup.ps1'
+$p = Join-Path $env:TEMP "config-powershell7-setup-$([guid]::NewGuid().ToString('N')).ps1"
 try {
-    Invoke-WebRequest 'https://raw.githubusercontent.com/AndersonTavares0/config-powershell7/main/setup.ps1' -OutFile $p
+    Invoke-WebRequest 'https://raw.githubusercontent.com/AndersonTavares0/config-powershell7/main/setup.ps1' -OutFile $p -UseBasicParsing
+    Unblock-File -Path $p -ErrorAction SilentlyContinue
     & $p
 } finally {
     Remove-Item $p -Force -ErrorAction SilentlyContinue

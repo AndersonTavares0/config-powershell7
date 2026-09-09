@@ -27,6 +27,37 @@ All notable changes to this project will be documented in this file.
 - Profile load guards now use process-local PowerShell variables, preventing
   child shells from skipping profile initialization
 - Alacritty is enabled by default and requires version 0.14 or newer
+- `-NonInteractive` and the terminal menu now honour the `-InstallAlacritty`
+  choice instead of forcing Alacritty on
+- A restrictive execution policy and a missing Windows Terminal are reported as
+  skipped steps instead of failing the whole installation
+- Oh My Posh theme download now also covers the default `atomic` theme, so a
+  plain install no longer points the profile at a theme file that was never
+  fetched
+- Nerd Font installation is per-user (no elevation) and counts only fonts that
+  were actually written
+- Windows Terminal `settings.json` is backed up once before it is rewritten
+
+### Fixed
+- Headless install aborted immediately: an ungrouped `Test-Path $repoPath -and`
+  bound `-and` as a `Test-Path` parameter
+- Terminal menu crashed on the theme list (`${$themes.Count}`) and on a
+  `$MyInvocation.MyCommand.Path` lookup that is empty inside a function
+- Uninstalling from Windows PowerShell 5.1 inspected the WindowsPowerShell
+  profile instead of the managed PowerShell 7 one; it now relaunches under pwsh
+- Profile unblock check called a `GetIsZoneIdentifier()` method that does not
+  exist, so downloaded files were never unblocked
+- `setup/setup.ps1` sets its own strict mode and error preference, which the
+  `pwsh -File` relaunch from 5.1 did not inherit
+- Windows Terminal scheme update overwrote the wrong entry when the settings
+  file already held duplicate scheme names
+- GUI log replayed its whole buffer every tick because the tick handler wrote to
+  a local copy of the log index
+- `install.cmd` unblocks the downloaded installer before running it
+- winget lookup no longer recurses through `Program Files\WindowsApps`, which
+  stalls and denies enumeration to non-elevated users
+- Downloads use `-UseBasicParsing` and suppress progress rendering, avoiding the
+  Internet Explorer dependency and the slow path on Windows PowerShell 5.1
 
 ## [v0.3] — 2026-07-07
 

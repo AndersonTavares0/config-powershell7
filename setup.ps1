@@ -145,6 +145,9 @@ function Download-Repo {
     $extractDir = $null
     $previousDir = $null
     $movedPrevious = $false
+    # Progress rendering makes Invoke-WebRequest an order of magnitude slower on PS 5.1.
+    $previousProgress = $ProgressPreference
+    $ProgressPreference = 'SilentlyContinue'
 
     try {
         $TargetDir = [System.IO.Path]::GetFullPath($TargetDir)
@@ -156,7 +159,7 @@ function Download-Repo {
         $release = Get-LatestRepoRelease
 
         Write-Host "Downloading release $($release.tag_name)..." -ForegroundColor Cyan
-        Invoke-WebRequest -Uri $release.zipball_url -OutFile $zipPath -ErrorAction Stop
+        Invoke-WebRequest -Uri $release.zipball_url -OutFile $zipPath -UseBasicParsing -ErrorAction Stop
 
         if (-not (Test-Path $parentDir)) {
             New-Item -ItemType Directory -Force -Path $parentDir | Out-Null
@@ -200,6 +203,7 @@ function Download-Repo {
         }
         return $false
     } finally {
+        $ProgressPreference = $previousProgress
         Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
         if ($extractDir) { Remove-Item $extractDir -Recurse -Force -ErrorAction SilentlyContinue }
     }
@@ -266,9 +270,9 @@ if (-not $isHeadless) {
                 return
             }
             Write-Host "Installed repository needs stable release update: $repoPath" -ForegroundColor Yellow
+        } else {
+            Write-Host "Directory exists but is not a valid repo: $repoPath" -ForegroundColor Yellow
         }
-        # Directory exists but is not a valid repo - ask before replacing
-        Write-Host "Directory exists but is not a valid repo: $repoPath" -ForegroundColor Yellow
         $replaceChoice = Read-Host "Replace it? [Y/n]"
         if ($replaceChoice -eq 'n' -or $replaceChoice -eq 'N') {
             Write-Host "Installation cancelled. No changes were made." -ForegroundColor Yellow
@@ -286,7 +290,7 @@ if (-not $isHeadless) {
 } else {
     # Headless mode - use defaults
     $repoPath = $repoDefaultDir
-    if (Test-Path $repoPath -and (Test-IsValidRepo $repoPath)) {
+    if ((Test-Path $repoPath) -and (Test-IsValidRepo $repoPath)) {
         if (Test-RepoReleaseCurrent $repoPath) {
             $launcherOk = Invoke-Launcher -RepoPath $repoPath -NonInteractive:$NonInteractive `
                 -ThemeName $ThemeName -InstallAlacritty:$InstallAlacritty

@@ -22,8 +22,6 @@ function Start-CliMenu {
             $termThemeWT = $false
             $termThemeAla = $false
 
-            . (Join-Path (Split-Path $MyInvocation.MyCommand.Path -Parent) 'deps.ps1')
-
             $ompExists = Get-Command oh-my-posh -ErrorAction SilentlyContinue
             if ($ompExists) {
                 Write-Host ""
@@ -32,7 +30,7 @@ function Start-CliMenu {
                 Write-Host ""
                 $themes = Get-OmpThemeList
                 if ($themes) {
-                    Write-Host "Available themes (${$themes.Count}):" -ForegroundColor White
+                    Write-Host "Available themes ($($themes.Count)):" -ForegroundColor White
                     $pages = [Math]::Ceiling($themes.Count / 15)
                     $page = 1
                     while ($page -le $pages) {
@@ -114,11 +112,18 @@ function Start-CliMenu {
                 Write-Host "Skipping terminal theme." -ForegroundColor Gray
             }
 
+            $installAlacritty = $termThemeAla
+            if (-not $installAlacritty) {
+                Write-Host ""
+                $alacrittyChoice = Read-Host "Install Alacritty terminal emulator? (y/n) [y]"
+                $installAlacritty = [string]::IsNullOrWhiteSpace($alacrittyChoice) -or $alacrittyChoice -eq 'y'
+            }
+
             Write-Host ""
             Write-Host "Starting installation... This may take several minutes." -ForegroundColor Yellow
             Write-Host ""
             $installResult = Start-ProfileInstall -RepoPath $RepoPath -ThemeName $themeName `
-                -InstallAlacritty $true `
+                -InstallAlacritty $installAlacritty `
                 -TerminalThemeName $terminalTheme `
                 -TerminalThemeWT $termThemeWT `
                 -TerminalThemeAla $termThemeAla
