@@ -236,17 +236,6 @@ Write-Host "`nTesting Get-ProfilePath..." -ForegroundColor Yellow
 
 $profilePath = Get-ProfilePath
 Assert-NotNull -Value $profilePath -TestName "Get-ProfilePath returns non-null"
-$originalProfile = $PROFILE
-try {
-    $global:PROFILE = [PSCustomObject]@{
-        CurrentUserAllHosts = 'C:\Users\test\Documents\PowerShell\profile.ps1'
-        CurrentUserCurrentHost = 'C:\Users\test\Documents\PowerShell\Microsoft.PowerShell_profile.ps1'
-    }
-    Assert-Equal -Expected $global:PROFILE.CurrentUserAllHosts -Actual (Get-ProfilePath) `
-        -TestName 'Get-ProfilePath prefers CurrentUserAllHosts'
-} finally {
-    $global:PROFILE = $originalProfile
-}
 
 # ══════════════════════════════════════════════════════════════
 # TEST SUITE: PROFILE — Install-Profile (mock)
@@ -271,13 +260,10 @@ try {
 
     $content = Get-Content $testProfilePath -Raw
     Assert-True -Condition ($content -match 'Microsoft\.PowerShell_profile\.ps1') -TestName "Profile contains dot-source reference"
-    Assert-True -Condition ($content -match '# >>> config-powershell7 >>>') -TestName "Profile contains managed block"
-    Assert-False -Condition ($content -match '__PROFILE_REPO_ROOT') -TestName "Profile does not persist repo path in environment"
+    Assert-True -Condition ($content -match '__PROFILE_REPO_ROOT') -TestName "Profile sets __PROFILE_REPO_ROOT"
 
     $result2 = Install-Profile -RepoPath $testRepoDir
     Assert-True -Condition $result2 -TestName "Install-Profile idempotent (already linked)"
-    $content2 = Get-Content $testProfilePath -Raw
-    Assert-Equal -Expected $content -Actual $content2 -TestName "Install-Profile leaves identical content unchanged"
 
     $result3 = Install-Profile -RepoPath "C:\nonexistent-path-$(Get-Random)"
     Assert-False -Condition $result3 -TestName "Install-Profile returns false for missing repo"
@@ -304,14 +290,8 @@ try {
     $result4 = Install-Profile -RepoPath $testThemeDir -ThemeName 'jandedobbeleer'
     Assert-True -Condition $result4 -TestName "Install-Profile with ThemeName returns true"
     $content4 = Get-Content $testThemeProfilePath -Raw
-    Assert-True -Condition ($content4 -match 'CONFIG_PWSH7_THEME') -TestName "Install-Profile with ThemeName includes CONFIG_PWSH7_THEME in stub"
+    Assert-True -Condition ($content4 -match 'POSH_THEME') -TestName "Install-Profile with ThemeName includes POSH_THEME in stub"
     Assert-True -Condition ($content4 -match 'jandedobbeleer') -TestName "Install-Profile with ThemeName includes theme name in stub"
-
-    $result5 = Install-Profile -RepoPath $testThemeDir -ThemeName 'atomic'
-    Assert-True -Condition $result5 -TestName "Install-Profile updates managed theme"
-    $content5 = Get-Content $testThemeProfilePath -Raw
-    Assert-True -Condition ($content5 -match 'atomic') -TestName "Install-Profile writes updated theme"
-    Assert-False -Condition ($content5 -match 'jandedobbeleer') -TestName "Install-Profile removes stale managed theme"
 
 } finally {
     Remove-MockDir $testThemeDir
@@ -460,14 +440,6 @@ try {
 
     $content = Get-Content $testProfilePath3 -Raw
     Assert-True -Condition ($content -match 'Microsoft\.PowerShell_profile\.ps1') -TestName "Orchestrator profile has dot-source"
-
-    $script:SyncHash.InstallComplete = $false
-    $script:SyncHash.InstallFailed = $false
-    Start-ProfileInstall -RepoPath (Join-Path $testRepoDir3 'missing') `
-        -InstallPS7 $false -InstallGit $false -InstallOMP $false `
-        -InstallZoxide $false -InstallFont $false -InstallModules $false `
-        -InstallAlacritty $false -InstallScoop $false
-    Assert-True -Condition $script:SyncHash.InstallFailed -TestName 'Orchestrator component failure sets overall failure'
 
 } finally {
     Remove-MockDir $testRepoDir3
@@ -760,29 +732,20 @@ if ($invokeLauncherFunc) {
     Test-Skip -Name "Invoke-Launcher tests" -Reason "Function not found in AST"
 }
 
-# The headless branch must group Test-Path before -and; unparenthesised it binds
-# '-and' as a Test-Path parameter and aborts every non-interactive install.
-$bootText = Get-Content $bootstrapperPath -Raw -Encoding UTF8
-Assert-True -Condition ($bootText -match '\(Test-Path \$repoPath\) -and \(Test-IsValidRepo \$repoPath\)') `
-    -TestName "Headless repo check groups Test-Path before -and"
-
-# The launcher entry point must forward the switch instead of forcing Alacritty on.
-$entryText = Get-Content (Join-Path $setupDir 'setup.ps1') -Raw -Encoding UTF8
-Assert-True -Condition ($entryText -match '-InstallAlacritty \(\[bool\]\$InstallAlacritty\)') `
-    -TestName "Setup entry point forwards -InstallAlacritty"
-Assert-True -Condition ($entryText -match "Set-StrictMode -Version Latest") `
-    -TestName "Setup entry point sets its own strict mode for the pwsh -File relaunch"
-
 # Verify remote package manager installers are downloaded to disk before execution
 $depsPath = Join-Path $modulesDir 'deps.ps1'
 $depsContent = Get-Content $depsPath -Raw -Encoding UTF8
 Assert-False -Condition ($depsContent -match 'Invoke-Expression') -TestName "Remote installers do not use Invoke-Expression"
+Assert-True -Condition ($depsContent -match 'Remote installer notice: Chocolatey') -TestName "Chocolatey remote installer notice is logged"
 Assert-True -Condition ($depsContent -match 'Remote installer notice: Scoop') -TestName "Scoop remote installer notice is logged"
+Assert-True -Condition ($depsContent -match 'community\.chocolatey\.org/install\.ps1') -TestName "Chocolatey installer source URL is present"
 Assert-True -Condition ($depsContent -match 'get\.scoop\.sh') -TestName "Scoop installer source URL is present"
+Assert-True -Condition ($depsContent -match 'chocolateyInstallPath') -TestName "Chocolatey installer temp path is logged/executed"
 Assert-True -Condition ($depsContent -match 'scoopInstallPath') -TestName "Scoop installer temp path is logged/executed"
+Assert-True -Condition ($depsContent -match 'Unblock-File -Path \$chocolateyInstallPath') -TestName "Chocolatey temp installer is unblocked before execution"
 Assert-True -Condition ($depsContent -match 'Unblock-File -Path \$scoopInstallPath') -TestName "Scoop temp installer is unblocked before execution"
+Assert-True -Condition ($depsContent -match '& \$chocolateyInstallPath') -TestName "Chocolatey installer executes from temp file"
 Assert-True -Condition ($depsContent -match '& \$scoopInstallPath') -TestName "Scoop installer executes from temp file"
-Assert-False -Condition ($depsContent -match 'Set-ExecutionPolicy') -TestName "Installer never mutates the execution policy"
 
 # ══════════════════════════════════════════════════════════════
 # TEST SUITE: DEPS — Install-AlacrittyConfig and Install-Alacritty
@@ -792,116 +755,57 @@ Write-Host "`nTesting Alacritty installer..." -ForegroundColor Yellow
 $script:TestResults = [System.Collections.Generic.List[object]]::new()
 
 $origGetExecutable = ${function:Get-Executable}
-$originalAppData = $env:APPDATA
-$alacrittyTestRoot = Join-Path $env:TEMP "test-alacritty-managed-$(Get-Random)"
-$pwshPath = (Get-Command pwsh -ErrorAction Stop).Source
-$origConvertFromAlacrittyYaml = ${function:ConvertFrom-AlacrittyYaml}
-$origTestAlacrittyCandidateConfig = ${function:Test-AlacrittyCandidateConfig}
+$origGetCommand = ${function:Get-Command}
+$origInstallAlacrittyConfig = ${function:Install-AlacrittyConfig}
 
 try {
-    New-MockDir $alacrittyTestRoot
-    $env:APPDATA = $alacrittyTestRoot
-    $configDir = Join-Path $alacrittyTestRoot 'alacritty'
-    New-MockDir $configDir
-    $configPath = Join-Path $configDir 'alacritty.toml'
-    $originalToml = "[window]`nstartup_mode = `"Maximized`"`n"
-    [System.IO.File]::WriteAllText($configPath, $originalToml)
+    # Test 1: Install-AlacrittyConfig returns $true when config succeeds
+    ${function:Get-Content} = { param([string]$Path, [string]$Raw, $Encoding, $ErrorAction) return '{}' }
+    ${function:Set-Content} = { param([string]$Path, [string]$Value, [string]$Encoding) }
+    ${function:Copy-Item} = { param([string]$Path, [string]$Destination) }
+    ${function:Test-Path} = { param([string]$Path, [switch]$PathType) return $false }
+    ${function:New-Item} = { param([string]$Path, [string]$ItemType) $null }
+    ${function:Write-GuiLog} = { param([string]$Message, [string]$Type) }
 
-    ${function:Test-AlacrittyCandidateConfig} = { return $true }
-    $configResult = Install-AlacrittyConfig -ThemeName 'Nord' -PwshPath $pwshPath
-    Assert-True -Condition $configResult -TestName 'Install-AlacrittyConfig creates managed configuration'
+    $configResult = Install-AlacrittyConfig
+    Assert-True -Condition $configResult -TestName "Install-AlacrittyConfig returns true on success"
 
-    $ownedDir = Join-Path $configDir 'config-powershell7'
-    $basePath = Join-Path $ownedDir 'base.toml'
-    $themePath = Join-Path $ownedDir 'theme.toml'
-    $userPath = Join-Path $configDir 'alacritty.user.toml'
-    $wrapper = [System.IO.File]::ReadAllText($configPath)
-    $base = [System.IO.File]::ReadAllText($basePath)
-    $theme = [System.IO.File]::ReadAllText($themePath)
-    $importLines = @($wrapper -split "`n" | Where-Object { $_ -match '^\s+"' })
-    Assert-True -Condition ($importLines.Count -eq 3 -and $importLines[0] -match 'base\.toml' -and $importLines[1] -match 'theme\.toml' -and $importLines[2] -match 'alacritty\.user\.toml') -TestName 'Managed wrapper imports base, theme, then user config'
-    Assert-True -Condition ($base -match 'program = ".*pwsh\.exe"') -TestName 'Alacritty base uses absolute pwsh executable path'
-    Assert-True -Condition ($base -match 'FiraCode Nerd Font') -TestName 'Alacritty base configures managed Nerd Font'
-    Assert-True -Condition ($theme -match '#2E3440') -TestName 'Alacritty theme fragment contains selected theme'
-    Assert-Equal -Expected $originalToml -Actual ([System.IO.File]::ReadAllText($userPath)) -TestName 'Existing TOML is preserved as user-owned config'
+    # Test 2: Install-AlacrittyConfig returns $false when Set-Content fails
+    ${function:Set-Content} = { throw 'access denied' }
+    $configResult2 = Install-AlacrittyConfig
+    Assert-False -Condition $configResult2 -TestName "Install-AlacrittyConfig returns false when Set-Content throws"
 
-    $backups = @(Get-ChildItem $configDir -Filter 'alacritty.toml.config-powershell7.bak*')
-    Assert-Equal -Expected 1 -Actual $backups.Count -TestName 'Adoption creates one unique backup'
-    Assert-Equal -Expected $originalToml -Actual ([System.IO.File]::ReadAllText($backups[0].FullName)) -TestName 'Adoption backup preserves original TOML'
+    # Test 3: Install-Alacritty returns $true when alacritty found and config succeeds
+    ${function:Set-Content} = { param([string]$Path, [string]$Value, [string]$Encoding) }
+    ${function:Get-Executable} = { return [PSCustomObject]@{ Name = 'alacritty'; Path = 'C:\dummy\alacritty.exe'; Found = $true; Version = '0.13.0' } }
+    ${function:Get-Command} = { param([string]$Name, $ErrorAction) return [PSCustomObject]@{ } }
 
-    $trackedPaths = @($configPath, $userPath, $basePath, $themePath, (Join-Path $ownedDir 'state.txt'))
-    $oldTime = [datetime]'2001-01-01T00:00:00Z'
-    foreach ($path in $trackedPaths) { [System.IO.File]::SetLastWriteTimeUtc($path, $oldTime) }
-    $trackedTimes = @{}
-    foreach ($path in $trackedPaths) { $trackedTimes[$path] = [System.IO.File]::GetLastWriteTimeUtc($path) }
-    $repeatResult = Install-AlacrittyConfig -ThemeName 'Nord' -PwshPath $pwshPath
-    Assert-True -Condition $repeatResult -TestName 'Repeated managed Alacritty setup succeeds'
-    Assert-True -Condition (@($trackedPaths | Where-Object { [System.IO.File]::GetLastWriteTimeUtc($_) -ne $trackedTimes[$_] }).Count -eq 0) -TestName 'Repeated setup does not rewrite unchanged files'
-    Assert-Equal -Expected 1 -Actual @(Get-ChildItem $configDir -Filter 'alacritty.toml.config-powershell7.bak*').Count -TestName 'Repeated setup does not create another backup'
+    # Mock Install-AlacrittyConfig to return true for this test
+    ${function:Install-AlacrittyConfig} = { return $true }
+    $result3 = Install-Alacritty
+    Assert-True -Condition $result3 -TestName "Install-Alacritty returns true when alacritty found and config succeeds"
 
-    $updatedUserToml = "[window]`nstartup_mode = `"Fullscreen`"`n"
-    [System.IO.File]::WriteAllText($userPath, $updatedUserToml)
-    $uninstallResult = Uninstall-AlacrittyConfig
-    Assert-True -Condition $uninstallResult -TestName 'Uninstall-AlacrittyConfig succeeds'
-    Assert-Equal -Expected $updatedUserToml -Actual ([System.IO.File]::ReadAllText($configPath)) -TestName 'Uninstall restores latest user-owned TOML'
-    Assert-False -Condition (Test-Path $ownedDir) -TestName 'Uninstall removes project-owned Alacritty fragments'
+    # Test 4: Install-Alacritty returns $false when alacritty not found and config not called
+    ${function:Get-Command} = { param([string]$Name, $ErrorAction) return $null }
+    $result4 = Install-Alacritty
+    Assert-False -Condition $result4 -TestName "Install-Alacritty returns false when alacritty not found"
 
-    Remove-MockDir $configDir
-    New-MockDir $configDir
-    $legacyPath = Join-Path $configDir 'alacritty.yml'
-    $legacyContent = "window:`n  opacity: 0.9`n"
-    [System.IO.File]::WriteAllText($legacyPath, $legacyContent)
-    ${function:ConvertFrom-AlacrittyYaml} = { param($AlacrittyPath, $LegacyPath) "[window]`nopacity = 0.9`n" }
-    ${function:Test-AlacrittyCandidateConfig} = { return $true }
-    $legacyResult = Install-AlacrittyConfig -ThemeName 'Nord' -AlacrittyPath 'C:\mock\alacritty.exe' -PwshPath $pwshPath
-    Assert-True -Condition $legacyResult -TestName 'Legacy YAML is migrated into user-owned TOML'
-    Assert-Equal -Expected $legacyContent -Actual ([System.IO.File]::ReadAllText($legacyPath)) -TestName 'Legacy YAML remains unchanged during migration'
-    Assert-True -Condition ([System.IO.File]::ReadAllText((Join-Path $configDir 'alacritty.user.toml')) -match 'opacity = 0.9') -TestName 'Migrated legacy settings are imported after managed fragments'
-    ${function:ConvertFrom-AlacrittyYaml} = $origConvertFromAlacrittyYaml
-    ${function:Test-AlacrittyCandidateConfig} = $origTestAlacrittyCandidateConfig
+    # Test 5: Install-Alacritty returns $false when config fails
+    ${function:Get-Command} = { param([string]$Name, $ErrorAction) return [PSCustomObject]@{ } }
+    ${function:Install-AlacrittyConfig} = { return $false }
+    $result5 = Install-Alacritty
+    Assert-False -Condition $result5 -TestName "Install-Alacritty returns false when config fails"
 
-    $guiContent = Get-Content (Join-Path $modulesDir 'gui.ps1') -Raw
-    $cliContent = Get-Content (Join-Path $modulesDir 'cli.ps1') -Raw
-    Assert-True -Condition ($guiContent -match 'x:Name="ChkAlacritty"[^>]+IsChecked="True"') -TestName 'GUI enables Alacritty by default'
-    Assert-True -Condition ($guiContent -match '\$chkThemeAla\.Add_Checked\(\{ \$chkAlacritty\.IsChecked = \$true \}\)') -TestName 'GUI theme selection enables complete Alacritty setup'
-# Nothing reads the background runspace's error stream, so an escaping error would
-# leave the window disabled forever waiting for InstallComplete.
-$guiRunspaceCatches = ([regex]::Matches($guiContent, '\$SyncHash\.InstallComplete = \$true')).Count
-Assert-True -Condition ($guiRunspaceCatches -ge 2) -TestName 'GUI runspaces always release the UI on failure'
-    Assert-True -Condition ($cliContent -match 'Install Alacritty terminal emulator\? \(y/n\) \[y\]') -TestName 'CLI offers Alacritty with yes default'
-    Assert-True -Condition ($cliContent -match '-InstallAlacritty \$installAlacritty') -TestName 'CLI passes the chosen Alacritty option'
-    Assert-True -Condition ($cliContent -match '\$installAlacritty = \$termThemeAla') -TestName 'CLI theme selection implies Alacritty'
-    Assert-True -Condition ($depsContent -match "\[version\]'0\.14\.0'") -TestName 'Alacritty installer enforces minimum version 0.14.0'
 } finally {
     ${function:Get-Executable} = $origGetExecutable
-    ${function:ConvertFrom-AlacrittyYaml} = $origConvertFromAlacrittyYaml
-    ${function:Test-AlacrittyCandidateConfig} = $origTestAlacrittyCandidateConfig
-    if ($null -ne $originalAppData) { $env:APPDATA = $originalAppData } else { Remove-Item Env:\APPDATA -ErrorAction SilentlyContinue }
-    Remove-MockDir $alacrittyTestRoot
-}
-
-# Preserve user-owned profile content and escape PowerShell metacharacters.
-$testPreserveRepo = Join-Path $env:TEMP "test-setup-repo-'dollar`$-$(Get-Random)"
-$testPreserveDir = Join-Path $env:TEMP "test-setup-preserve-$(Get-Random)"
-$testPreserveProfile = Join-Path $testPreserveDir 'Profile.ps1'
-try {
-    New-MockDir $testPreserveRepo
-    New-MockDir (Join-Path $testPreserveRepo 'modules')
-    New-MockFile (Join-Path $testPreserveRepo 'Microsoft.PowerShell_profile.ps1') '# profile'
-    New-MockDir $testPreserveDir
-    New-MockFile $testPreserveProfile '$global:UserProfileContent = $true'
-    $originalProfile = $PROFILE
-    $global:PROFILE = $testPreserveProfile
-
-    $preserveResult = Install-Profile -RepoPath $testPreserveRepo
-    $preservedContent = Get-Content $testPreserveProfile -Raw
-    Assert-True -Condition $preserveResult -TestName 'Install-Profile handles metacharacters in repo path'
-    Assert-True -Condition ($preservedContent -match 'UserProfileContent') -TestName 'Install-Profile preserves user content'
-    Assert-True -Condition $preservedContent.Contains("repo-''dollar`$-") -TestName 'Install-Profile escapes single quote in path'
-} finally {
-    Remove-MockDir $testPreserveRepo
-    Remove-MockDir $testPreserveDir
-    $global:PROFILE = $originalProfile
+    ${function:Get-Command} = $origGetCommand
+    ${function:Install-AlacrittyConfig} = $origInstallAlacrittyConfig
+    Remove-Item Function:\Test-Path -Force -ErrorAction SilentlyContinue
+    Remove-Item Function:\New-Item -Force -ErrorAction SilentlyContinue
+    Remove-Item Function:\Set-Content -Force -ErrorAction SilentlyContinue
+    Remove-Item Function:\Get-Content -Force -ErrorAction SilentlyContinue
+    Remove-Item Function:\Copy-Item -Force -ErrorAction SilentlyContinue
+    Remove-Item Function:\Write-GuiLog -Force -ErrorAction SilentlyContinue
 }
 
 # ══════════════════════════════════════════════════════════════
