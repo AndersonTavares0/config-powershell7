@@ -94,14 +94,11 @@ if (-not $Quiet) {
 # ══════════════════════════════════════════════════════════════
 if (-not $Quiet) { Write-Host "  Profile Integrity" -ForegroundColor Cyan }
 
-$allHostsProperty = $PROFILE.PSObject.Properties['CurrentUserAllHosts']
-$allHostsProfile = if ($allHostsProperty) { $allHostsProperty.Value } else { $null }
-$profilePath = if ($allHostsProfile -and (Test-Path $allHostsProfile)) { $allHostsProfile } else { $PROFILE }
+$profilePath = $PROFILE
 if (Test-Path $profilePath) {
     $content = Get-Content $profilePath -Raw -ErrorAction SilentlyContinue
 
-    if ($content -match '(?m)^# >>> config-powershell7 >>>\s*$' -and
-        $content -match '(?m)^\.\s+(?:''[^'']*Microsoft\.PowerShell_profile\.ps1''|"[^"]*Microsoft\.PowerShell_profile\.ps1")\s*$') {
+    if ($content -match "\. `"[^`"]*Microsoft\.PowerShell_profile\.ps1`"") {
         script:Add-Check 'Profile' 'Type' 'PASS' 'Profile dot-sources the config'
     }
     elseif ($content -match 'POWERSHELL PROFILE' -and $content -match 'modules/config/config\.ps1') {
@@ -124,12 +121,8 @@ if (-not $Quiet) { Write-Host "  Module Syntax" -ForegroundColor Cyan }
 $moduleDir = $null
 if (Test-Path $profilePath) {
     $profContent = Get-Content $profilePath -Raw -ErrorAction SilentlyContinue
-    if ($profContent -match "(?m)^\.\s+'((?:[^']|'')*Microsoft\.PowerShell_profile\.ps1)'\s*$") {
-        $sourcePath = $Matches[1].Replace("''", "'")
-        $moduleDir = Join-Path (Split-Path $sourcePath -Parent) 'modules'
-    }
-    # Legacy generated profile.
-    elseif ($profContent -match '\$env:__PROFILE_REPO_ROOT\s*=\s*"([^"]+)"') {
+    # Try to extract __ProfileRepoRoot from the generated profile
+    if ($profContent -match '\$env:__PROFILE_REPO_ROOT\s*=\s*"([^"]+)"') {
         $moduleDir = Join-Path $Matches[1] 'modules'
     }
     else {
@@ -164,14 +157,12 @@ if (-not $Quiet) { Write-Host "  Profile Loading" -ForegroundColor Cyan }
 $loadTimer = [System.Diagnostics.Stopwatch]::StartNew()
 $loadError = $null
 try {
-    Remove-Variable -Name '__CONFIG_POWERSHELL7_PROFILE_LOADED' -Scope Global -ErrorAction SilentlyContinue
+    $env:__PROFILE_LOADED = $null
     . $profilePath 2>$null
     $loadTimer.Stop()
     $loadMs = [math]::Round($loadTimer.Elapsed.TotalMilliseconds, 0)
     script:Add-Check 'Load' 'ProfileSource' 'PASS' "Loaded in ${loadMs}ms"
 
-    # Boot time depends on disk and CPU speed, so it is reported, never failed.
-    # tests/benchmark.ps1 is the tool for tracking performance regressions.
     if ($loadMs -lt 200) {
         script:Add-Check 'Load' 'Performance' 'PASS' "${loadMs}ms < 200ms target"
     }
@@ -179,30 +170,13 @@ try {
         script:Add-Check 'Load' 'Performance' 'WARN' "${loadMs}ms (target: < 200ms)"
     }
     else {
-        script:Add-Check 'Load' 'Performance' 'WARN' "${loadMs}ms is well above the 200ms target — run tests/benchmark.ps1"
+        script:Add-Check 'Load' 'Performance' 'FAIL' "${loadMs}ms exceeds 500ms threshold"
     }
-} catch {
+}
+catch {
     $loadTimer.Stop()
     $loadError = $_.Exception.Message
     script:Add-Check 'Load' 'ProfileSource' 'FAIL' $loadError
-}
-
-# A locked-down policy is a property of the host, not a broken install, so it is
-# reported as a warning here just like the installer reports it.
-$effectivePolicy = Get-ExecutionPolicy -ErrorAction SilentlyContinue
-$policyStatus = if ($effectivePolicy -in @('Bypass', 'RemoteSigned', 'Unrestricted')) { 'PASS' } else { 'WARN' }
-script:Add-Check 'Policy' 'Effective' $policyStatus $effectivePolicy
-
-if ($script:IsWin) {
-    $alacritty = Get-Command alacritty -ErrorAction SilentlyContinue
-    if ($alacritty) {
-        $alacrittyConfig = if ($env:APPDATA) { Join-Path $env:APPDATA 'alacritty\alacritty.toml' } else { $null }
-        $configStatus = if ($alacrittyConfig -and (Test-Path $alacrittyConfig)) { 'PASS' } else { 'WARN' }
-        script:Add-Check 'Alacritty' 'Executable' 'PASS' $alacritty.Source
-        script:Add-Check 'Alacritty' 'Config' $configStatus $(if ($alacrittyConfig) { $alacrittyConfig } else { 'APPDATA is not set' })
-    } else {
-        script:Add-Check 'Alacritty' 'Executable' 'WARN' 'Alacritty is not installed or not available in PATH'
-    }
 }
 
 # ══════════════════════════════════════════════════════════════
@@ -341,6 +315,8 @@ if ($Detailed) {
     Total   = $total
     Results = $script:Results
 }
+
+if ($failed -gt 0) { exit 1 } else { exit 0 }
 
 if ($failed -gt 0) { exit 1 } else { exit 0 }
 

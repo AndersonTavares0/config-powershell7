@@ -273,7 +273,7 @@ function Show-Gui {
                     </Border>
                 </Grid>
             </Border>
-            <CheckBox x:Name="ChkAlacritty" Style="{StaticResource CheckBoxLabel}" IsChecked="True" Margin="0,6,0,3">
+            <CheckBox x:Name="ChkAlacritty" Style="{StaticResource CheckBoxLabel}" IsChecked="False" Margin="0,6,0,3">
                 Install Alacritty terminal emulator
             </CheckBox>
             <CheckBox x:Name="ChkScoop" Style="{StaticResource CheckBoxLabel}" IsChecked="False" Margin="0,6,0,3">
@@ -493,8 +493,6 @@ function Show-Gui {
     $chkTerminalTheme.Add_Unchecked({
         $terminalThemeSection.Visibility = [System.Windows.Visibility]::Collapsed
     })
-    $chkThemeAla.Add_Checked({ $chkAlacritty.IsChecked = $true })
-    $chkAlacritty.Add_Unchecked({ $chkThemeAla.IsChecked = $false })
 
     # Load OMP theme list in background async (via Start-Job)
     $txtThemeCount.Text = "Loading themes..."
@@ -502,18 +500,13 @@ function Show-Gui {
     function Start-OmpThemeLoad {
         $script:ThemeJob = Start-Job -ScriptBlock {
             try {
-                if ($PSVersionTable.PSVersion.Major -lt 6) {
-                    $currentProtocol = [System.Net.ServicePointManager]::SecurityProtocol
-                    [System.Net.ServicePointManager]::SecurityProtocol = $currentProtocol -bor [System.Net.SecurityProtocolType]::Tls12
-                }
+                Enable-Tls12
                 $apiUrl = 'https://api.github.com/repos/JanDeDobbeleer/oh-my-posh/contents/themes'
                 $items = Invoke-RestMethod -Uri $apiUrl -ErrorAction Stop
                 @($items | Where-Object { $_.name -like '*.omp.json' } |
                     ForEach-Object { $_.name -replace '\.omp\.json$', '' } |
                     Sort-Object)
-            } catch {
-                Write-Error "Failed to load OMP themes: $($_.Exception.Message)"
-            }
+            } catch { $null }
         } -Name 'OmpThemeLoad'
     }
 
@@ -539,9 +532,7 @@ function Show-Gui {
         }
     }
 
-    # Script-scoped: an event handler that assigns $logIndex would create its own local
-    # copy each tick and replay the whole log buffer forever.
-    $script:LogIndex = 0
+    $logIndex = 0
     $timer = [System.Windows.Threading.DispatcherTimer]::new()
     $timer.Interval = [TimeSpan]::FromMilliseconds(200)
     $timer.Add_Tick({
@@ -549,8 +540,8 @@ function Show-Gui {
         Check-OmpThemeLoad
 
         $sync = $script:SyncHash
-        while ($script:LogIndex -lt $sync.LogMessages.Count) {
-            $entry = $sync.LogMessages[$script:LogIndex]
+        while ($logIndex -lt $sync.LogMessages.Count) {
+            $entry = $sync.LogMessages[$logIndex]
             $timeStr = $entry.Time.ToString('HH:mm:ss')
             $paragraph = New-Object System.Windows.Documents.Paragraph
             $paragraph.Margin = New-Object System.Windows.Thickness(0)
@@ -562,7 +553,7 @@ function Show-Gui {
             $msgRun.Foreground = $colors[$entry.Type]
             $paragraph.Inlines.Add($msgRun)
             $txtLog.Document.Blocks.Add($paragraph)
-            $script:LogIndex++
+            $logIndex++
         }
         $txtLog.ScrollToEnd()
         if ($sync.Progress) { $txtProgress.Text = $sync.Progress }
@@ -618,7 +609,7 @@ function Show-Gui {
         $script:SyncHash.InstallFailed = $false
         $script:SyncHash.IsRunning = $true
         $script:SyncHash.LogMessages.Clear()
-        $script:LogIndex = 0
+        $logIndex = 0
         $txtLog.Document.Blocks.Clear()
         $txtStatus.Text = 'Installing...'
         $txtStatus.Foreground = $colors.Warn
@@ -636,32 +627,17 @@ function Show-Gui {
             $script:RepoName = $RepoName
             $global:PROFILE = $ProfilePath
 
-            # Nothing reads this runspace's error stream, and the UI only re-enables
-            # itself once InstallComplete is set. An error escaping here would leave
-            # the window stuck on "Installing..." forever.
-            try {
-                . (Join-Path $SetupDir '../lib/executable.ps1')
-                . (Join-Path $SetupDir 'modules/core.ps1')
-                . (Join-Path $SetupDir 'modules/deps.ps1')
-                . (Join-Path $SetupDir 'modules/profile.ps1')
-                . (Join-Path $SetupDir 'modules/orchestrator.ps1')
+            . (Join-Path $SetupDir '../lib/executable.ps1')
+            . (Join-Path $SetupDir 'modules/core.ps1')
+            . (Join-Path $SetupDir 'modules/deps.ps1')
+            . (Join-Path $SetupDir 'modules/profile.ps1')
+            . (Join-Path $SetupDir 'modules/orchestrator.ps1')
 
-                if ($NeedDownload) {
-                    if (-not (Download-Repo -TargetDir $RepoPath)) {
-                        throw "Repository download failed: $RepoPath"
-                    }
-                }
-
-                Start-ProfileInstall @Params
-            } catch {
-                $SyncHash.LogMessages.Add(@{
-                    Message = "CRITICAL ERROR: $($_.Exception.Message)"
-                    Type    = 'Fail'
-                    Time    = Get-Date
-                })
-                $SyncHash.InstallFailed = $true
-                $SyncHash.InstallComplete = $true
+            if ($NeedDownload) {
+                Download-Repo -TargetDir $RepoPath
             }
+
+            Start-ProfileInstall @Params
         })
 
         $ps.AddParameter('SetupDir', $SetupDir)
@@ -685,7 +661,7 @@ function Show-Gui {
             TerminalThemeName = $selTermTheme
             TerminalThemeWT   = $chkThemeWT.IsChecked -and $chkTerminalTheme.IsChecked
             TerminalThemeAla  = $chkThemeAla.IsChecked -and $chkTerminalTheme.IsChecked
-            InstallAlacritty  = $chkAlacritty.IsChecked -or $chkThemeAla.IsChecked
+            InstallAlacritty  = $chkAlacritty.IsChecked
             InstallTopgrade   = $chkTopgrade.IsChecked
             InstallScoop      = $chkScoop.IsChecked
             ScoopBuckets      = $txtScoopBuckets.Text
@@ -715,7 +691,7 @@ function Show-Gui {
         $script:SyncHash.InstallFailed = $false
         $script:SyncHash.IsRunning = $true
         $script:SyncHash.LogMessages.Clear()
-        $script:LogIndex = 0
+        $logIndex = 0
         $txtLog.Document.Blocks.Clear()
         $txtStatus.Text = 'Removing...'
         $txtStatus.Foreground = $colors.Warn
@@ -729,25 +705,12 @@ function Show-Gui {
             $script:SyncHash = $SyncHash
             $global:PROFILE = $ProfilePath
 
-            # Same reason as the install runspace: an escaping error would never
-            # reach the UI and the window would stay stuck on "Removing...".
-            try {
-                . (Join-Path $SetupDir '../lib/executable.ps1')
-                . (Join-Path $SetupDir 'modules/core.ps1')
-                . (Join-Path $SetupDir 'modules/deps.ps1')
-                . (Join-Path $SetupDir 'modules/profile.ps1')
-                . (Join-Path $SetupDir 'modules/orchestrator.ps1')
+            . (Join-Path $SetupDir '../lib/executable.ps1')
+            . (Join-Path $SetupDir 'modules/core.ps1')
+            . (Join-Path $SetupDir 'modules/profile.ps1')
+            . (Join-Path $SetupDir 'modules/orchestrator.ps1')
 
-                Start-ProfileUninstall -RepoPath $RepoPath
-            } catch {
-                $SyncHash.LogMessages.Add(@{
-                    Message = "CRITICAL ERROR: $($_.Exception.Message)"
-                    Type    = 'Fail'
-                    Time    = Get-Date
-                })
-                $SyncHash.InstallFailed = $true
-                $SyncHash.InstallComplete = $true
-            }
+            Start-ProfileUninstall -RepoPath $RepoPath
         })
         $ps.AddParameter('SetupDir', $SetupDir)
         $ps.AddParameter('RepoPath', $repoPath)

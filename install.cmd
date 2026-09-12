@@ -6,22 +6,14 @@ echo.
 echo  Baixando instalador...
 echo.
 powershell -NoProfile -ExecutionPolicy Bypass -Command ^
-  "$p = Join-Path $env:TEMP 'config-powershell7-setup.ps1'; ^
-   try { irm 'https://raw.githubusercontent.com/AndersonTavares0/config-powershell7/main/setup.ps1' -OutFile $p; & $p } ^
-   finally { Remove-Item $p -Force -ErrorAction SilentlyContinue }"
-set "install_exit=%errorlevel%"
+  "$c = (irm 'https://raw.githubusercontent.com/AndersonTavares0/config-powershell7/main/install.ps1'); ^
+   $c = $c -replace '^\uFEFF',''; ^
+   iex $c"
 echo.
-if "%install_exit%"=="0" (echo  Concluido.) else (echo  Falha na instalacao. Codigo: %install_exit%)
-echo  Pressione qualquer tecla para sair...
+echo  Concluido. Pressione qualquer tecla para sair...
 pause >nul
-exit /b %install_exit%
+exit /b
 #>
 # PowerShell code aqui (executado quando via irm | iex)
-$p = Join-Path $env:TEMP "config-powershell7-setup-$([guid]::NewGuid().ToString('N')).ps1"
-try {
-    Invoke-WebRequest 'https://raw.githubusercontent.com/AndersonTavares0/config-powershell7/main/setup.ps1' -OutFile $p -UseBasicParsing
-    Unblock-File -Path $p -ErrorAction SilentlyContinue
-    & $p
-} finally {
-    Remove-Item $p -Force -ErrorAction SilentlyContinue
-}
+$c = (Invoke-RestMethod 'https://raw.githubusercontent.com/AndersonTavares0/config-powershell7/main/install.ps1') -replace '^\uFEFF',''
+Invoke-Expression $c

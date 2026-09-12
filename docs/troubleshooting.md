@@ -151,13 +151,13 @@ utilities. Fastest feedback loop for development.
 | **Git** | gcom/lazyg LASTEXITCODE branching and wrapper behavior |
 | **Text utils** | sed validation/backup/cleanup, clipboard, touch, which |
 
-### 2. CONFIG_PWSH7_THEME Tests
+### 2. POSH_THEME Tests
 
-`tests/ThemeOverride.Tests.ps1` -- 5 assertions verifying the
-`$env:CONFIG_PWSH7_THEME` override mechanism:
+`tests/POSH_THEME.Tests.ps1` -- 5 assertions verifying the
+`$env:POSH_THEME` override mechanism:
 
 ```powershell
-.\tests\ThemeOverride.Tests.ps1
+.\tests\POSH_THEME.Tests.ps1
 ```
 
 - POSH-01: env var overrides default theme
@@ -225,8 +225,7 @@ The repository uses **GitHub Actions** with one pipeline:
 
 | Pipeline | File | Triggers |
 |---|---|---|
-| Suites | `.github/workflows/validate.yml` (`suites`) | push/PR to `main` |
-| End-to-end installer | `.github/workflows/validate.yml` (`installer`) | `workflow_dispatch` |
+| Original CI | `.github/workflows/test.yml` | push/PR to `main` |
 
 The pipeline copies profile + modules to `$PROFILE` path, runs
 PSScriptAnalyzer (errors block CI, warnings are informational), then runs
@@ -236,8 +235,8 @@ the custom test suites on a Windows runner.
 
 All test suites use a custom framework (not Pester) with these functions:
 `Test-Result`, `Test-Skip`, `Assert-True`, `Assert-Equal`, `Assert-NotNull`,
-`Assert-False`. Tests dynamically verify the process-local load guard and
-evaluate the profile in isolation to prevent side-effects, guaranteeing zero
+`Assert-False`. Tests dynamically verify `$env:__PROFILE_LOADED` and evaluate
+the profile in isolation to prevent side-effects, guaranteeing zero
 false-positives under `Set-StrictMode -Version Latest`.
 
 ### Platform handling in tests
@@ -306,5 +305,5 @@ false-positives under `Set-StrictMode -Version Latest`.
 ---
 
 *Revision: 07/2026 (v3 -- GUI installer overhaul, theme selection, terminal
-themes, CONFIG_PWSH7_THEME env var, and custom test suites) -- Compatible with PS 5.1+
+themes, POSH_THEME env var, and custom test suites) -- Compatible with PS 5.1+
 / PS Core 7+ / Windows 10+ / Linux / macOS*
