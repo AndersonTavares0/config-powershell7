@@ -230,11 +230,11 @@ config-powershell7/
 ├── lib/
 │   ├── platform.ps1            # Cross-platform detection + elevation
 │   ├── ux-helpers.ps1          # Console output helpers
-│   └── profile-paths.ps1       # Profile path resolution
+│   └── executable.ps1          # Executable discovery and version probing
 ├── tests/
 │   ├── benchmark.ps1                    # Boot timing benchmark
 │   ├── Unit.Tests.ps1                  # Unit tests (cache, system, git, text)
-│   ├── POSH_THEME.Tests.ps1            # 5 env-var theme tests
+│   ├── ThemeOverride.Tests.ps1         # 5 env-var theme tests
 │   ├── Setup.Tests.ps1                 # Setup module tests
 │   ├── Test-ProfileInstallation.ps1    # Post-install health checks
 │   └── Microsoft.PowerShell_profile.Tests.ps1  # Integration tests
@@ -256,9 +256,9 @@ The execution order when opening a new session:
 
 ```
 1. PowerShell loads $PROFILE automatically.
-2. Guard: checks $env:__PROFILE_LOADED to prevent double-loading.
+2. Guard: checks a process-local global variable to prevent double-loading.
 3. Stopwatch starts for performance measurement.
-4. Resolves repository root via $env:__PROFILE_REPO_ROOT or $PSScriptRoot.
+4. Resolves repository root via $PSScriptRoot.
 5. Loads config module (critical -- must succeed, return on failure).
 6. Loads remaining modules in try/catch (non-critical):
    - cache:    TTL check -> hot path or rebuild -> dot-source cache
@@ -374,17 +374,17 @@ Initialized via TTL cache. `Update-PluginCache` checks availability with
 
 ---
 
-## POSH_THEME (Runtime Theme Override)
+## CONFIG_PWSH7_THEME (Runtime Theme Override)
 
 You can switch your Oh My Posh theme at runtime without reinstalling:
 
 ```powershell
-$env:POSH_THEME = 'montys'
+$env:CONFIG_PWSH7_THEME = 'montys'
 ```
 
 The profile reads this variable at boot. Unset or empty falls back to the
 theme selected during installation. The profile stub sets
-`$env:POSH_THEME` at session start.
+`$env:CONFIG_PWSH7_THEME` at session start.
 
 ---
 
@@ -632,7 +632,7 @@ generated cache, so it is expected to be the largest slice when OMP is enabled.
 | Test Suite | Scope | Description |
 |---|---|---|
 | `tests/Unit.Tests.ps1` | Unit | Cache, system, git, text utils |
-| `tests/POSH_THEME.Tests.ps1` | Theme | POSH_THEME env var override |
+| `tests/ThemeOverride.Tests.ps1` | Theme | CONFIG_PWSH7_THEME env var override |
 | `tests/Setup.Tests.ps1` | Setup | Installer modules |
 | `tests/Test-ProfileInstallation.ps1` | Health | Post-install health check |
 | `tests/Microsoft.PowerShell_profile.Tests.ps1` | Integration | Behavioral integration |
@@ -644,8 +644,8 @@ generated cache, so it is expected to be the largest slice when OMP is enabled.
 # Unit tests (fastest feedback)
 .\tests\Unit.Tests.ps1
 
-# POSH_THEME tests
-.\tests\POSH_THEME.Tests.ps1
+# CONFIG_PWSH7_THEME tests
+.\tests\ThemeOverride.Tests.ps1
 
 # Post-install health check
 .\tests\Test-ProfileInstallation.ps1 -Detailed
@@ -661,5 +661,8 @@ generated cache, so it is expected to be the largest slice when OMP is enabled.
 
 One pipeline validates every push or pull request to `main`:
 
-- **`test.yml`** -- copies profile + modules to `$PROFILE` path, runs
-  PSScriptAnalyzer, runs custom test suites on `windows-latest`.
+- **`validate.yml`**, job `suites` -- copies profile + modules to `$PROFILE`
+  path, runs PSScriptAnalyzer, runs custom test suites on `windows-latest`.
+- **`validate.yml`**, job `installer` -- `workflow_dispatch` only: full
+  end-to-end install on a disposable runner, with idempotency, theme-change,
+  child-shell, failure-propagation, and uninstall checks.

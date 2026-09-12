@@ -1,5 +1,5 @@
 #Requires -Version 5.1
-# Dependency installers: winget, PS7, Git, OMP, Zoxide, NerdFont, PSModules, Alacritty, Chocolatey, Scoop
+# Dependency installers: winget, PS7, Git, OMP, Zoxide, NerdFont, PSModules, Alacritty, Scoop
 
 function Install-WingetPackage {
     param(
@@ -204,19 +204,31 @@ function Get-TerminalThemeData {
     return $script:TerminalThemeData[$Name]
 }
 
+function Get-WindowsTerminalSettingsPath {
+    $knownPaths = @(
+        "$env:LOCALAPPDATA\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json",
+        "$env:LOCALAPPDATA\Packages\Microsoft.WindowsTerminalPreview_8wekyb3d8bbwe\LocalState\settings.json",
+        "$env:LOCALAPPDATA\Microsoft\Windows Terminal\settings.json"
+    )
+    return $knownPaths | Where-Object { Test-Path $_ -PathType Leaf } | Select-Object -First 1
+}
+
+function Backup-WindowsTerminalSettings {
+    param([string]$SettingsPath)
+    # Rewriting settings.json through ConvertTo-Json drops the JSON comments Windows
+    # Terminal ships by default, so keep one recoverable copy of the original.
+    $backupPath = "$SettingsPath.config-powershell7.bak"
+    if (Test-Path $backupPath -PathType Leaf) { return }
+    Copy-Item -LiteralPath $SettingsPath -Destination $backupPath -Force
+    Write-GuiLog "Windows Terminal settings backed up: $backupPath" -Type Info
+}
+
 function Set-WindowsTerminalColorScheme {
     param([string]$ThemeName, [string]$SettingsPath)
     $theme = Get-TerminalThemeData -Name $ThemeName
     if (-not $theme) { Write-GuiLog "Terminal theme '$ThemeName' not found." -Type Warn; return $false }
 
-    if (-not $SettingsPath) {
-        $knownPaths = @(
-            "$env:LOCALAPPDATA\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json",
-            "$env:LOCALAPPDATA\Packages\Microsoft.WindowsTerminalPreview_8wekyb3d8bbwe\LocalState\settings.json",
-            "$env:LOCALAPPDATA\Microsoft\Windows Terminal\settings.json"
-        )
-        $SettingsPath = $knownPaths | Where-Object { Test-Path $_ -PathType Leaf } | Select-Object -First 1
-    }
+    if (-not $SettingsPath) { $SettingsPath = Get-WindowsTerminalSettingsPath }
     if (-not $SettingsPath) { Write-GuiLog "Windows Terminal settings.json not found." -Type Info; return $false }
 
     try {
@@ -241,7 +253,7 @@ function Set-WindowsTerminalColorScheme {
         if (-not $settings.schemes) {
             $settings | Add-Member -Name 'schemes' -Value @($scheme) -MemberType NoteProperty -Force
         } else {
-            $existing = $settings.schemes | Where-Object { $_.name -eq $ThemeName }
+            $existing = @($settings.schemes | Where-Object { $_.name -eq $ThemeName })[0]
             if ($existing) {
                 $idx = [array]::IndexOf($settings.schemes, $existing)
                 $settings.schemes[$idx] = $scheme
@@ -258,7 +270,8 @@ function Set-WindowsTerminalColorScheme {
         }
         $settings.profiles.defaults | Add-Member -Name 'colorScheme' -Value $ThemeName -MemberType NoteProperty -Force
 
-        $settings | ConvertTo-Json -Depth 15 | Set-Content $SettingsPath -Encoding UTF8 -Force
+        Backup-WindowsTerminalSettings -SettingsPath $SettingsPath
+        [System.IO.File]::WriteAllText($SettingsPath, ($settings | ConvertTo-Json -Depth 15), (New-Object System.Text.UTF8Encoding($false)))
         Write-GuiLog "Windows Terminal color scheme set to '$ThemeName'." -Type Ok
         return $true
     } catch {
@@ -267,80 +280,6 @@ function Set-WindowsTerminalColorScheme {
     }
 }
 
-function Set-AlacrittyColorScheme {
-    param([string]$ThemeName)
-    $theme = Get-TerminalThemeData -Name $ThemeName
-    if (-not $theme) { Write-GuiLog "Terminal theme '$ThemeName' not found." -Type Warn; return $false }
-
-    $configDir = Join-Path $env:APPDATA 'alacritty'
-    if (-not (Test-Path $configDir)) { New-Item -ItemType Directory -Path $configDir -Force | Out-Null }
-    $configPath = Join-Path $configDir 'alacritty.toml'
-
-    if (Test-Path $configPath) {
-        $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-        Copy-Item $configPath "$configPath.bak-$timestamp" -Force
-    }
-
-    $colors = $theme.Ala
-    $colorLines = @(
-        "[colors.primary]",
-        "background = `"$($colors.primary.background)`"",
-        "foreground = `"$($colors.primary.foreground)`"",
-        "",
-        "[colors.normal]",
-        "black   = `"$($colors.normal.black)`"",
-        "red     = `"$($colors.normal.red)`"",
-        "green   = `"$($colors.normal.green)`"",
-        "yellow  = `"$($colors.normal.yellow)`"",
-        "blue    = `"$($colors.normal.blue)`"",
-        "magenta = `"$($colors.normal.magenta)`"",
-        "cyan    = `"$($colors.normal.cyan)`"",
-        "white   = `"$($colors.normal.white)`"",
-        "",
-        "[colors.bright]",
-        "black   = `"$($colors.bright.black)`"",
-        "red     = `"$($colors.bright.red)`"",
-        "green   = `"$($colors.bright.green)`"",
-        "yellow  = `"$($colors.bright.yellow)`"",
-        "blue    = `"$($colors.bright.blue)`"",
-        "magenta = `"$($colors.bright.magenta)`"",
-        "cyan    = `"$($colors.bright.cyan)`"",
-        "white   = `"$($colors.bright.white)`""
-    )
-
-    try {
-        if (Test-Path $configPath) {
-            $existing = Get-Content $configPath -Raw -Encoding UTF8
-            $colorSectionStart = $existing.IndexOf('[colors.primary]')
-            if ($colorSectionStart -ge 0) {
-                $colorSectionEnd = $existing.IndexOf('[[', $colorSectionStart + 1)
-                if ($colorSectionEnd -lt 0) { $colorSectionEnd = $existing.IndexOf('[', $existing.IndexOf('[', 1) + 1) }
-                if ($colorSectionEnd -lt 0) { $colorSectionEnd = $existing.Length }
-                # Replace colors, keep other sections
-                $newContent = $existing.Substring(0, $colorSectionStart) + ($colorLines -join "`r`n") + "`r`n`r`n" + $existing.Substring($colorSectionEnd).TrimStart()
-            } else {
-                # No colors section — append before first [[ or end
-                $lastSection = $existing.LastIndexOf('[', $existing.LastIndexOf('[') - 1)
-                if ($lastSection -le 0) { $lastSection = $existing.Length }
-                $newContent = $existing.Substring(0, $lastSection).TrimEnd() + "`r`n`r`n" + ($colorLines -join "`r`n") + "`r`n`r`n" + $existing.Substring($lastSection).TrimStart()
-            }
-            Set-Content -Path $configPath -Value $newContent -Encoding UTF8 -Force
-        } else {
-            Set-Content -Path $configPath -Value (($colorLines -join "`r`n") + "`r`n") -Encoding UTF8 -Force
-        }
-        Write-GuiLog "Alacritty theme set to '$ThemeName'." -Type Ok
-        return $true
-    } catch {
-        Write-GuiLog "Failed to set Alacritty color scheme: $($_.Exception.Message)" -Type Warn
-        return $false
-    }
-}
-
-function Install-CompleteConfig {
-    param([string]$ThemeName)
-    Set-WindowsTerminalColorScheme -ThemeName $ThemeName
-    Set-AlacrittyColorScheme -ThemeName $ThemeName
-}
 #endregion
 
 function Install-OmpTheme {
@@ -387,19 +326,40 @@ function Install-OmpTheme {
     return $false
 }
 
+function Add-FontResource {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    # Registry alone only takes effect at next logon; AddFontResourceW publishes the
+    # font to the running session so a terminal restart is enough.
+    if (-not ('ConfigPowerShell7.NativeFonts' -as [type])) {
+        Add-Type -Namespace 'ConfigPowerShell7' -Name 'NativeFonts' -MemberDefinition @'
+[System.Runtime.InteropServices.DllImport("gdi32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+public static extern int AddFontResourceW(string lpszFilename);
+'@
+    }
+    return [ConfigPowerShell7.NativeFonts]::AddFontResourceW($Path)
+}
+
+function Test-NerdFontPresent {
+    try {
+        Add-Type -AssemblyName System.Drawing -ErrorAction Stop
+        return @([System.Drawing.FontFamily]::Families | Where-Object { $_.Name -match 'FiraCode Nerd' }).Count -gt 0
+    } catch {
+        Write-GuiLog "Could not enumerate installed fonts: $($_.Exception.Message)" -Type Warn
+        return $false
+    }
+}
+
 function Install-NerdFont {
-    Add-Type -AssemblyName System.Drawing -ErrorAction SilentlyContinue
-    $existingFamilies = [System.Drawing.FontFamily]::Families | Where-Object { $_.Name -match 'FiraCode Nerd' }
-    if ($existingFamilies) {
-        Write-GuiLog "FiraCode Nerd Font already installed ($($existingFamilies.Count) variant(s))." -Type Ok
+    if (Test-NerdFontPresent) {
+        Write-GuiLog 'FiraCode Nerd Font already installed.' -Type Ok
         return $true
     }
 
     Write-GuiLog "Installing FiraCode Nerd Font..." -Type Step
+    $fontZip = Join-Path $env:TEMP 'FiraCode-NerdFont.zip'
+    $fontDir = Join-Path $env:TEMP 'FiraCode-NerdFont'
     try {
         $fontZipUrl = 'https://github.com/ryanoasis/nerd-fonts/releases/download/v3.3.0/FiraCode.zip'
-        $fontZip = Join-Path $env:TEMP 'FiraCode-NerdFont.zip'
-        $fontDir = Join-Path $env:TEMP 'FiraCode-NerdFont'
 
         if (-not (Get-FileFromUrl -Url $fontZipUrl -OutFile $fontZip -MinBytes 100 -Description 'FiraCode Nerd Font archive')) {
             return $false
@@ -411,33 +371,38 @@ function Install-NerdFont {
         Add-Type -AssemblyName System.IO.Compression.FileSystem
         [System.IO.Compression.ZipFile]::ExtractToDirectory($fontZip, $fontDir)
 
-        Add-Type -AssemblyName System.Windows.Forms
-        $shell = New-Object -ComObject Shell.Application
-        $fontsFolder = $shell.Namespace(0x14)
+        # Per-user install (Windows 10 1809+). The Shell.Application route targets the
+        # machine-wide Fonts folder, needs elevation, and reports no error when it is denied.
+        $userFontDir = Join-Path $env:LOCALAPPDATA 'Microsoft\Windows\Fonts'
+        $userFontKey = 'HKCU:\Software\Microsoft\Windows NT\CurrentVersion\Fonts'
+        New-Item -ItemType Directory -Force -Path $userFontDir | Out-Null
+        if (-not (Test-Path $userFontKey)) { New-Item -Path $userFontKey -Force | Out-Null }
 
         $installedCount = 0
         foreach ($fontFile in (Get-ChildItem $fontDir -Filter '*.ttf' -Recurse)) {
             try {
-                $fontsFolder.CopyHere($fontFile.FullName, 0x14)
+                $destination = Join-Path $userFontDir $fontFile.Name
+                Copy-Item -LiteralPath $fontFile.FullName -Destination $destination -Force
+                Set-ItemProperty -Path $userFontKey -Name "$($fontFile.BaseName) (TrueType)" -Value $destination -Force
+                $null = Add-FontResource -Path $destination
                 $installedCount++
             } catch {
                 Write-GuiLog "Could not install font $($fontFile.Name): $($_.Exception.Message)" -Type Warn
             }
         }
 
-        Remove-Item $fontZip -Force -ErrorAction SilentlyContinue
-        Remove-Item $fontDir -Recurse -Force -ErrorAction SilentlyContinue
-
         if ($installedCount -gt 0) {
-            Write-GuiLog "FiraCode Nerd Font installed ($installedCount variants)." -Type Ok
+            Write-GuiLog "FiraCode Nerd Font installed ($installedCount variants). Restart the terminal to use it." -Type Ok
             return $true
-        } else {
-            Write-GuiLog "No font files were installed." -Type Warn
-            return $false
         }
+        Write-GuiLog "No font files were installed." -Type Warn
+        return $false
     } catch {
         Write-GuiLog "Failed to install Nerd Font: $($_.Exception.Message)" -Type Warn
         return $false
+    } finally {
+        Remove-Item $fontZip -Force -ErrorAction SilentlyContinue
+        Remove-Item $fontDir -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
 
@@ -507,16 +472,9 @@ function Set-WindowsTerminalFont {
 
     $fontName = 'FiraCode Nerd Font'
 
-    if (-not $SettingsPath) {
-        $knownPaths = @(
-            "$env:LOCALAPPDATA\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json",
-            "$env:LOCALAPPDATA\Packages\Microsoft.WindowsTerminalPreview_8wekyb3d8bbwe\LocalState\settings.json",
-            "$env:LOCALAPPDATA\Microsoft\Windows Terminal\settings.json"
-        )
-        $SettingsPath = $knownPaths | Where-Object { Test-Path $_ -PathType Leaf } | Select-Object -First 1
-    }
+    if (-not $SettingsPath) { $SettingsPath = Get-WindowsTerminalSettingsPath }
 
-    if (-not $settingsPath) {
+    if (-not $SettingsPath) {
         Write-GuiLog "Windows Terminal settings.json not found." -Type Info
         return $false
     }
@@ -564,7 +522,8 @@ function Set-WindowsTerminalFont {
         }
 
         if ($changed) {
-            $settings | ConvertTo-Json -Depth 10 | Set-Content $settingsPath -Encoding UTF8 -Force
+            Backup-WindowsTerminalSettings -SettingsPath $SettingsPath
+            [System.IO.File]::WriteAllText($SettingsPath, ($settings | ConvertTo-Json -Depth 15), (New-Object System.Text.UTF8Encoding($false)))
             Write-GuiLog "Windows Terminal font set to $fontName." -Type Ok
         } else {
             Write-GuiLog "Windows Terminal already using $fontName." -Type Ok
@@ -576,22 +535,175 @@ function Set-WindowsTerminalFont {
     }
 }
 
-function Install-AlacrittyConfig {
+function ConvertTo-AlacrittyTomlString {
+    param([Parameter(Mandatory = $true)][string]$Value)
+    return '"' + $Value.Replace('\', '\\').Replace('"', '\"') + '"'
+}
+
+function Set-AlacrittyContentIfChanged {
+    param([string]$Path, [string]$Content)
+    if ((Test-Path $Path -PathType Leaf) -and [System.IO.File]::ReadAllText($Path) -ceq $Content) { return $false }
+    [System.IO.File]::WriteAllText($Path, $Content, (New-Object System.Text.UTF8Encoding($false)))
+    return $true
+}
+
+function Get-AlacrittyExecutable {
+    $candidates = New-Object System.Collections.Generic.List[string]
+    $detected = @()
+    $command = Get-Command alacritty -ErrorAction SilentlyContinue
+    if ($command -and $command.Source) { $candidates.Add($command.Source) }
+    if ($env:LOCALAPPDATA) { $candidates.Add((Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Links\alacritty.exe')) }
+    if ($env:ProgramFiles) { $candidates.Add((Join-Path $env:ProgramFiles 'Alacritty\alacritty.exe')) }
+
+    foreach ($candidate in ($candidates | Select-Object -Unique)) {
+        if (-not (Test-Path $candidate -PathType Leaf)) { continue }
+        try {
+            $absolutePath = [System.IO.Path]::GetFullPath($candidate)
+            $versionText = (& $absolutePath --version 2>$null | Select-Object -First 1)
+            if ($versionText -and $versionText -match '(\d+\.\d+\.\d+)') {
+                $detected += [PSCustomObject]@{ Path = $absolutePath; Version = [version]$Matches[1] }
+            }
+        } catch {
+            Write-GuiLog "Could not inspect Alacritty at '$candidate': $($_.Exception.Message)" -Type Warn
+        }
+    }
+    return $detected | Sort-Object Version -Descending | Select-Object -First 1
+}
+
+function Get-PwshExecutablePath {
+    $candidates = @()
+    $command = Get-Command pwsh -ErrorAction SilentlyContinue
+    if ($command -and $command.Source) { $candidates += $command.Source }
+    if ($PSHOME) { $candidates += Join-Path $PSHOME 'pwsh.exe' }
+    if ($env:ProgramFiles) { $candidates += Join-Path $env:ProgramFiles 'PowerShell\7\pwsh.exe' }
+    foreach ($candidate in ($candidates | Select-Object -Unique)) {
+        if (Test-Path $candidate -PathType Leaf) { return [System.IO.Path]::GetFullPath($candidate) }
+    }
+    Write-GuiLog 'PowerShell 7 executable not found. Alacritty configuration requires an absolute pwsh path.' -Type Warn
+    return $null
+}
+
+function Get-AlacrittyThemeContent {
+    param([string]$ThemeName)
+    $theme = Get-TerminalThemeData -Name $ThemeName
+    if (-not $theme) { return $null }
+    $colors = $theme.Ala
+    return @"
+[colors.primary]
+background = "$($colors.primary.background)"
+foreground = "$($colors.primary.foreground)"
+
+[colors.normal]
+black = "$($colors.normal.black)"
+red = "$($colors.normal.red)"
+green = "$($colors.normal.green)"
+yellow = "$($colors.normal.yellow)"
+blue = "$($colors.normal.blue)"
+magenta = "$($colors.normal.magenta)"
+cyan = "$($colors.normal.cyan)"
+white = "$($colors.normal.white)"
+
+[colors.bright]
+black = "$($colors.bright.black)"
+red = "$($colors.bright.red)"
+green = "$($colors.bright.green)"
+yellow = "$($colors.bright.yellow)"
+blue = "$($colors.bright.blue)"
+magenta = "$($colors.bright.magenta)"
+cyan = "$($colors.bright.cyan)"
+white = "$($colors.bright.white)"
+"@
+}
+
+function Test-AlacrittyCandidateConfig {
+    param([string]$AlacrittyPath, [string]$ConfigDir, [string]$BaseContent, [string]$ThemeContent, [string]$UserContent)
+    if (-not $AlacrittyPath -or -not (Test-Path $AlacrittyPath -PathType Leaf)) {
+        Write-GuiLog 'Alacritty executable is required to validate managed configuration.' -Type Warn
+        return $false
+    }
+    $id = [guid]::NewGuid().ToString('N')
+    $candidatePaths = @(
+        (Join-Path $ConfigDir ".config-powershell7-$id-base.toml"),
+        (Join-Path $ConfigDir ".config-powershell7-$id-theme.toml"),
+        (Join-Path $ConfigDir ".config-powershell7-$id-user.toml"),
+        (Join-Path $ConfigDir ".config-powershell7-$id.toml"),
+        (Join-Path $ConfigDir ".config-powershell7-$id.stdout"),
+        (Join-Path $ConfigDir ".config-powershell7-$id.stderr")
+    )
     try {
+        $utf8 = New-Object System.Text.UTF8Encoding($false)
+        [System.IO.File]::WriteAllText($candidatePaths[0], $BaseContent, $utf8)
+        [System.IO.File]::WriteAllText($candidatePaths[1], $ThemeContent, $utf8)
+        [System.IO.File]::WriteAllText($candidatePaths[2], $UserContent, $utf8)
+        $imports = $candidatePaths[0..2] | ForEach-Object { ConvertTo-AlacrittyTomlString $_ }
+        $candidateWrapper = "[general]`nimport = [`n    " + ($imports -join ",`n    ") + "`n]`n"
+        [System.IO.File]::WriteAllText($candidatePaths[3], $candidateWrapper, $utf8)
+        $arguments = @('migrate', '--dry-run', '--config-file', ('"' + $candidatePaths[3] + '"'))
+        $process = Start-Process -FilePath $AlacrittyPath -ArgumentList $arguments -NoNewWindow -Wait -PassThru `
+            -RedirectStandardOutput $candidatePaths[4] -RedirectStandardError $candidatePaths[5] -ErrorAction Stop
+        return $process.ExitCode -eq 0
+    } catch {
+        Write-GuiLog "Alacritty configuration validation failed: $($_.Exception.Message)" -Type Warn
+        return $false
+    } finally {
+        foreach ($path in $candidatePaths) { if (Test-Path $path) { Remove-Item $path -Force -ErrorAction SilentlyContinue } }
+    }
+}
+
+function ConvertFrom-AlacrittyYaml {
+    param([string]$AlacrittyPath, [string]$LegacyPath)
+    $id = [guid]::NewGuid().ToString('N')
+    $outputPath = Join-Path (Split-Path $LegacyPath -Parent) ".config-powershell7-migrate-$id.stdout"
+    $errorPath = Join-Path (Split-Path $LegacyPath -Parent) ".config-powershell7-migrate-$id.stderr"
+    try {
+        $arguments = @('migrate', '--dry-run', '--config-file', ('"' + $LegacyPath + '"'))
+        $process = Start-Process -FilePath $AlacrittyPath -ArgumentList $arguments -NoNewWindow -Wait -PassThru `
+            -RedirectStandardOutput $outputPath -RedirectStandardError $errorPath -ErrorAction Stop
+        if ($process.ExitCode -ne 0 -or -not (Test-Path $outputPath -PathType Leaf)) { return $null }
+        $output = [System.IO.File]::ReadAllText($outputPath)
+        if ([string]::IsNullOrWhiteSpace($output)) { return $null }
+        $tomlLines = New-Object System.Collections.Generic.List[string]
+        $insideToml = $false
+        foreach ($line in ($output -split '\r?\n')) {
+            if ($line -match '^v-----Start TOML ') { $insideToml = $true; continue }
+            if ($line -match '^\^-----End TOML ') { break }
+            if ($insideToml) { $tomlLines.Add($line) }
+        }
+        if ($tomlLines.Count -eq 0) { return $null }
+        return (($tomlLines -join "`n").Trim() + "`n")
+    } catch {
+        Write-GuiLog "Could not migrate legacy Alacritty YAML: $($_.Exception.Message)" -Type Warn
+        return $null
+    } finally {
+        foreach ($path in @($outputPath, $errorPath)) { if (Test-Path $path) { Remove-Item $path -Force -ErrorAction SilentlyContinue } }
+    }
+}
+
+function Install-AlacrittyConfig {
+    param(
+        [string]$ThemeName = 'Catppuccin Mocha',
+        [string]$AlacrittyPath,
+        [string]$PwshPath
+    )
+    try {
+        if (-not $env:APPDATA) { throw 'APPDATA is not set.' }
+        if (-not $PwshPath) { $PwshPath = Get-PwshExecutablePath }
+        if (-not $PwshPath) { return $false }
+        $themeContent = Get-AlacrittyThemeContent -ThemeName $ThemeName
+        if ($null -eq $themeContent) { throw "Terminal theme '$ThemeName' not found." }
+
         $configDir = Join-Path $env:APPDATA 'alacritty'
-        if (-not (Test-Path $configDir)) {
-            New-Item -ItemType Directory -Path $configDir -Force | Out-Null
-        }
-
+        $ownedDir = Join-Path $configDir 'config-powershell7'
+        [System.IO.Directory]::CreateDirectory($ownedDir) | Out-Null
         $configPath = Join-Path $configDir 'alacritty.toml'
-
-        if (Test-Path $configPath) {
-            $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-            Copy-Item $configPath "$configPath.bak-$timestamp" -Force
-            Write-GuiLog "Existing Alacritty config backed up." -Type Info
-        }
-
-        Set-Content -Path $configPath -Value @'
+        $userPath = Join-Path $configDir 'alacritty.user.toml'
+        $basePath = Join-Path $ownedDir 'base.toml'
+        $themePath = Join-Path $ownedDir 'theme.toml'
+        $statePath = Join-Path $ownedDir 'state.txt'
+        $marker = '# Managed by config-powershell7. Edit alacritty.user.toml for overrides.'
+        $imports = @($basePath, $themePath, $userPath) | ForEach-Object { ConvertTo-AlacrittyTomlString $_ }
+        $wrapperContent = $marker + "`n[general]`nimport = [`n    " + ($imports -join ",`n    ") + "`n]`n"
+        $baseContent = @"
 [window]
 decorations = "Full"
 opacity = 0.95
@@ -624,40 +736,48 @@ style = "Italic"
 family = "FiraCode Nerd Font"
 style = "Bold Italic"
 
-[colors.primary]
-background = "#1E1E2E"
-foreground = "#CDD6F4"
-
-[colors.normal]
-black   = "#45475A"
-red     = "#F38BA8"
-green   = "#A6E3A1"
-yellow  = "#F9E2AF"
-blue    = "#89B4FA"
-magenta = "#F5C2E7"
-cyan    = "#94E2D5"
-white   = "#BAC2DE"
-
-[colors.bright]
-black   = "#585B70"
-red     = "#F38BA8"
-green   = "#A6E3A1"
-yellow  = "#F9E2AF"
-blue    = "#89B4FA"
-magenta = "#F5C2E7"
-cyan    = "#94E2D5"
-white   = "#A6ADC8"
-
-[[keyboard.bindings]]
-action = "Paste"
-key = "V"
-mods = "Control|Shift"
-
 [terminal.shell]
-program = "pwsh"
+program = $(ConvertTo-AlacrittyTomlString $PwshPath)
 args = ["-NoLogo"]
-'@ -Encoding UTF8 -Force
+"@
 
+        $existingContent = if (Test-Path $configPath -PathType Leaf) { [System.IO.File]::ReadAllText($configPath) } else { $null }
+        $managed = $null -ne $existingContent -and $existingContent.StartsWith($marker, [System.StringComparison]::Ordinal)
+        if ($null -ne $existingContent -and -not $managed) {
+            $userContent = $existingContent
+        } elseif (Test-Path $userPath -PathType Leaf) {
+            $userContent = [System.IO.File]::ReadAllText($userPath)
+        } else {
+            $legacyPath = @((Join-Path $configDir 'alacritty.yml'), (Join-Path $configDir 'alacritty.yaml')) |
+                Where-Object { Test-Path $_ -PathType Leaf } | Select-Object -First 1
+            if ($legacyPath) {
+                if (-not $AlacrittyPath) { throw "Legacy YAML found at '$legacyPath', but Alacritty is unavailable to migrate it safely." }
+                $userContent = ConvertFrom-AlacrittyYaml -AlacrittyPath $AlacrittyPath -LegacyPath $legacyPath
+                if ($null -eq $userContent) { throw "Legacy YAML migration failed; '$legacyPath' was left unchanged." }
+            } else {
+                $userContent = ''
+            }
+        }
+
+        if (-not (Test-AlacrittyCandidateConfig -AlacrittyPath $AlacrittyPath -ConfigDir $configDir -BaseContent $baseContent -ThemeContent $themeContent -UserContent $userContent)) {
+            throw 'Candidate configuration was rejected by Alacritty.'
+        }
+
+        if ($null -ne $existingContent -and -not $managed) {
+            $backupPath = "$configPath.config-powershell7.bak"
+            $suffix = 0
+            while (Test-Path $backupPath) { $suffix++; $backupPath = "$configPath.config-powershell7.bak.$suffix" }
+            [System.IO.File]::Copy($configPath, $backupPath, $false)
+            Set-AlacrittyContentIfChanged -Path $statePath -Content "adopted=$backupPath`n" | Out-Null
+            Write-GuiLog "Existing Alacritty TOML preserved at: $backupPath" -Type Info
+        } elseif (-not (Test-Path $statePath -PathType Leaf)) {
+            Set-AlacrittyContentIfChanged -Path $statePath -Content "created=true`n" | Out-Null
+        }
+
+        Set-AlacrittyContentIfChanged -Path $userPath -Content $userContent | Out-Null
+        Set-AlacrittyContentIfChanged -Path $basePath -Content $baseContent | Out-Null
+        Set-AlacrittyContentIfChanged -Path $themePath -Content $themeContent | Out-Null
+        Set-AlacrittyContentIfChanged -Path $configPath -Content $wrapperContent | Out-Null
         Write-GuiLog "Alacritty configured at: $configPath" -Type Ok
         return $true
     } catch {
@@ -666,88 +786,60 @@ args = ["-NoLogo"]
     }
 }
 
-function Install-Alacritty {
-    $existing = Get-Executable -Name 'alacritty'
-    if (-not $existing) {
-        $null = Install-WingetPackage -Id 'Alacritty.Alacritty' -DisplayName 'Alacritty'
-    } else {
-        $verStr = if ($existing.Version) { " $($existing.Version)" } else { '' }
-        Write-GuiLog "Alacritty already installed: $($existing.Path)$verStr" -Type Ok
-    }
-
-    if (Get-Command alacritty -ErrorAction SilentlyContinue) {
-        Write-GuiLog "Configuring Alacritty..." -Type Step
-        $configResult = Install-AlacrittyConfig
-        return $configResult
-    }
-    Write-GuiLog "Alacritty not found after install attempt." -Type Warn
-    return $false
-}
-
-function Install-Chocolatey {
-    param([string[]]$Sources = @())
-
-    $existing = Get-Command choco -ErrorAction SilentlyContinue
-    if ($existing) {
-        Write-GuiLog "Chocolatey already installed: $($existing.Source)" -Type Ok
-        return $true
-    }
-
-    $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-
-    if (-not $isAdmin) {
-        Write-GuiLog "Chocolatey requires administrator privileges to install to the default path." -Type Warn
-        Write-GuiLog "Install manually as Administrator or run this installer as Admin." -Type Info
-        return $false
-    }
-
-    Write-GuiLog "Installing Chocolatey..." -Type Step
+function Uninstall-AlacrittyConfig {
     try {
-        Set-ExecutionPolicy Bypass -Scope Process -Force -ErrorAction Stop
-        Enable-Tls12
-        $chocolateyInstallUrl = 'https://community.chocolatey.org/install.ps1'
-        $chocolateyInstallPath = Join-Path $env:TEMP "config-pwsh7-install-chocolatey-$([guid]::NewGuid().ToString('N')).ps1"
-        Write-GuiLog "Remote installer notice: Chocolatey setup executes the official script from $chocolateyInstallUrl." -Type Warn
-        Write-GuiLog "Downloading Chocolatey installer to: $chocolateyInstallPath" -Type Info
-        Invoke-WebRequest -Uri $chocolateyInstallUrl -OutFile $chocolateyInstallPath -UseBasicParsing -ErrorAction Stop
-        Unblock-File -Path $chocolateyInstallPath -ErrorAction SilentlyContinue
-        & $chocolateyInstallPath
-
-        $chocoBin = 'C:\ProgramData\chocolatey\bin'
-        if (Test-Path $chocoBin) {
-            $currentPath = [Environment]::GetEnvironmentVariable('PATH', 'Process')
-            if ($currentPath -notmatch [regex]::Escape($chocoBin)) {
-                [Environment]::SetEnvironmentVariable('PATH', "$currentPath;$chocoBin", 'Process')
-                $env:PATH = "$env:PATH;$chocoBin"
+        if (-not $env:APPDATA) { return $true }
+        $configDir = Join-Path $env:APPDATA 'alacritty'
+        $ownedDir = Join-Path $configDir 'config-powershell7'
+        $configPath = Join-Path $configDir 'alacritty.toml'
+        $userPath = Join-Path $configDir 'alacritty.user.toml'
+        $marker = '# Managed by config-powershell7. Edit alacritty.user.toml for overrides.'
+        if (-not (Test-Path $ownedDir -PathType Container)) { return $true }
+        $isManaged = (Test-Path $configPath -PathType Leaf) -and
+            [System.IO.File]::ReadAllText($configPath).StartsWith($marker, [System.StringComparison]::Ordinal)
+        if ($isManaged) {
+            if (Test-Path $userPath -PathType Leaf) {
+                $userContent = [System.IO.File]::ReadAllText($userPath)
+                if ([string]::IsNullOrEmpty($userContent)) { Remove-Item $configPath -Force }
+                else { [System.IO.File]::WriteAllText($configPath, $userContent, (New-Object System.Text.UTF8Encoding($false))) }
+                Remove-Item $userPath -Force
+            } else {
+                Remove-Item $configPath -Force
             }
-        }
-
-        if (Get-Command choco -ErrorAction SilentlyContinue) {
-            Write-GuiLog "Chocolatey installed." -Type Ok
+            Write-GuiLog 'Alacritty user configuration restored.' -Type Ok
         } else {
-            Write-GuiLog "Chocolatey installed but not in PATH. Restart terminal." -Type Warn
+            Write-GuiLog 'Alacritty config is not project-managed; leaving it unchanged.' -Type Warn
             return $false
         }
+        Remove-Item $ownedDir -Recurse -Force
+        return $true
     } catch {
-        Write-GuiLog "Chocolatey install failed: $($_.Exception.Message)" -Type Warn
+        Write-GuiLog "Failed to restore Alacritty configuration: $($_.Exception.Message)" -Type Warn
+        return $false
+    }
+}
+
+function Install-Alacritty {
+    param([string]$ThemeName = 'Catppuccin Mocha')
+    if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT -or
+        [Environment]::OSVersion.Version.Major -lt 10 -or -not [Environment]::Is64BitOperatingSystem) {
+        Write-GuiLog 'Alacritty managed setup requires Windows 10/11 x64.' -Type Warn
         return $false
     }
 
-    foreach ($source in $Sources) {
-        $trimmed = $source.Trim()
-        if (-not $trimmed) { continue }
-        $sourceName = ($trimmed -replace 'https?://', '' -replace '[^a-zA-Z0-9]', '-').Trim('-')
-        if (-not $sourceName) { $sourceName = "custom-$(Get-Random -Maximum 9999)" }
-        Write-GuiLog "Adding Chocolatey source: $trimmed" -Type Info
-        try {
-            choco source add -n $sourceName -s $trimmed --priority=1 2>&1 | Out-Null
-            Write-GuiLog "Source added: $sourceName" -Type Ok
-        } catch {
-            Write-GuiLog "Failed to add source: $($_.Exception.Message)" -Type Warn
-        }
+    $alacritty = Get-AlacrittyExecutable
+    if (-not $alacritty -or $alacritty.Version -lt [version]'0.14.0') {
+        if ($alacritty) { Write-GuiLog "Alacritty $($alacritty.Version) is below required version 0.14.0; upgrading..." -Type Step }
+        if (-not (Install-WingetPackage -Id 'Alacritty.Alacritty' -DisplayName 'Alacritty')) { return $false }
+        $alacritty = Get-AlacrittyExecutable
     }
+    if (-not $alacritty) { Write-GuiLog 'Alacritty executable not found after install attempt.' -Type Warn; return $false }
+    if ($alacritty.Version -lt [version]'0.14.0') { Write-GuiLog "Alacritty $($alacritty.Version) does not meet required version 0.14.0." -Type Warn; return $false }
 
-    return $true
+    $pwshPath = Get-PwshExecutablePath
+    if (-not $pwshPath) { return $false }
+    Write-GuiLog "Alacritty $($alacritty.Version) found at $($alacritty.Path)." -Type Ok
+    return Install-AlacrittyConfig -ThemeName $ThemeName -AlacrittyPath $alacritty.Path -PwshPath $pwshPath
 }
 
 function Install-Scoop {
@@ -757,7 +849,6 @@ function Install-Scoop {
     if (-not $existing) {
         Write-GuiLog "Installing Scoop..." -Type Step
         try {
-            Set-ExecutionPolicy RemoteSigned -Scope CurrentUser -Force -ErrorAction Stop
             Enable-Tls12
             $scoopInstallUrl = 'https://get.scoop.sh'
             $scoopInstallPath = Join-Path $env:TEMP "config-pwsh7-install-scoop-$([guid]::NewGuid().ToString('N')).ps1"

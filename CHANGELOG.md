@@ -4,8 +4,100 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### CI
+- `validate.yml`: full validation workflow (suites on push/PR, disposable-runner
+  end-to-end installer on manual dispatch with idempotency, theme-change,
+  child-shell, failure-propagation, and uninstall checks)
+
+### Removed
+- `test.yml`: `validate.yml` already ran the same analyzer and suites on the
+  same events, so every push and pull request paid for both
+- `lib/profile-paths.ps1`: never dot-sourced; `Get-ProfilePath` in
+  `setup/modules/profile.ps1` is the live implementation
+- `Install-Chocolatey`: unreachable from every entry point, and the only code
+  left in the project that called `Set-ExecutionPolicy`
+- `Install-CompleteConfig` and `Set-AlacrittyColorScheme`: unreachable wrappers
+  around the managed Alacritty and Windows Terminal configuration
+
 ### Added
-- (nothing yet)
+- Managed Alacritty configuration with PowerShell 7 shell, Nerd Font, theme
+  fragments, validation, legacy YAML migration, and reversible user overrides
+- Regression coverage for repeat installs, profile preservation, path escaping,
+  Alacritty adoption, and configuration restoration
+
+### Changed
+- Installer now targets the PowerShell 7 `CurrentUserAllHosts` profile and
+  updates a marked block without replacing user-owned profile content
+- Remote installs use the latest stable GitHub Release and stage repository
+  replacement before activation
+- Default managed repository location moved from Documents to
+  `LocalApplicationData` to avoid OneDrive redirection
+- `install.cmd` now invokes the modular `setup.ps1` flow
+- Execution policy is inspected and reported instead of changed silently
+- Profile load guards now use process-local PowerShell variables, preventing
+  child shells from skipping profile initialization
+- Alacritty is enabled by default and requires version 0.14 or newer
+- `-NonInteractive` and the terminal menu now honour the `-InstallAlacritty`
+  choice instead of forcing Alacritty on
+- A restrictive execution policy and a missing Windows Terminal are reported as
+  skipped steps instead of failing the whole installation
+- Oh My Posh theme download now also covers the default `atomic` theme, so a
+  plain install no longer points the profile at a theme file that was never
+  fetched
+- Nerd Font installation is per-user (no elevation) and counts only fonts that
+  were actually written
+- Windows Terminal `settings.json` is backed up once before it is rewritten
+- Installing the Nerd Font now also sets it as the Windows Terminal font face;
+  before, the font was installed but never applied
+- **Breaking:** the runtime theme override is `$env:CONFIG_PWSH7_THEME`, not
+  `$env:POSH_THEME`. `POSH_THEME` belongs to oh-my-posh, which uses it for a
+  full config path, so a child shell inherited a path where this project
+  expected a bare theme name. `tests/POSH_THEME.Tests.ps1` is now
+  `tests/ThemeOverride.Tests.ps1`
+
+### Fixed
+- Headless install aborted immediately: an ungrouped `Test-Path $repoPath -and`
+  bound `-and` as a `Test-Path` parameter
+- Terminal menu crashed on the theme list (`${$themes.Count}`) and on a
+  `$MyInvocation.MyCommand.Path` lookup that is empty inside a function
+- Uninstalling from Windows PowerShell 5.1 inspected the WindowsPowerShell
+  profile instead of the managed PowerShell 7 one; it now relaunches under pwsh
+- Profile unblock check called a `GetIsZoneIdentifier()` method that does not
+  exist, so downloaded files were never unblocked
+- `setup/setup.ps1` sets its own strict mode and error preference, which the
+  `pwsh -File` relaunch from 5.1 did not inherit
+- Windows Terminal scheme update overwrote the wrong entry when the settings
+  file already held duplicate scheme names
+- GUI log replayed its whole buffer every tick because the tick handler wrote to
+  a local copy of the log index
+- `install.cmd` unblocks the downloaded installer before running it
+- winget lookup no longer recurses through `Program Files\WindowsApps`, which
+  stalls and denies enumeration to non-elevated users
+- Downloads use `-UseBasicParsing` and suppress progress rendering, avoiding the
+  Internet Explorer dependency and the slow path on Windows PowerShell 5.1
+- Bare `sudo` aborted instead of opening an elevated session: with no arguments
+  the parameter is `$null`, and reading `.Count` on it fails under strict mode
+- `nf` silently truncated an existing file (`New-Item -Force` overwrites); it now
+  refuses and points at `touch`
+- A failing `zoxide` or `oh-my-posh` init wrote its own error text into the
+  plugin cache, which was then dot-sourced by every later session. Both init
+  calls now check the exit code before the output is cached
+- Theme fingerprint comparison is ordinal, so cache validity no longer depends
+  on the machine's locale
+- `Config.ThemeName` follows `ThemePath` when a missing theme falls back to
+  `atomic`; the boot summary used to name a theme that was not in use
+- Theme and start-directory paths are checked with `-LiteralPath`, so a value
+  containing `[`, `]` or `*` is no longer treated as a wildcard
+- GUI install and uninstall runspaces catch their own errors. Nothing reads
+  their error stream, so an escaping error left the window disabled and stuck on
+  `Installing...` forever
+- `Test-ProfileInstallation.ps1`: boot time and a restrictive execution policy
+  are reported as warnings instead of failing the health check, and the
+  duplicated exit block was removed
+- Profile no longer leaks `Set-StrictMode -Version Latest` and
+  `$ErrorActionPreference = 'Stop'` into the interactive session. Dot-sourcing
+  runs in the caller's scope, so every routine non-terminating error became
+  terminating; both now apply only while the profile loads
 
 ## [v0.3] — 2026-07-07
 

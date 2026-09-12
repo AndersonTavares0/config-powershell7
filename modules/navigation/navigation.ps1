@@ -12,8 +12,10 @@ $script:DocsPath = $null
 $script:DesktopPath = $null
 
 function script:Resolve-ProfileStartDirectory {
-    if ($script:Config.StartDirectory -and (Test-Path $script:Config.StartDirectory -PathType Container)) {
-        return (Resolve-Path $script:Config.StartDirectory).Path
+    # -LiteralPath: POWERSHELL_START_DIR vem do usuario e pode conter [ ] ou *,
+    # que fariam Resolve-Path devolver varios caminhos.
+    if ($script:Config.StartDirectory -and (Test-Path -LiteralPath $script:Config.StartDirectory -PathType Container)) {
+        return (Resolve-Path -LiteralPath $script:Config.StartDirectory).Path
     }
 
     return $HOME
@@ -67,12 +69,12 @@ function Get-ProfileStartDirectory {
 function Set-ProfileStartDirectory {
     param([Parameter(Mandatory)][string]$Path)
 
-    if (-not (Test-Path $Path -PathType Container)) {
+    if (-not (Test-Path -LiteralPath $Path -PathType Container)) {
         Write-Error "Diretorio invalido: $Path"
         return
     }
 
-    $resolvedPath = (Resolve-Path $Path).Path
+    $resolvedPath = (Resolve-Path -LiteralPath $Path).Path
     [Environment]::SetEnvironmentVariable('POWERSHELL_START_DIR', $resolvedPath, 'User')
     $env:POWERSHELL_START_DIR = $resolvedPath
     $script:Config.StartDirectory = $resolvedPath
@@ -97,5 +99,12 @@ function mkcd {
 
 function nf {
     param([Parameter(Mandatory, ValueFromPipeline)][string]$Name)
-    process { New-Item -ItemType File -Path $Name -Force | Out-Null }
+    process {
+        # Sem -Force: em New-Item o switch trunca um arquivo existente sem avisar.
+        if (Test-Path -LiteralPath $Name) {
+            Write-Warning "nf: '$Name' ja existe - use touch para atualizar o timestamp."
+            return
+        }
+        New-Item -ItemType File -Path $Name | Out-Null
+    }
 }

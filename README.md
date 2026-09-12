@@ -4,7 +4,7 @@
 
 ![PowerShell](https://img.shields.io/badge/PowerShell-7%2B-blue?logo=powershell)
 ![Windows](https://img.shields.io/badge/Windows-10%2B-blue?logo=windows)
-![CI](https://github.com/AndersonTavares0/config-powershell7/actions/workflows/test.yml/badge.svg)
+![CI](https://github.com/AndersonTavares0/config-powershell7/actions/workflows/validate.yml/badge.svg)
 ![Tests](https://img.shields.io/badge/Tests-Custom_Framework-4b32c3?logo=powershell)
 ![Oh My Posh](https://img.shields.io/badge/Prompt-Oh_My_Posh-4b32c3)
 ![Zoxide](https://img.shields.io/badge/Nav-Zoxide-purple)
@@ -18,8 +18,8 @@ irm https://github.com/AndersonTavares0/config-powershell7/raw/main/setup.ps1 | 
 ```
 
 Installs PS7, Git, Oh My Posh, Zoxide, FiraCode Nerd Font, PSReadLine,
-Terminal-Icons, and optionally Alacritty, terminal color themes, Topgrade, and
-Scoop. Auto-elevates to Admin on Windows.
+Terminal-Icons, and Alacritty. Topgrade and Scoop remain optional. Package
+installers can request UAC when their WinGet manifest requires machine scope.
 
 ## Key Technical Features
 
@@ -36,23 +36,22 @@ Scoop. Auto-elevates to Admin on Windows.
   theme selection (live prompt preview from GitHub), terminal color theme
   selection (Windows Terminal + Alacritty) with color swatch preview, progress
   bar, synchronized logging, and CLI fallback for headless/CI environments.
-- **POSH_THEME Env Var**: Runtime OMP theme selection via
-  `$env:POSH_THEME` — overrides the theme chosen at install time. Set it in
+- **CONFIG_PWSH7_THEME Env Var**: Runtime OMP theme selection via
+  `$env:CONFIG_PWSH7_THEME` — overrides the theme chosen at install time. Set it in
   `$PROFILE` or per-session to switch themes without reinstalling.
-- **Universal Installer**: Auto-elevation to Admin, WinGet with
+- **Universal Installer**: Per-user orchestration, WinGet with
   `--silent --accept-source-agreements --accept-package-agreements`, dynamic
-  paths via `[Environment]::GetFolderPath` (OneDrive-proof), idempotent (safe
-  to run multiple times).
+  paths via `[Environment]::GetFolderPath`, stable GitHub Release downloads,
+  and convergent repeat runs.
 - **Zero-Elevation Profile**: No symlinks, no UAC prompts. The installer
-  writes a lightweight `$PROFILE` file that dot-sources the repository via
-  `$env:__PROFILE_REPO_ROOT`, ensuring 100% path resolution without Admin
-  privileges.
+  maintains a lightweight block in `$PROFILE.CurrentUserAllHosts` that
+  dot-sources the repository without replacing user content.
 - **Strict-Mode Compliant**: Entire codebase passes
   `Set-StrictMode -Version Latest` — zero uninitialized variables, no hidden
-  scoping. No bare `catch {}`. Globals use environment variables
-  (`$env:__PROFILE_LOADED`, `$env:__PROFILE_REPO_ROOT`).
-- **Cross-Platform**: Full support for Windows, Linux (Fedora), and macOS with
-  graceful degradation per platform.
+  scoping. No bare `catch {}`. Profile load guards stay process-local and are
+  not inherited by child shells.
+- **Windows Target**: Installer support covers Windows 10/11 x64 with
+  PowerShell 7 and Alacritty. Profile modules retain graceful platform checks.
 - **Dynamic Boot Summary**: Clean boot report with platform info, loaded
   modules, and admin status.
 
@@ -73,7 +72,7 @@ fault tolerance:
 config-powershell7/
 ├── .github/workflows/          # CI/CD (GitHub Actions)
 ├── Microsoft.PowerShell_profile.ps1 # Entrypoint Profile (Loader)
-├── install.ps1                 # Legacy installer (irm | iex, admin elevation)
+├── install.ps1                 # Compatibility wrapper that forwards to setup.ps1
 ├── setup.ps1                   # Main installer entry point (GUI or CLI)
 ├── uninstall.ps1               # Safe uninstaller (backup + cache cleanup)
 ├── install.cmd / uninstall.cmd # Double-click launchers (Windows)
@@ -89,7 +88,7 @@ config-powershell7/
 ├── lib/
 │   ├── platform.ps1            # Cross-platform detection + elevation
 │   ├── ux-helpers.ps1          # Console output helpers
-│   └── profile-paths.ps1       # Profile path resolution
+│   └── executable.ps1          # Executable discovery and version probing
 ├── modules/
 │   ├── config/                 # Centralized config (critical, loaded first)
 │   ├── cache/                  # TTL cache engine & lazy loaders
@@ -100,7 +99,7 @@ config-powershell7/
 │   └── text_utils/             # Unix-like tools (grep, sed, touch)
 └── tests/
     ├── Unit.Tests.ps1          # Unit tests (cache, system, git, text)
-    ├── POSH_THEME.Tests.ps1    # 5 env-var theme override tests
+    ├── ThemeOverride.Tests.ps1 # 5 env-var theme override tests
     ├── Microsoft.PowerShell_profile.Tests.ps1  # Integration tests
     ├── Test-ProfileInstallation.ps1            # Post-install checks
     ├── Setup.Tests.ps1         # Setup module tests
@@ -120,8 +119,8 @@ system → psreadline → text_utils
 irm https://github.com/AndersonTavares0/config-powershell7/raw/main/setup.ps1 | iex
 ```
 
-> Auto-elevates to Admin, detects interactive vs headless, guides you through
-> theme selection.
+> Detects interactive versus headless use and guides theme selection. WinGet
+> package installers can request UAC independently.
 
 **Option B — WPF GUI (Windows):**
 
@@ -133,7 +132,7 @@ cd config-powershell7
 
 > Full graphical installer with OMP theme preview and terminal color swatches.
 
-**Option C — Legacy (headless/CI):**
+**Option C — Headless/CI compatibility wrapper:**
 
 ```powershell
 .\install.ps1 -NonInteractive
@@ -156,13 +155,13 @@ cd config-powershell7
 - **Zoxide** (optional — smart directory navigation)
 - **Terminal-Icons** (optional — file icons in listings)
 
-## POSH_THEME (Runtime Theme Override)
+## CONFIG_PWSH7_THEME (Runtime Theme Override)
 
-Set `$env:POSH_THEME` to switch your Oh My Posh theme at runtime without
+Set `$env:CONFIG_PWSH7_THEME` to switch your Oh My Posh theme at runtime without
 reinstalling:
 
 ```powershell
-$env:POSH_THEME = 'montys'
+$env:CONFIG_PWSH7_THEME = 'montys'
 ```
 
 The profile reads this variable each session. Unset or empty falls back to the

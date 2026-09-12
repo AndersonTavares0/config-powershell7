@@ -22,8 +22,6 @@ function Start-CliMenu {
             $termThemeWT = $false
             $termThemeAla = $false
 
-            . (Join-Path (Split-Path $MyInvocation.MyCommand.Path -Parent) 'deps.ps1')
-
             $ompExists = Get-Command oh-my-posh -ErrorAction SilentlyContinue
             if ($ompExists) {
                 Write-Host ""
@@ -32,7 +30,7 @@ function Start-CliMenu {
                 Write-Host ""
                 $themes = Get-OmpThemeList
                 if ($themes) {
-                    Write-Host "Available themes (${$themes.Count}):" -ForegroundColor White
+                    Write-Host "Available themes ($($themes.Count)):" -ForegroundColor White
                     $pages = [Math]::Ceiling($themes.Count / 15)
                     $page = 1
                     while ($page -le $pages) {
@@ -114,22 +112,35 @@ function Start-CliMenu {
                 Write-Host "Skipping terminal theme." -ForegroundColor Gray
             }
 
+            $installAlacritty = $termThemeAla
+            if (-not $installAlacritty) {
+                Write-Host ""
+                $alacrittyChoice = Read-Host "Install Alacritty terminal emulator? (y/n) [y]"
+                $installAlacritty = [string]::IsNullOrWhiteSpace($alacrittyChoice) -or $alacrittyChoice -eq 'y'
+            }
+
             Write-Host ""
             Write-Host "Starting installation... This may take several minutes." -ForegroundColor Yellow
             Write-Host ""
-            Start-ProfileInstall -RepoPath $RepoPath -ThemeName $themeName `
+            $installResult = Start-ProfileInstall -RepoPath $RepoPath -ThemeName $themeName `
+                -InstallAlacritty $installAlacritty `
                 -TerminalThemeName $terminalTheme `
                 -TerminalThemeWT $termThemeWT `
                 -TerminalThemeAla $termThemeAla
             Write-Host ""
-            Write-Host "Done! Restart your terminal to apply all changes." -ForegroundColor Green
+            if ($installResult) {
+                Write-Host "Done! Restart your terminal to apply all changes." -ForegroundColor Green
+            } else {
+                Write-Host "Installation finished with failures. Review the summary above." -ForegroundColor Red
+            }
         }
         '2' {
             Write-Host ""
             Write-Host "Starting uninstall..." -ForegroundColor Yellow
-            Start-ProfileUninstall -RepoPath $RepoPath
+            $uninstallResult = Start-ProfileUninstall -RepoPath $RepoPath
             Write-Host ""
-            Write-Host "Done!" -ForegroundColor Green
+            if ($uninstallResult) { Write-Host "Done!" -ForegroundColor Green }
+            else { Write-Host "Uninstall finished with failures." -ForegroundColor Red }
         }
         '3' {
             Write-Host "Exiting." -ForegroundColor Gray

@@ -23,6 +23,8 @@ function Start-ProfileInstall {
     )
 
     try {
+        if ($TerminalThemeAla) { $InstallAlacritty = $true }
+        if ($InstallAlacritty) { $InstallFont = $true }
         $script:_installResults = @()
 
         function Add-Result {
@@ -50,14 +52,13 @@ function Start-ProfileInstall {
         if ($InstallGit)    { $totalSteps++ }
         if ($InstallOMP)    { $totalSteps++ }
         if ($InstallZoxide) { $totalSteps++ }
-        if ($InstallFont)   { $totalSteps += 2 }
+        if ($InstallFont)   { $totalSteps++ }
         if ($InstallModules) { $totalSteps++ }
-        if ($ThemeName -and $InstallOMP) { $totalSteps++ }
+        if ($InstallOMP) { $totalSteps++ }
         $totalSteps++
         if ($InstallAlacritty)   { $totalSteps++ }
         if ($TerminalThemeName) {
             if ($TerminalThemeWT) { $totalSteps++ }
-            if ($TerminalThemeAla) { $totalSteps++ }
         }
         if ($InstallTopgrade)   { $totalSteps++ }
         if ($InstallScoop)      { $totalSteps++ }
@@ -76,14 +77,18 @@ function Start-ProfileInstall {
         Write-GuiLog '' -Type Info
 
         $step++
-        Write-GuiLog "[$step/$totalSteps] Setting ExecutionPolicy..." -Type Step
-        $currentPolicy = Get-ExecutionPolicy -Scope CurrentUser -ErrorAction SilentlyContinue
-        if ($currentPolicy -eq 'Restricted' -or $currentPolicy -eq 'Undefined') {
-            Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned -Force -ErrorAction Stop
-            Write-GuiLog 'ExecutionPolicy set to RemoteSigned.' -Type Ok
+        Write-GuiLog "[$step/$totalSteps] Checking ExecutionPolicy..." -Type Step
+        $currentPolicy = Get-ExecutionPolicy -ErrorAction SilentlyContinue
+        $policyAllowsProfile = $currentPolicy -in @('Bypass', 'RemoteSigned', 'Unrestricted')
+        if ($policyAllowsProfile) {
+            Write-GuiLog "Effective ExecutionPolicy: $currentPolicy." -Type Ok
         } else {
-            Write-GuiLog "ExecutionPolicy: $currentPolicy (OK)." -Type Ok
+            Write-GuiLog "Effective ExecutionPolicy '$currentPolicy' can block this unsigned profile. Review Get-ExecutionPolicy -List." -Type Warn
         }
+        # Reported, never mutated. A locked-down policy is a warning about the host,
+        # not an installation failure, so it must not fail the whole run.
+        Add-Result -Name 'ExecutionPolicy' -Success $policyAllowsProfile -Detail $currentPolicy `
+            -Status $(if ($policyAllowsProfile) { 'ok' } else { 'skip' })
 
         if ($InstallPS7) {
             $step++
@@ -134,13 +139,17 @@ function Start-ProfileInstall {
             Write-GuiLog "[$step/$totalSteps] Checking FiraCode Nerd Font..." -Type Step
             $rFont = Install-NerdFont
             Add-Result -Name 'FiraCode Nerd Font' -Success $rFont -Detail $(if ($rFont) { 'installed' } else { 'failed' })
-            $step++
-            Write-GuiLog "[$step/$totalSteps] Configuring Windows Terminal font..." -Type Step
-            $rWt = Set-WindowsTerminalFont
-            Add-Result -Name 'Windows Terminal font' -Success $rWt -Detail $(if ($rWt) { 'configured' } else { 'not found' })
+
+            # Installing the font is not enough: Windows Terminal keeps its own face name.
+            if ($rFont -and (Get-WindowsTerminalSettingsPath)) {
+                $rWTFont = Set-WindowsTerminalFont
+                Add-Result -Name 'WT Font Face' -Success $rWTFont -Detail $(if ($rWTFont) { 'FiraCode Nerd Font' } else { 'failed' })
+            } else {
+                Add-Result -Name 'WT Font Face' -Success $false -Detail 'Windows Terminal not installed' -Status 'skip'
+            }
         } else {
             Add-Result -Name 'FiraCode Nerd Font' -Success $false -Detail 'not selected' -Status 'skip'
-            Add-Result -Name 'Windows Terminal font' -Success $false -Detail 'not selected' -Status 'skip'
+            Add-Result -Name 'WT Font Face' -Success $false -Detail 'not selected' -Status 'skip'
         }
 
         if ($InstallModules) {
@@ -159,11 +168,14 @@ function Start-ProfileInstall {
             Add-Result -Name 'PowerShell Modules' -Success $false -Detail 'not selected' -Status 'skip'
         }
 
-        if ($ThemeName -and $InstallOMP) {
+        if ($InstallOMP) {
+            # config.ps1 falls back to 'atomic' when CONFIG_PWSH7_THEME is unset, so the default
+            # install has to fetch that theme too or the prompt starts unthemed.
+            $effectiveTheme = if ($ThemeName) { $ThemeName } else { 'atomic' }
             $step++
-            Write-GuiLog "[$step/$totalSteps] Downloading OMP theme '$ThemeName'..." -Type Step
-            $rTheme = Install-OmpTheme -ThemeName $ThemeName
-            Add-Result -Name "OMP Theme ($ThemeName)" -Success $rTheme -Detail $(if ($rTheme) { 'downloaded' } else { 'failed' })
+            Write-GuiLog "[$step/$totalSteps] Downloading OMP theme '$effectiveTheme'..." -Type Step
+            $rTheme = Install-OmpTheme -ThemeName $effectiveTheme
+            Add-Result -Name "OMP Theme ($effectiveTheme)" -Success $rTheme -Detail $(if ($rTheme) { 'downloaded' } else { 'failed' })
         } else {
             Add-Result -Name 'OMP Theme' -Success $false -Detail 'not selected' -Status 'skip'
         }
@@ -176,7 +188,8 @@ function Start-ProfileInstall {
         if ($InstallAlacritty) {
             $step++
             Write-GuiLog "[$step/$totalSteps] Installing Alacritty..." -Type Step
-            $rAlac = Install-Alacritty
+            $alacrittyTheme = if ($TerminalThemeAla -and $TerminalThemeName) { $TerminalThemeName } else { 'Catppuccin Mocha' }
+            $rAlac = Install-Alacritty -ThemeName $alacrittyTheme
             $exe = Get-Executable -Name 'alacritty'
             $detail = if ($exe -and $exe.Version) { $exe.Version } elseif ($rAlac) { 'installed' } else { 'failed' }
             Add-Result -Name 'Alacritty' -Success $rAlac -Detail $detail
@@ -188,16 +201,19 @@ function Start-ProfileInstall {
             if ($TerminalThemeWT) {
                 $step++
                 Write-GuiLog "[$step/$totalSteps] Applying terminal theme '$TerminalThemeName' to Windows Terminal..." -Type Step
-                $rWTTheme = Set-WindowsTerminalColorScheme -ThemeName $TerminalThemeName
-                Add-Result -Name "WT Color Scheme ($TerminalThemeName)" -Success $rWTTheme -Detail $(if ($rWTTheme) { 'configured' } else { 'failed' })
+                if (-not (Get-WindowsTerminalSettingsPath)) {
+                    # Windows Terminal is optional on Windows 10; its absence is not an install failure.
+                    Write-GuiLog 'Windows Terminal is not installed; skipping its color scheme.' -Type Warn
+                    Add-Result -Name "WT Color Scheme ($TerminalThemeName)" -Success $false -Detail 'Windows Terminal not installed' -Status 'skip'
+                } else {
+                    $rWTTheme = Set-WindowsTerminalColorScheme -ThemeName $TerminalThemeName
+                    Add-Result -Name "WT Color Scheme ($TerminalThemeName)" -Success $rWTTheme -Detail $(if ($rWTTheme) { 'configured' } else { 'failed' })
+                }
             } else {
                 Add-Result -Name "WT Color Scheme" -Success $false -Detail 'not selected' -Status 'skip'
             }
             if ($TerminalThemeAla) {
-                $step++
-                Write-GuiLog "[$step/$totalSteps] Applying terminal theme '$TerminalThemeName' to Alacritty..." -Type Step
-                $rAlaTheme = Set-AlacrittyColorScheme -ThemeName $TerminalThemeName
-                Add-Result -Name "Alacritty Color Scheme ($TerminalThemeName)" -Success $rAlaTheme -Detail $(if ($rAlaTheme) { 'configured' } else { 'failed' })
+                Add-Result -Name "Alacritty Color Scheme ($TerminalThemeName)" -Success $rAlac -Detail $(if ($rAlac) { 'configured with Alacritty' } else { 'failed' })
             } else {
                 Add-Result -Name "Alacritty Color Scheme" -Success $false -Detail 'not selected' -Status 'skip'
             }
@@ -236,7 +252,7 @@ function Start-ProfileInstall {
         Write-GuiLog "Profile:  $(Get-ProfilePath)" -Type Info
         Write-GuiLog "Repo:     $RepoPath" -Type Info
 
-        $themeName = if ($env:POSH_THEME) { $env:POSH_THEME } else { 'atomic' }
+        $themeName = if ($ThemeName) { $ThemeName } else { 'atomic' }
         Write-GuiLog "Theme:    $themeName" -Type Info
 
         $cachePath = if ($script:IsWin) {
@@ -251,13 +267,16 @@ function Start-ProfileInstall {
         Write-GuiLog '' -Type Info
         Write-GuiLog 'Terminal: Restart recommended to apply changes' -Type Ok
 
+        $hasFailures = @($script:_installResults | Where-Object { $_.Status -eq 'fail' }).Count -gt 0
         $sync = Get-Variable -Name SyncHash -Scope Script -ValueOnly -ErrorAction SilentlyContinue
-        if ($sync) { $sync.InstallComplete = $true }
+        if ($sync) { $sync.InstallComplete = $true; $sync.InstallFailed = $hasFailures }
+        return -not $hasFailures
 
     } catch {
         Write-GuiLog "CRITICAL ERROR: $($_.Exception.Message)" -Type Fail
         $sync = Get-Variable -Name SyncHash -Scope Script -ValueOnly -ErrorAction SilentlyContinue
         if ($sync) { $sync.InstallComplete = $true; $sync.InstallFailed = $true }
+        return $false
     }
 }
 
@@ -272,7 +291,12 @@ function Start-ProfileUninstall {
         Write-GuiLog 'STARTING UNINSTALL' -Type Step
         Write-GuiLog '' -Type Info
 
-        $null = Uninstall-Profile -RepoPath $RepoPath
+        $profileResult = Uninstall-Profile -RepoPath $RepoPath
+        $alacrittyResult = if (Get-Command Uninstall-AlacrittyConfig -ErrorAction SilentlyContinue) {
+            Uninstall-AlacrittyConfig
+        } else {
+            $true
+        }
 
         Write-GuiLog '' -Type Info
         Write-GuiLog 'UNINSTALL COMPLETE' -Type Step
@@ -285,11 +309,13 @@ function Start-ProfileUninstall {
         Write-GuiLog '  winget uninstall Git.Git' -Type Info
 
         $sync = Get-Variable -Name SyncHash -Scope Script -ValueOnly -ErrorAction SilentlyContinue
-        if ($sync) { $sync.InstallComplete = $true }
+        if ($sync) { $sync.InstallComplete = $true; $sync.InstallFailed = -not ($profileResult -and $alacrittyResult) }
+        return $profileResult -and $alacrittyResult
 
     } catch {
         Write-GuiLog "ERROR: $($_.Exception.Message)" -Type Fail
         $sync = Get-Variable -Name SyncHash -Scope Script -ValueOnly -ErrorAction SilentlyContinue
         if ($sync) { $sync.InstallComplete = $true; $sync.InstallFailed = $true }
+        return $false
     }
 }
