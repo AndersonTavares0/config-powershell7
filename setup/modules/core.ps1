@@ -13,6 +13,14 @@ if (-not (Get-Variable -Name 'IsWin' -Scope Script -ErrorAction SilentlyContinue
     }
 }
 
+if ($script:IsWin) {
+    $script:IsAdmin = ([Security.Principal.WindowsPrincipal] `
+        [Security.Principal.WindowsIdentity]::GetCurrent()
+    ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+} else {
+    $script:IsAdmin = ((id -u 2>$null) -eq '0')
+}
+
 $script:RepoOwner  = 'AndersonTavares0'
 $script:RepoName   = 'config-powershell7'
 $script:RepoZipUrl = "https://api.github.com/repos/$script:RepoOwner/$script:RepoName/releases/latest"
@@ -53,6 +61,30 @@ function Get-WingetPath {
         if ($wingetAlt) { return $wingetAlt.FullName }
     }
     return $null
+}
+
+function Get-InstallerEnvironment {
+    $architecture = if ($env:PROCESSOR_ARCHITEW6432) {
+        $env:PROCESSOR_ARCHITEW6432
+    } else {
+        $env:PROCESSOR_ARCHITECTURE
+    }
+    $wingetPath = Get-WingetPath
+    $scoop = Get-Command scoop -ErrorAction SilentlyContinue
+    $node = Get-Command node -ErrorAction SilentlyContinue
+    $npm = Get-Command npm -ErrorAction SilentlyContinue
+
+    return [PSCustomObject]@{
+        OSVersion        = [Environment]::OSVersion.Version
+        Architecture     = $architecture
+        Is64Bit          = [Environment]::Is64BitOperatingSystem
+        PowerShellVersion = $PSVersionTable.PSVersion
+        IsAdministrator  = $script:IsAdmin
+        HasWinGet        = [bool]$wingetPath
+        HasScoop         = [bool]$scoop
+        HasNode          = [bool]$node
+        HasNpm           = [bool]$npm
+    }
 }
 
 function Enable-Tls12 {

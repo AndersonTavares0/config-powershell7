@@ -263,7 +263,6 @@ function Show-Gui {
                              ScrollViewer.VerticalScrollBarVisibility="Auto"/>
                     <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,4,4,4">
                         <CheckBox x:Name="ChkThemeWT" Style="{StaticResource SmallCheckBox}" Content="Windows Terminal" IsChecked="True" Margin="0,0,12,0"/>
-                        <CheckBox x:Name="ChkThemeAla" Style="{StaticResource SmallCheckBox}" Content="Alacritty" IsChecked="True"/>
                     </StackPanel>
                     <Border Grid.Row="3" Background="#2D2D30" BorderBrush="#3E3E42" BorderThickness="1" CornerRadius="4" Padding="6,4" MinHeight="40">
                         <StackPanel>
@@ -273,9 +272,6 @@ function Show-Gui {
                     </Border>
                 </Grid>
             </Border>
-            <CheckBox x:Name="ChkAlacritty" Style="{StaticResource CheckBoxLabel}" IsChecked="True" Margin="0,6,0,3">
-                Install Alacritty terminal emulator
-            </CheckBox>
             <CheckBox x:Name="ChkScoop" Style="{StaticResource CheckBoxLabel}" IsChecked="False" Margin="0,6,0,3">
                 Install Scoop package manager
             </CheckBox>
@@ -287,6 +283,14 @@ function Show-Gui {
                        ToolTip="Install Topgrade - upgrade all package managers with one command">
                 Install Topgrade (universal package updater)
             </CheckBox>
+            <CheckBox x:Name="ChkFastfetch" Style="{StaticResource CheckBoxLabel}" IsChecked="False" Margin="0,6,0,3">
+                Install Fastfetch (system information)
+            </CheckBox>
+            <TextBlock Text="Optional AI coding CLIs" FontSize="12" FontWeight="SemiBold" Foreground="#569CD6" Margin="0,10,0,4"/>
+            <CheckBox x:Name="ChkAntigravity" Style="{StaticResource CheckBoxLabel}" IsChecked="False">Google Antigravity CLI</CheckBox>
+            <CheckBox x:Name="ChkOpenCode" Style="{StaticResource CheckBoxLabel}" IsChecked="False">OpenCode (requires Node.js)</CheckBox>
+            <CheckBox x:Name="ChkCodex" Style="{StaticResource CheckBoxLabel}" IsChecked="False">OpenAI Codex CLI</CheckBox>
+            <CheckBox x:Name="ChkClaudeCode" Style="{StaticResource CheckBoxLabel}" IsChecked="False">Claude Code</CheckBox>
             </StackPanel>
         </ScrollViewer>
 
@@ -347,12 +351,15 @@ function Show-Gui {
     $terminalThemeSection = $window.FindName('TerminalThemeSection')
     $lstTerminalTheme  = $window.FindName('LstTerminalTheme')
     $chkThemeWT        = $window.FindName('ChkThemeWT')
-    $chkThemeAla       = $window.FindName('ChkThemeAla')
     $txtTerminalThemePreview = $window.FindName('TxtTerminalThemePreview')
-    $chkAlacritty    = $window.FindName('ChkAlacritty')
     $chkScoop        = $window.FindName('ChkScoop')
     $txtScoopBuckets = $window.FindName('TxtScoopBuckets')
     $chkTopgrade     = $window.FindName('ChkTopgrade')
+    $chkFastfetch    = $window.FindName('ChkFastfetch')
+    $chkAntigravity  = $window.FindName('ChkAntigravity')
+    $chkOpenCode     = $window.FindName('ChkOpenCode')
+    $chkCodex        = $window.FindName('ChkCodex')
+    $chkClaudeCode   = $window.FindName('ChkClaudeCode')
 
     $txtRepoPath.Text = $RepoPath
 
@@ -397,8 +404,17 @@ function Show-Gui {
 
         try {
             Enable-Tls12
-            $url = "https://raw.githubusercontent.com/JanDeDobbeleer/oh-my-posh/main/themes/$theme.omp.json"
-            $json = Invoke-RestMethod -Uri $url -ErrorAction Stop -UseBasicParsing
+            $themePaths = @(
+                (Join-Path (Join-Path $RepoPath 'themes') "$theme.omp.json"),
+                (Join-Path (Join-Path $HOME '.poshthemes') "$theme.omp.json")
+            )
+            $themePath = $themePaths | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
+            if ($themePath) {
+                $json = Get-Content -LiteralPath $themePath -Raw | ConvertFrom-Json
+            } else {
+                $url = "https://raw.githubusercontent.com/JanDeDobbeleer/oh-my-posh/main/themes/$theme.omp.json"
+                $json = Invoke-RestMethod -Uri $url -TimeoutSec 8 -ErrorAction Stop
+            }
 
             $segTypes = @{}
             $segTypes['path'] = ' ~\project '
@@ -493,28 +509,54 @@ function Show-Gui {
     $chkTerminalTheme.Add_Unchecked({
         $terminalThemeSection.Visibility = [System.Windows.Visibility]::Collapsed
     })
-    $chkThemeAla.Add_Checked({ $chkAlacritty.IsChecked = $true })
-    $chkAlacritty.Add_Unchecked({ $chkThemeAla.IsChecked = $false })
 
     # Load OMP theme list in background async (via Start-Job)
     $txtThemeCount.Text = "Loading themes..."
     $script:ThemeJob = $null
     function Start-OmpThemeLoad {
+        param([string]$ThemeRepoPath)
+        $jobArguments = [PSCustomObject]@{
+            LocalThemes = @(Get-LocalOmpThemeList -RepoPath $ThemeRepoPath)
+        }
         $script:ThemeJob = Start-Job -ScriptBlock {
+            param($JobArguments)
+            $themeNames = New-Object System.Collections.Generic.List[string]
+            foreach ($themeName in $JobArguments.LocalThemes) {
+                if ($themeName -and $themeName -notin $themeNames) { $themeNames.Add($themeName) }
+            }
             try {
                 if ($PSVersionTable.PSVersion.Major -lt 6) {
                     $currentProtocol = [System.Net.ServicePointManager]::SecurityProtocol
                     [System.Net.ServicePointManager]::SecurityProtocol = $currentProtocol -bor [System.Net.SecurityProtocolType]::Tls12
                 }
                 $apiUrl = 'https://api.github.com/repos/JanDeDobbeleer/oh-my-posh/contents/themes'
-                $items = Invoke-RestMethod -Uri $apiUrl -ErrorAction Stop
-                @($items | Where-Object { $_.name -like '*.omp.json' } |
-                    ForEach-Object { $_.name -replace '\.omp\.json$', '' } |
-                    Sort-Object)
+                $items = Invoke-RestMethod -Uri $apiUrl -TimeoutSec 8 -ErrorAction Stop
+                foreach ($item in ($items | Where-Object { $_.name -like '*.omp.json' })) {
+                    $themeName = $item.name -replace '\.omp\.json$', ''
+                    if ($themeName -match '^[\p{L}\p{Nd}][\p{L}\p{Nd} ._-]{0,63}$' -and
+                        $themeName -notmatch '[ .]$' -and $themeName -notin $themeNames) {
+                        $themeNames.Add($themeName)
+                    }
+                }
             } catch {
-                Write-Error "Failed to load OMP themes: $($_.Exception.Message)"
+                Write-Warning "Online OMP theme list unavailable. Using bundled and user themes. $($_.Exception.Message)"
             }
-        } -Name 'OmpThemeLoad'
+            @($themeNames | Sort-Object -Unique)
+        } -ArgumentList $jobArguments -Name 'OmpThemeLoad'
+    }
+
+    function Set-LocalOmpThemeList {
+        param([string]$ThemeRepoPath)
+        $themes = @(Get-LocalOmpThemeList -RepoPath $ThemeRepoPath)
+        $lstTheme.Items.Clear()
+        foreach ($themeName in $themes) { $lstTheme.Items.Add($themeName) | Out-Null }
+        if ($themes.Count -gt 0) {
+            $atomicIndex = [Array]::IndexOf([string[]]$themes, 'atomic')
+            $lstTheme.SelectedIndex = if ($atomicIndex -ge 0) { $atomicIndex } else { 0 }
+            $txtThemeCount.Text = "$($themes.Count) local themes loaded; checking online catalog..."
+        } else {
+            $txtThemeCount.Text = 'No valid local themes found; checking online catalog...'
+        }
     }
 
     # Check async result in timer
@@ -527,7 +569,7 @@ function Show-Gui {
                 $lstTheme.Items.Clear()
                 foreach ($t in $themes) { $lstTheme.Items.Add($t) | Out-Null }
                 $txtThemeCount.Text = "$($themes.Count) themes loaded"
-                $lstTheme.SelectedIndex = [Math]::Max(0, [Array]::IndexOf([string[]]$themes, 'jandedobbeleer'))
+                $lstTheme.SelectedIndex = [Math]::Max(0, [Array]::IndexOf([string[]]$themes, 'atomic'))
             } else {
                 $txtThemeCount.Text = "Failed to load themes"
             }
@@ -578,9 +620,10 @@ function Show-Gui {
             }
             foreach ($ctrl in @($btnInstall, $btnRemove, $btnBrowse, $txtRepoPath,
                 $chkPS7, $chkGit, $chkOMP, $lstTheme, $chkTerminalTheme,
-                $lstTerminalTheme, $chkThemeWT, $chkThemeAla,
+                $lstTerminalTheme, $chkThemeWT,
                 $chkZoxide, $chkFont,
-                $chkAlacritty, $chkScoop, $txtScoopBuckets, $chkTopgrade)) {
+                $chkScoop, $txtScoopBuckets, $chkTopgrade, $chkFastfetch,
+                $chkAntigravity, $chkOpenCode, $chkCodex, $chkClaudeCode)) {
                 $ctrl.IsEnabled = $true
             }
             $script:SyncHash.IsRunning = $false
@@ -590,10 +633,9 @@ function Show-Gui {
 
     # Wire refresh button
     $btnRefreshThemes.Add_Click({
-        $lstTheme.Items.Clear()
-        $txtThemeCount.Text = "Loading themes..."
         $txtThemePreview.Text = ''
-        Start-OmpThemeLoad
+        Set-LocalOmpThemeList -ThemeRepoPath $RepoPath
+        Start-OmpThemeLoad -ThemeRepoPath $RepoPath
     })
 
     $btnInstall.Add_Click({
@@ -609,9 +651,10 @@ function Show-Gui {
 
         foreach ($ctrl in @($btnInstall, $btnRemove, $btnBrowse, $txtRepoPath,
             $chkPS7, $chkGit, $chkOMP, $lstTheme, $chkTerminalTheme,
-            $lstTerminalTheme, $chkThemeWT, $chkThemeAla,
+            $lstTerminalTheme, $chkThemeWT,
             $chkZoxide, $chkFont,
-            $chkAlacritty, $chkScoop, $txtScoopBuckets, $chkTopgrade)) {
+            $chkScoop, $txtScoopBuckets, $chkTopgrade, $chkFastfetch,
+            $chkAntigravity, $chkOpenCode, $chkCodex, $chkClaudeCode)) {
             $ctrl.IsEnabled = $false
         }
         $script:SyncHash.InstallComplete = $false
@@ -643,6 +686,7 @@ function Show-Gui {
                 . (Join-Path $SetupDir '../lib/executable.ps1')
                 . (Join-Path $SetupDir 'modules/core.ps1')
                 . (Join-Path $SetupDir 'modules/deps.ps1')
+                . (Join-Path $SetupDir 'modules/agent-clis.ps1')
                 . (Join-Path $SetupDir 'modules/profile.ps1')
                 . (Join-Path $SetupDir 'modules/orchestrator.ps1')
 
@@ -684,9 +728,12 @@ function Show-Gui {
             InstallModules    = $true
             TerminalThemeName = $selTermTheme
             TerminalThemeWT   = $chkThemeWT.IsChecked -and $chkTerminalTheme.IsChecked
-            TerminalThemeAla  = $chkThemeAla.IsChecked -and $chkTerminalTheme.IsChecked
-            InstallAlacritty  = $chkAlacritty.IsChecked -or $chkThemeAla.IsChecked
             InstallTopgrade   = $chkTopgrade.IsChecked
+            InstallFastfetch  = $chkFastfetch.IsChecked
+            InstallAntigravity = $chkAntigravity.IsChecked
+            InstallOpenCode   = $chkOpenCode.IsChecked
+            InstallCodex      = $chkCodex.IsChecked
+            InstallClaudeCode = $chkClaudeCode.IsChecked
             InstallScoop      = $chkScoop.IsChecked
             ScoopBuckets      = $txtScoopBuckets.Text
         })
@@ -706,9 +753,10 @@ function Show-Gui {
 
         foreach ($ctrl in @($btnInstall, $btnRemove, $btnBrowse, $txtRepoPath,
             $chkPS7, $chkGit, $chkOMP, $lstTheme, $chkTerminalTheme,
-            $lstTerminalTheme, $chkThemeWT, $chkThemeAla,
+            $lstTerminalTheme, $chkThemeWT,
             $chkZoxide, $chkFont,
-            $chkAlacritty, $chkScoop, $txtScoopBuckets, $chkTopgrade)) {
+            $chkScoop, $txtScoopBuckets, $chkTopgrade, $chkFastfetch,
+            $chkAntigravity, $chkOpenCode, $chkCodex, $chkClaudeCode)) {
             $ctrl.IsEnabled = $false
         }
         $script:SyncHash.InstallComplete = $false
@@ -735,6 +783,7 @@ function Show-Gui {
                 . (Join-Path $SetupDir '../lib/executable.ps1')
                 . (Join-Path $SetupDir 'modules/core.ps1')
                 . (Join-Path $SetupDir 'modules/deps.ps1')
+                . (Join-Path $SetupDir 'modules/agent-clis.ps1')
                 . (Join-Path $SetupDir 'modules/profile.ps1')
                 . (Join-Path $SetupDir 'modules/orchestrator.ps1')
 
@@ -766,8 +815,9 @@ function Show-Gui {
         }
     })
 
-    # Start background OMP theme load + timer
-    Start-OmpThemeLoad
+    # Show local themes first; the online catalog has a short timeout.
+    Set-LocalOmpThemeList -ThemeRepoPath $RepoPath
+    Start-OmpThemeLoad -ThemeRepoPath $RepoPath
     $timer.Start()
 
     $window.Add_Closing({ $timer.Stop() })

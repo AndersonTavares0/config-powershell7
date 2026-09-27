@@ -10,7 +10,8 @@ function Start-CliMenu {
     Write-Host ""
     Write-Host " [1] Install all dependencies and link profile" -ForegroundColor White
     Write-Host " [2] Uninstall profile and clean up cache files" -ForegroundColor White
-    Write-Host " [3] Exit" -ForegroundColor White
+    Write-Host " [3] Install AI coding CLIs" -ForegroundColor White
+    Write-Host " [4] Exit" -ForegroundColor White
     Write-Host ""
 
     $choice = Read-Host "Select an option"
@@ -20,15 +21,14 @@ function Start-CliMenu {
             $themeName = ''
             $terminalTheme = ''
             $termThemeWT = $false
-            $termThemeAla = $false
 
-            $ompExists = Get-Command oh-my-posh -ErrorAction SilentlyContinue
-            if ($ompExists) {
+            $ompInstalled = Install-OhMyPosh
+            if ($ompInstalled) {
                 Write-Host ""
                 Write-Host "Oh My Posh Theme" -ForegroundColor Cyan
                 Write-Host "----------------" -ForegroundColor Cyan
                 Write-Host ""
-                $themes = Get-OmpThemeList
+                $themes = Get-OmpThemeList -RepoPath $RepoPath
                 if ($themes) {
                     Write-Host "Available themes ($($themes.Count)):" -ForegroundColor White
                     $pages = [Math]::Ceiling($themes.Count / 15)
@@ -37,25 +37,42 @@ function Start-CliMenu {
                         $start = ($page - 1) * 15
                         $end = [Math]::Min($start + 14, $themes.Count - 1)
                         for ($i = $start; $i -le $end; $i++) {
-                            $marker = if ($themes[$i] -eq 'jandedobbeleer') { ' (recommended)' } else { '' }
+                            $marker = if ($themes[$i] -eq 'atomic') { ' (recommended)' } else { '' }
                             Write-Host ("  {0,3}. {1}{2}" -f ($i + 1), $themes[$i], $marker) -ForegroundColor White
                         }
                         if ($page -lt $pages) {
                             Write-Host "  --- Page $page of $pages (enter 'n' for next) ---" -ForegroundColor Gray
                             $nav = Read-Host "Select theme number, 'n' for next, or enter to skip"
                             if ($nav -eq 'n') { $page++; continue }
+                            if ($nav -match '^(?i)m$') {
+                                $themeName = Read-Host 'Theme name'
+                                if (-not (Test-OmpThemeName -Name $themeName)) {
+                                    Write-Host 'Invalid theme name.' -ForegroundColor Red
+                                    $themeName = ''
+                                }
+                                break
+                            }
                             if ([string]::IsNullOrWhiteSpace($nav)) { $themeName = ''; break }
-                            if ([int]::TryParse($nav, [ref]$null)) {
-                                $idx = [int]$nav - 1
-                                if ($idx -ge 0 -and $idx -lt $themes.Count) { $themeName = $themes[$idx]; break }
+                            $themeIndex = ConvertFrom-MenuIndex -Value $nav -Count $themes.Count
+                            if ($themeIndex.Valid) {
+                                $themeName = $themes[$themeIndex.Index]
+                                break
                             }
                             Write-Host "Invalid input." -ForegroundColor Red
                         } else {
-                            $choice = Read-Host "Select theme number [1], or enter to skip"
+                            $choice = Read-Host "Select theme number [1], 'm' for manual name, or enter to skip"
                             if ([string]::IsNullOrWhiteSpace($choice)) { $choice = '1' }
-                            if ([int]::TryParse($choice, [ref]$null)) {
-                                $idx = [int]$choice - 1
-                                if ($idx -ge 0 -and $idx -lt $themes.Count) { $themeName = $themes[$idx] }
+                            if ($choice -match '^(?i)m$') {
+                                $themeName = Read-Host 'Theme name'
+                                if (-not (Test-OmpThemeName -Name $themeName)) {
+                                    Write-Host 'Invalid theme name.' -ForegroundColor Red
+                                    $themeName = ''
+                                }
+                            } else {
+                                $themeIndex = ConvertFrom-MenuIndex -Value $choice -Count $themes.Count
+                                if ($themeIndex.Valid) {
+                                    $themeName = $themes[$themeIndex.Index]
+                                }
                             }
                             break
                         }
@@ -88,17 +105,15 @@ function Start-CliMenu {
                     Write-Host ""
                     $choice = Read-Host "Select terminal theme [1]"
                     if ([string]::IsNullOrWhiteSpace($choice)) { $choice = '1' }
-                    if ([int]::TryParse($choice, [ref]$null)) {
-                        $i = [int]$choice - 1
-                        if ($i -ge 0 -and $i -lt $termThemes.Count) {
-                            $terminalTheme = $termThemes[$i].Name
+                    $terminalThemeIndex = ConvertFrom-MenuIndex -Value $choice -Count ($termThemes.Count + 1)
+                    if ($terminalThemeIndex.Valid) {
+                        if ($terminalThemeIndex.Index -lt $termThemes.Count) {
+                            $terminalTheme = $termThemes[$terminalThemeIndex.Index].Name
                             Write-Host "Selected terminal theme: $terminalTheme" -ForegroundColor Green
 
                             $wtChoice = Read-Host "Apply to Windows Terminal? (y/n) [y]"
                             if ([string]::IsNullOrWhiteSpace($wtChoice) -or $wtChoice -eq 'y') { $termThemeWT = $true }
 
-                            $alaChoice = Read-Host "Apply to Alacritty? (y/n) [y]"
-                            if ([string]::IsNullOrWhiteSpace($alaChoice) -or $alaChoice -eq 'y') { $termThemeAla = $true }
                         } else {
                             Write-Host "Skipping terminal theme." -ForegroundColor Gray
                         }
@@ -112,21 +127,20 @@ function Start-CliMenu {
                 Write-Host "Skipping terminal theme." -ForegroundColor Gray
             }
 
-            $installAlacritty = $termThemeAla
-            if (-not $installAlacritty) {
-                Write-Host ""
-                $alacrittyChoice = Read-Host "Install Alacritty terminal emulator? (y/n) [y]"
-                $installAlacritty = [string]::IsNullOrWhiteSpace($alacrittyChoice) -or $alacrittyChoice -eq 'y'
-            }
+            Write-Host ""
+            $fastfetchChoice = Read-Host "Install Fastfetch? (y/n) [n]"
+            $installFastfetch = $fastfetchChoice -match '^(y|yes)$'
+            $topgradeChoice = Read-Host "Install Topgrade? (y/n) [n]"
+            $installTopgrade = $topgradeChoice -match '^(y|yes)$'
 
             Write-Host ""
             Write-Host "Starting installation... This may take several minutes." -ForegroundColor Yellow
             Write-Host ""
             $installResult = Start-ProfileInstall -RepoPath $RepoPath -ThemeName $themeName `
-                -InstallAlacritty $installAlacritty `
+                -InstallFastfetch $installFastfetch `
+                -InstallTopgrade $installTopgrade `
                 -TerminalThemeName $terminalTheme `
-                -TerminalThemeWT $termThemeWT `
-                -TerminalThemeAla $termThemeAla
+                -TerminalThemeWT $termThemeWT
             Write-Host ""
             if ($installResult) {
                 Write-Host "Done! Restart your terminal to apply all changes." -ForegroundColor Green
@@ -143,10 +157,75 @@ function Start-CliMenu {
             else { Write-Host "Uninstall finished with failures." -ForegroundColor Red }
         }
         '3' {
+            Start-AgentCliMenu
+        }
+        '4' {
             Write-Host "Exiting." -ForegroundColor Gray
         }
         default {
             Write-Host "Invalid option." -ForegroundColor Red
         }
     }
+}
+
+function Start-AgentCliMenu {
+    $specs = @(Get-AgentCliInstallSpec)
+    Write-Host ""
+    Write-Host "AI Coding CLIs (optional)" -ForegroundColor Cyan
+    Write-Host "------------------------" -ForegroundColor Cyan
+    for ($index = 0; $index -lt $specs.Count; $index++) {
+        Write-Host (" [{0}] {1}" -f ($index + 1), $specs[$index].DisplayName) -ForegroundColor White
+    }
+    Write-Host " [A] All tools" -ForegroundColor White
+    Write-Host " [Enter] Cancel" -ForegroundColor Gray
+
+    $selection = (Read-Host 'Select tool numbers, separated by commas').Trim()
+    $selectionResult = Get-AgentCliSelection -Selection $selection -Specs $specs
+    if ($selectionResult.Cancelled) { return }
+    if (-not $selectionResult.Valid) {
+        Write-Host 'Invalid selection; no tools installed.' -ForegroundColor Red
+        return
+    }
+
+    foreach ($spec in $selectionResult.Selected) {
+        Install-AgentCli -Name $spec.Name | Out-Null
+    }
+}
+
+function Get-AgentCliSelection {
+    param(
+        [AllowEmptyString()][string]$Selection,
+        [object[]]$Specs = @(Get-AgentCliInstallSpec)
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Selection)) {
+        return [PSCustomObject]@{ Valid = $true; Cancelled = $true; Selected = @() }
+    }
+    if ($Selection -match '^(?i)a(ll)?$') {
+        return [PSCustomObject]@{ Valid = $true; Cancelled = $false; Selected = @($Specs) }
+    }
+
+    $selectedSpecs = @()
+    foreach ($token in ($Selection -split ',')) {
+        $index = 0
+        if (-not [int]::TryParse($token.Trim(), [ref]$index) -or $index -lt 1 -or $index -gt $Specs.Count) {
+            return [PSCustomObject]@{ Valid = $false; Cancelled = $false; Selected = @() }
+        }
+        $selectedSpecs += $Specs[$index - 1]
+    }
+    $selectedSpecs = @($selectedSpecs | Sort-Object Name -Unique)
+    return [PSCustomObject]@{ Valid = $true; Cancelled = $false; Selected = $selectedSpecs }
+}
+
+function ConvertFrom-MenuIndex {
+    param(
+        [AllowEmptyString()][string]$Value,
+        [Parameter(Mandatory)][int]$Count
+    )
+
+    $index = 0
+    if (-not [int]::TryParse($Value.Trim(), [ref]$index) -or $index -lt 1 -or $index -gt $Count) {
+        return [PSCustomObject]@{ Valid = $false; Index = -1 }
+    }
+    return [PSCustomObject]@{ Valid = $true; Index = $index - 1 }
 }

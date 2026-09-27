@@ -17,9 +17,9 @@
 irm https://github.com/AndersonTavares0/config-powershell7/raw/main/setup.ps1 | iex
 ```
 
-Installs PS7, Git, Oh My Posh, Zoxide, FiraCode Nerd Font, PSReadLine,
-Terminal-Icons, and Alacritty. Topgrade and Scoop remain optional. Package
-installers can request UAC when their WinGet manifest requires machine scope.
+CLI setup installs PowerShell 7, Git, Oh My Posh, Zoxide, FiraCode Nerd Font,
+PSReadLine, and Terminal-Icons. Fastfetch, Topgrade, Scoop, and four coding
+agent CLIs are optional. Use `-Gui` to open graphical installer.
 
 ## Key Technical Features
 
@@ -32,26 +32,23 @@ installers can request UAC when their WinGet manifest requires machine scope.
 - **TTL Cache System**: Third-party plugins (`oh-my-posh`, `zoxide`) cached
   with 24-hour TTL. Cache header includes fingerprint + Unix timestamp; valid
   TTL skips `Get-Command` and fingerprint recalculation entirely.
-- **WPF GUI Installer**: Dark VS Code-themed interactive installer with OMP
-  theme selection (live prompt preview from GitHub), terminal color theme
-  selection (Windows Terminal + Alacritty) with color swatch preview, progress
-  bar, synchronized logging, and CLI fallback for headless/CI environments.
+- **CLI-first Installer**: Interactive terminal setup by default. Optional WPF
+  GUI supports OMP theme selection, Windows Terminal themes, and component logs.
 - **CONFIG_PWSH7_THEME Env Var**: Runtime OMP theme selection via
   `$env:CONFIG_PWSH7_THEME` — overrides the theme chosen at install time. Set it in
   `$PROFILE` or per-session to switch themes without reinstalling.
-- **Universal Installer**: Per-user orchestration, WinGet with
-  `--silent --accept-source-agreements --accept-package-agreements`, dynamic
-  paths via `[Environment]::GetFolderPath`, stable GitHub Release downloads,
-  and convergent repeat runs.
-- **Zero-Elevation Profile**: No symlinks, no UAC prompts. The installer
-  maintains a lightweight block in `$PROFILE.CurrentUserAllHosts` that
-  dot-sources the repository without replacing user content.
+- **Windows Installer**: Per-user WinGet installs, optional Scoop fallback when
+  WinGet is missing, dynamic paths via `[Environment]::GetFolderPath`, stable
+  GitHub Release downloads, and convergent repeat runs.
+- **Per-User Profile**: Profile linking needs no elevation or symlinks. It
+  maintains a marked block in `$PROFILE.CurrentUserAllHosts` without replacing
+  user content. Package installs start in user scope.
 - **Strict-Mode Compliant**: Entire codebase passes
   `Set-StrictMode -Version Latest` — zero uninitialized variables, no hidden
   scoping. No bare `catch {}`. Profile load guards stay process-local and are
   not inherited by child shells.
-- **Windows Target**: Installer support covers Windows 10/11 x64 with
-  PowerShell 7 and Alacritty. Profile modules retain graceful platform checks.
+- **Windows Target**: Installer supports Windows 10/11 x64. Profile modules
+  retain graceful platform checks on Linux and macOS.
 - **Dynamic Boot Summary**: Clean boot report with platform info, loaded
   modules, and admin status.
 
@@ -73,13 +70,14 @@ config-powershell7/
 ├── .github/workflows/          # CI/CD (GitHub Actions)
 ├── Microsoft.PowerShell_profile.ps1 # Entrypoint Profile (Loader)
 ├── install.ps1                 # Compatibility wrapper that forwards to setup.ps1
-├── setup.ps1                   # Main installer entry point (GUI or CLI)
+├── setup.ps1                   # Main installer entry point (CLI or optional GUI)
 ├── uninstall.ps1               # Safe uninstaller (backup + cache cleanup)
 ├── install.cmd / uninstall.cmd # Double-click launchers (Windows)
 ├── setup/
 │   ├── modules/
 │   │   ├── core.ps1            # Logging, platform detection, constants
 │   │   ├── deps.ps1            # Dependency installers (WinGet, fonts, themes)
+│   │   ├── agent-clis.ps1      # Optional coding-agent CLI installers
 │   │   ├── profile.ps1         # Profile link management
 │   │   ├── orchestrator.ps1    # Install/uninstall orchestration
 │   │   ├── gui.ps1             # WPF XAML UI with runspace logging
@@ -119,18 +117,17 @@ system → psreadline → text_utils
 irm https://github.com/AndersonTavares0/config-powershell7/raw/main/setup.ps1 | iex
 ```
 
-> Detects interactive versus headless use and guides theme selection. WinGet
-> package installers can request UAC independently.
+> Opens CLI menu by default. Use `-Gui` from a local clone for WPF.
 
 **Option B — WPF GUI (Windows):**
 
 ```powershell
 git clone https://github.com/AndersonTavares0/config-powershell7.git
 cd config-powershell7
-.\setup.ps1
+.\setup.ps1 -Gui
 ```
 
-> Full graphical installer with OMP theme preview and terminal color swatches.
+> Graphical installer with OMP theme preview and Windows Terminal color swatches.
 
 **Option C — Headless/CI compatibility wrapper:**
 
@@ -149,7 +146,7 @@ cd config-powershell7
 - **PowerShell 7.x** (Core) highly recommended (supports PS 5.1 via graceful
   degradation)
 - **FiraCode Nerd Font** (for icons/ligatures)
-- **Windows Terminal** or **Alacritty**
+- **Windows Terminal** (optional; any terminal that supports PowerShell works)
 - **Git** (required for Git aliases)
 - **Oh My Posh** (optional — prompt theming)
 - **Zoxide** (optional — smart directory navigation)

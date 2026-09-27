@@ -4,7 +4,9 @@
 param(
     [switch]$NonInteractive,
     [string]$ThemeName = '',
-    [switch]$InstallAlacritty
+    [switch]$Gui,
+    [switch]$InstallFastfetch,
+    [switch]$InstallTopgrade
 )
 
 Set-StrictMode -Version Latest
@@ -13,7 +15,7 @@ $ErrorActionPreference = 'Stop'
 $localSetup = Join-Path $PSScriptRoot 'setup.ps1'
 if (Test-Path $localSetup -PathType Leaf) {
     & $localSetup -NonInteractive:$NonInteractive -ThemeName $ThemeName `
-        -InstallAlacritty:$InstallAlacritty
+        -Gui:$Gui -InstallFastfetch:$InstallFastfetch -InstallTopgrade:$InstallTopgrade
     return
 }
 
@@ -26,7 +28,7 @@ try {
     Invoke-WebRequest -Uri $setupUrl -OutFile $tempSetup -ErrorAction Stop
     Unblock-File -Path $tempSetup -ErrorAction SilentlyContinue
     & $tempSetup -NonInteractive:$NonInteractive -ThemeName $ThemeName `
-        -InstallAlacritty:$InstallAlacritty
+        -Gui:$Gui -InstallFastfetch:$InstallFastfetch -InstallTopgrade:$InstallTopgrade
 } finally {
     Remove-Item $tempSetup -Force -ErrorAction SilentlyContinue
 }

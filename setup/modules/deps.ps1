@@ -1,5 +1,98 @@
 #Requires -Version 5.1
-# Dependency installers: winget, PS7, Git, OMP, Zoxide, NerdFont, PSModules, Alacritty, Scoop
+# Dependency installers: WinGet, PowerShell, Git, Oh My Posh, Zoxide, Fastfetch, fonts, modules, Scoop, coding CLIs
+
+function Get-WingetPackageArguments {
+    param(
+        [Parameter(Mandatory)][string]$Id,
+        [ValidateSet('user', 'machine')][string]$Scope = 'user'
+    )
+
+    return @(
+        'install', '--id', $Id, '--exact', '--scope', $Scope,
+        '--silent', '--accept-package-agreements', '--accept-source-agreements'
+    )
+}
+
+function Update-ProcessPathFromUser {
+    $userPath = [Environment]::GetEnvironmentVariable('PATH', 'User')
+    $machinePath = [Environment]::GetEnvironmentVariable('PATH', 'Machine')
+    if ([string]::IsNullOrWhiteSpace($userPath) -and [string]::IsNullOrWhiteSpace($machinePath)) { return }
+
+    $entries = @($env:PATH -split ';') + @($machinePath -split ';') + @($userPath -split ';')
+    $seen = @{}
+    $uniqueEntries = foreach ($entry in $entries) {
+        $normalized = $entry.Trim()
+        if ($normalized -and -not $seen.ContainsKey($normalized)) {
+            $seen[$normalized] = $true
+            $entry.Trim()
+        }
+    }
+    $env:PATH = $uniqueEntries -join ';'
+}
+
+function Get-ScoopPackageName {
+    param([Parameter(Mandatory)][string]$Id)
+
+    switch ($Id) {
+        'Microsoft.PowerShell' { return 'pwsh' }
+        'Git.Git' { return 'git' }
+        'JanDeDobbeleer.OhMyPosh' { return 'oh-my-posh' }
+        'ajeetdsouza.zoxide' { return 'zoxide' }
+        'Fastfetch-cli.Fastfetch' { return 'fastfetch' }
+        'topgrade-rs.topgrade' { return 'topgrade' }
+        default { return $null }
+    }
+}
+
+function Install-ScoopFallbackPackage {
+    param(
+        [Parameter(Mandatory)][string]$Id,
+        [Parameter(Mandatory)][string]$DisplayName
+    )
+
+    $packageName = Get-ScoopPackageName -Id $Id
+    if (-not $packageName) {
+        Write-GuiLog "No Scoop fallback is configured for $DisplayName ($Id)." -Type Warn
+        return $false
+    }
+
+    $extraPackages = @('fastfetch', 'topgrade')
+    $buckets = if ($packageName -in $extraPackages) { @('extras') } else { @() }
+    $scoop = Get-Command scoop -ErrorAction SilentlyContinue
+    if (-not $scoop) {
+        $interactiveConsole = $Host.Name -eq 'ConsoleHost' -and -not $env:CI
+        if (-not $interactiveConsole) {
+            Write-GuiLog "WinGet is unavailable. Install Scoop manually to install $DisplayName without WinGet." -Type Warn
+            return $false
+        }
+        $installScoop = Read-Host "WinGet is unavailable. Install Scoop for $DisplayName? (y/n) [n]"
+        if ($installScoop -notmatch '^(?i)y(es)?$') { return $false }
+        if (-not (Install-Scoop -Buckets $buckets)) { return $false }
+    } elseif ($buckets.Count -gt 0) {
+        if (-not (Install-Scoop -Buckets $buckets)) { return $false }
+    }
+
+    $scoop = Get-Command scoop -ErrorAction SilentlyContinue
+    if (-not $scoop) {
+        Write-GuiLog 'Scoop finished installing, but its command is unavailable in this session.' -Type Warn
+        return $false
+    }
+
+    try {
+        Write-GuiLog "Installing $DisplayName with Scoop package '$packageName'." -Type Step
+        & $scoop.Source install $packageName
+        Update-ProcessPathFromUser
+        if (Get-Command $packageName -ErrorAction SilentlyContinue) {
+            Write-GuiLog "$DisplayName installed with Scoop." -Type Ok
+            return $true
+        }
+        Write-GuiLog "Scoop did not expose '$packageName' after installation." -Type Warn
+        return $false
+    } catch {
+        Write-GuiLog "Scoop could not install $($DisplayName): $($_.Exception.Message)" -Type Warn
+        return $false
+    }
+}
 
 function Install-WingetPackage {
     param(
@@ -10,17 +103,36 @@ function Install-WingetPackage {
     try {
         $winget = Get-WingetPath
         if (-not $winget) {
-            Write-GuiLog "winget not found. Install manually or use Windows 10 1709+." -Type Warn
-            return $false
+            Write-GuiLog 'WinGet not found. Trying the approved per-user Scoop fallback.' -Type Warn
+            return Install-ScoopFallbackPackage -Id $Id -DisplayName $DisplayName
         }
-        $proc = Start-Process -FilePath $winget -ArgumentList 'install','--id',$Id,'--exact',
-            '--silent','--accept-package-agreements','--accept-source-agreements' `
+        $arguments = Get-WingetPackageArguments -Id $Id -Scope user
+        $proc = Start-Process -FilePath $winget -ArgumentList $arguments `
             -NoNewWindow -Wait -PassThru -ErrorAction Stop
         if ($proc.ExitCode -eq 0) {
+            Update-ProcessPathFromUser
             Write-GuiLog "$DisplayName installed." -Type Ok
             return $true
         }
-        Write-GuiLog "$DisplayName - winget exited with code $($proc.ExitCode)" -Type Warn
+
+        $interactiveConsole = $Host.Name -eq 'ConsoleHost' -and -not $env:CI
+        if ($interactiveConsole) {
+            $retryElevated = Read-Host "$DisplayName failed in user scope (exit $($proc.ExitCode)). Retry with administrator rights? (y/n) [n]"
+            if ($retryElevated -match '^(?i)y(es)?$') {
+                $elevatedArguments = Get-WingetPackageArguments -Id $Id -Scope machine
+                $elevatedProcess = Start-Process -FilePath $winget -ArgumentList $elevatedArguments `
+                    -Verb RunAs -Wait -PassThru -ErrorAction Stop
+                if ($elevatedProcess.ExitCode -eq 0) {
+                    Update-ProcessPathFromUser
+                    Write-GuiLog "$DisplayName installed with administrator approval." -Type Ok
+                    return $true
+                }
+                Write-GuiLog "$DisplayName - elevated WinGet exited with code $($elevatedProcess.ExitCode)." -Type Warn
+                return $false
+            }
+        }
+
+        Write-GuiLog "$DisplayName - WinGet exited with code $($proc.ExitCode); no administrator retry was started." -Type Warn
         return $false
     } catch {
         Write-GuiLog "$DisplayName failed: $($_.Exception.Message)" -Type Warn
@@ -69,17 +181,70 @@ function Install-Zoxide {
 }
 
 function Get-OmpThemeList {
+    param([string]$RepoPath)
+
     $apiUrl = 'https://api.github.com/repos/JanDeDobbeleer/oh-my-posh/contents/themes'
+    $themeNames = New-Object System.Collections.Generic.List[string]
+    foreach ($themeName in (Get-LocalOmpThemeList -RepoPath $RepoPath)) { $themeNames.Add($themeName) }
+
     try {
         Enable-Tls12
-        $items = Invoke-RestMethod -Uri $apiUrl -ErrorAction Stop
-        $themes = $items | Where-Object { $_.name -like '*.omp.json' } |
-            ForEach-Object { $_.name -replace '\.omp\.json$', '' } |
-            Sort-Object
-        return @($themes)
+        $items = Invoke-RestMethod -Uri $apiUrl -TimeoutSec 8 -ErrorAction Stop
+        foreach ($item in ($items | Where-Object { $_.name -like '*.omp.json' })) {
+            $themeName = $item.name -replace '\.omp\.json$', ''
+            if ((Test-OmpThemeName -Name $themeName) -and $themeName -notin $themeNames) { $themeNames.Add($themeName) }
+        }
     } catch {
-        Write-GuiLog "Failed to fetch theme list: $($_.Exception.Message)" -Type Warn
-        return $null
+        Write-GuiLog "Could not fetch online OMP themes; using bundled and user themes: $($_.Exception.Message)" -Type Warn
+    }
+    return @($themeNames | Sort-Object -Unique)
+}
+
+function Get-LocalOmpThemeList {
+    param([string]$RepoPath)
+
+    $themeNames = New-Object System.Collections.Generic.List[string]
+    $themeDirs = @()
+    if ($RepoPath) { $themeDirs += Join-Path $RepoPath 'themes' }
+    $themeDirs += Get-OmpThemeDirectory
+
+    foreach ($themeDir in ($themeDirs | Select-Object -Unique)) {
+        if (-not (Test-Path -LiteralPath $themeDir -PathType Container)) { continue }
+        foreach ($themeFile in (Get-ChildItem -LiteralPath $themeDir -Filter '*.omp.json' -File -ErrorAction SilentlyContinue)) {
+            $themeName = $themeFile.Name -replace '\.omp\.json$', ''
+            if ((Test-OmpThemeName -Name $themeName) -and
+                (Test-OmpThemeFile -Path $themeFile.FullName) -and
+                $themeName -notin $themeNames) {
+                $themeNames.Add($themeName)
+            }
+        }
+    }
+    return @($themeNames | Sort-Object -Unique)
+}
+
+function Test-OmpThemeName {
+    param([AllowEmptyString()][string]$Name)
+
+    if ([string]::IsNullOrWhiteSpace($Name) -or $Name -in @('.', '..')) { return $false }
+    return $Name -match '^[\p{L}\p{Nd}][\p{L}\p{Nd} ._-]{0,63}$' -and $Name -notmatch '[ .]$'
+}
+
+function Test-OmpThemeFile {
+    param([Parameter(Mandatory)][string]$Path)
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $false }
+    try {
+        $theme = Get-Content -LiteralPath $Path -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+        if ($theme.version -notin @(2, 3, 4) -or @($theme.blocks).Count -eq 0) { return $false }
+        foreach ($block in $theme.blocks) {
+            if (-not $block.type -or @($block.segments).Count -eq 0) { return $false }
+            foreach ($segment in $block.segments) {
+                if (-not $segment.type) { return $false }
+            }
+        }
+        return $true
+    } catch {
+        return $false
     }
 }
 
@@ -99,13 +264,6 @@ function Initialize-TerminalThemes {
                     brightBlack = '#585B70'; brightRed = '#F38BA8'; brightGreen = '#A6E3A1'
                     brightYellow = '#F9E2AF'; brightBlue = '#89B4FA'; brightPurple = '#F5C2E7'
                     brightCyan = '#94E2D5'; brightWhite = '#A6ADC8' }
-            Ala = @{ primary = @{ background = '#1E1E2E'; foreground = '#CDD6F4' }
-                     normal = @{ black = '#45475A'; red = '#F38BA8'; green = '#A6E3A1'
-                                 yellow = '#F9E2AF'; blue = '#89B4FA'; magenta = '#F5C2E7'
-                                 cyan = '#94E2D5'; white = '#BAC2DE' }
-                     bright = @{ black = '#585B70'; red = '#F38BA8'; green = '#A6E3A1'
-                                 yellow = '#F9E2AF'; blue = '#89B4FA'; magenta = '#F5C2E7'
-                                 cyan = '#94E2D5'; white = '#A6ADC8' } }
         }
         'Catppuccin Latte' = @{
             Type = 'light'; Description = 'Light theme from Catppuccin project'
@@ -115,13 +273,6 @@ function Initialize-TerminalThemes {
                     brightBlack = '#6C6F85'; brightRed = '#D20F39'; brightGreen = '#40A02B'
                     brightYellow = '#DF8E1D'; brightBlue = '#1E66F5'; brightPurple = '#EA76CB'
                     brightCyan = '#179299'; brightWhite = '#BCC0CC' }
-            Ala = @{ primary = @{ background = '#EFF1F5'; foreground = '#4C4F69' }
-                     normal = @{ black = '#5C5F77'; red = '#D20F39'; green = '#40A02B'
-                                 yellow = '#DF8E1D'; blue = '#1E66F5'; magenta = '#EA76CB'
-                                 cyan = '#179299'; white = '#ACB0BE' }
-                     bright = @{ black = '#6C6F85'; red = '#D20F39'; green = '#40A02B'
-                                 yellow = '#DF8E1D'; blue = '#1E66F5'; magenta = '#EA76CB'
-                                 cyan = '#179299'; white = '#BCC0CC' } }
         }
         'Dracula' = @{
             Type = 'dark'; Description = 'Popular dark theme with purple accents'
@@ -131,13 +282,6 @@ function Initialize-TerminalThemes {
                     brightBlack = '#6272A4'; brightRed = '#FF6E6E'; brightGreen = '#69FF94'
                     brightYellow = '#FFFFA5'; brightBlue = '#D6ACFF'; brightPurple = '#FF92DF'
                     brightCyan = '#A4FFFF'; brightWhite = '#FFFFFF' }
-            Ala = @{ primary = @{ background = '#282A36'; foreground = '#F8F8F2' }
-                     normal = @{ black = '#21222C'; red = '#FF5555'; green = '#50FA7B'
-                                 yellow = '#F1FA8C'; blue = '#BD93F9'; magenta = '#FF79C6'
-                                 cyan = '#8BE9FD'; white = '#F8F8F2' }
-                     bright = @{ black = '#6272A4'; red = '#FF6E6E'; green = '#69FF94'
-                                 yellow = '#FFFFA5'; blue = '#D6ACFF'; magenta = '#FF92DF'
-                                 cyan = '#A4FFFF'; white = '#FFFFFF' } }
         }
         'Nord' = @{
             Type = 'dark'; Description = 'Arctic bluish dark theme'
@@ -147,13 +291,6 @@ function Initialize-TerminalThemes {
                     brightBlack = '#4C566A'; brightRed = '#BF616A'; brightGreen = '#A3BE8C'
                     brightYellow = '#EBCB8B'; brightBlue = '#81A1C1'; brightPurple = '#B48EAD'
                     brightCyan = '#8FBCBB'; brightWhite = '#ECEFF4' }
-            Ala = @{ primary = @{ background = '#2E3440'; foreground = '#D8DEE9' }
-                     normal = @{ black = '#3B4252'; red = '#BF616A'; green = '#A3BE8C'
-                                 yellow = '#EBCB8B'; blue = '#81A1C1'; magenta = '#B48EAD'
-                                 cyan = '#88C0D0'; white = '#E5E9F0' }
-                     bright = @{ black = '#4C566A'; red = '#BF616A'; green = '#A3BE8C'
-                                 yellow = '#EBCB8B'; blue = '#81A1C1'; magenta = '#B48EAD'
-                                 cyan = '#8FBCBB'; white = '#ECEFF4' } }
         }
         'Tokyo Night' = @{
             Type = 'dark'; Description = 'Deep blue night theme'
@@ -163,13 +300,6 @@ function Initialize-TerminalThemes {
                     brightBlack = '#565F89'; brightRed = '#F7768E'; brightGreen = '#9ECE6A'
                     brightYellow = '#E0AF68'; brightBlue = '#7AA2F7'; brightPurple = '#BB9AF7'
                     brightCyan = '#7DCFFF'; brightWhite = '#C0CAF5' }
-            Ala = @{ primary = @{ background = '#1A1B26'; foreground = '#A9B1D6' }
-                     normal = @{ black = '#1D202F'; red = '#F7768E'; green = '#9ECE6A'
-                                 yellow = '#E0AF68'; blue = '#7AA2F7'; magenta = '#BB9AF7'
-                                 cyan = '#7DCFFF'; white = '#A9B1D6' }
-                     bright = @{ black = '#565F89'; red = '#F7768E'; green = '#9ECE6A'
-                                 yellow = '#E0AF68'; blue = '#7AA2F7'; magenta = '#BB9AF7'
-                                 cyan = '#7DCFFF'; white = '#C0CAF5' } }
         }
         'One Half Dark' = @{
             Type = 'dark'; Description = 'Popular dark theme with warm accents'
@@ -179,13 +309,6 @@ function Initialize-TerminalThemes {
                     brightBlack = '#5C6370'; brightRed = '#E06C75'; brightGreen = '#98C379'
                     brightYellow = '#D19A66'; brightBlue = '#61AFEF'; brightPurple = '#C678DD'
                     brightCyan = '#56B6C2'; brightWhite = '#DCDFE4' }
-            Ala = @{ primary = @{ background = '#282C34'; foreground = '#DCDFE4' }
-                     normal = @{ black = '#383C42'; red = '#E06C75'; green = '#98C379'
-                                 yellow = '#D19A66'; blue = '#61AFEF'; magenta = '#C678DD'
-                                 cyan = '#56B6C2'; white = '#ABB2BF' }
-                     bright = @{ black = '#5C6370'; red = '#E06C75'; green = '#98C379'
-                                 yellow = '#D19A66'; blue = '#61AFEF'; magenta = '#C678DD'
-                                 cyan = '#56B6C2'; white = '#DCDFE4' } }
         }
     }
 }
@@ -283,10 +406,14 @@ function Set-WindowsTerminalColorScheme {
 #endregion
 
 function Install-OmpTheme {
-    param([string]$ThemeName)
+    param([string]$ThemeName, [string]$RepoPath)
 
     if ([string]::IsNullOrWhiteSpace($ThemeName)) {
         Write-GuiLog "No theme selected - skipping theme download." -Type Info
+        return $false
+    }
+    if (-not (Test-OmpThemeName -Name $ThemeName)) {
+        Write-GuiLog "Invalid OMP theme name '$ThemeName'. Use letters, numbers, dot, dash, or underscore." -Type Warn
         return $false
     }
 
@@ -296,7 +423,7 @@ function Install-OmpTheme {
         return $false
     }
 
-    $themeDir = Join-Path ([Environment]::GetFolderPath('UserProfile')) '.poshthemes'
+    $themeDir = Get-OmpThemeDirectory
     if (-not (Test-Path $themeDir)) {
         New-Item -ItemType Directory -Force -Path $themeDir | Out-Null
     }
@@ -304,26 +431,40 @@ function Install-OmpTheme {
     $themeFile = Join-Path $themeDir "$ThemeName.omp.json"
 
     if (Test-Path $themeFile) {
-        try {
-            $raw = Get-Content $themeFile -Raw -ErrorAction SilentlyContinue
-            if ($raw -and $raw.Length -gt 100) {
-                Write-GuiLog "Theme '$ThemeName' already exists." -Type Ok
-                return $true
-            }
-        } catch {
-            # Corrupted file - re-download
+        if (Test-OmpThemeFile -Path $themeFile) {
+            Write-GuiLog "Theme '$ThemeName' already exists." -Type Ok
+            return $true
         }
+        Write-GuiLog "Theme file already exists but is invalid: $themeFile. It was not overwritten." -Type Warn
+        return $false
+    }
+
+    $bundledTheme = if ($RepoPath) { Join-Path (Join-Path $RepoPath 'themes') "$ThemeName.omp.json" } else { $null }
+    if ($bundledTheme -and (Test-OmpThemeFile -Path $bundledTheme)) {
+        Copy-Item -LiteralPath $bundledTheme -Destination $themeFile -Force
+        Write-GuiLog "Bundled theme '$ThemeName' installed from the project." -Type Ok
+        return $true
     }
 
     $themeUrl = "https://raw.githubusercontent.com/JanDeDobbeleer/oh-my-posh/main/themes/$ThemeName.omp.json"
     Write-GuiLog "Downloading theme '$ThemeName'..." -Type Step
 
-    if (Get-FileFromUrl -Url $themeUrl -OutFile $themeFile -MinBytes 100 -Description "theme '$ThemeName'") {
+    $downloaded = Get-FileFromUrl -Url $themeUrl -OutFile $themeFile -MinBytes 100 -Description "theme '$ThemeName'"
+    if ($downloaded -and (Test-OmpThemeFile -Path $themeFile)) {
         Write-GuiLog "Theme '$ThemeName' downloaded successfully." -Type Ok
         return $true
     }
 
+    Remove-Item -LiteralPath $themeFile -Force -ErrorAction SilentlyContinue
+    Write-GuiLog "Downloaded theme '$ThemeName' is invalid." -Type Warn
+
     return $false
+}
+
+function Get-OmpThemeDirectory {
+    $userProfile = [Environment]::GetFolderPath('UserProfile')
+    if ([string]::IsNullOrWhiteSpace($userProfile)) { $userProfile = $HOME }
+    return Join-Path $userProfile '.poshthemes'
 }
 
 function Add-FontResource {
@@ -413,7 +554,17 @@ function Install-Topgrade {
         Write-GuiLog "Topgrade already installed: $($existing.Path)$verStr" -Type Ok
         return $true
     }
-    return Install-WingetPackage -Id 'topgrade.topgrade' -DisplayName 'Topgrade'
+    return Install-WingetPackage -Id 'topgrade-rs.topgrade' -DisplayName 'Topgrade'
+}
+
+function Install-Fastfetch {
+    $existing = Get-Executable -Name 'fastfetch'
+    if ($existing) {
+        $verStr = if ($existing.Version) { " $($existing.Version)" } else { '' }
+        Write-GuiLog "Fastfetch already installed: $($existing.Path)$verStr" -Type Ok
+        return $true
+    }
+    return Install-WingetPackage -Id 'Fastfetch-cli.Fastfetch' -DisplayName 'Fastfetch'
 }
 
 function Install-PSModules {
@@ -533,313 +684,6 @@ function Set-WindowsTerminalFont {
         Write-GuiLog "Could not configure Windows Terminal font: $($_.Exception.Message)" -Type Warn
         return $false
     }
-}
-
-function ConvertTo-AlacrittyTomlString {
-    param([Parameter(Mandatory = $true)][string]$Value)
-    return '"' + $Value.Replace('\', '\\').Replace('"', '\"') + '"'
-}
-
-function Set-AlacrittyContentIfChanged {
-    param([string]$Path, [string]$Content)
-    if ((Test-Path $Path -PathType Leaf) -and [System.IO.File]::ReadAllText($Path) -ceq $Content) { return $false }
-    [System.IO.File]::WriteAllText($Path, $Content, (New-Object System.Text.UTF8Encoding($false)))
-    return $true
-}
-
-function Get-AlacrittyExecutable {
-    $candidates = New-Object System.Collections.Generic.List[string]
-    $detected = @()
-    $command = Get-Command alacritty -ErrorAction SilentlyContinue
-    if ($command -and $command.Source) { $candidates.Add($command.Source) }
-    if ($env:LOCALAPPDATA) { $candidates.Add((Join-Path $env:LOCALAPPDATA 'Microsoft\WinGet\Links\alacritty.exe')) }
-    if ($env:ProgramFiles) { $candidates.Add((Join-Path $env:ProgramFiles 'Alacritty\alacritty.exe')) }
-
-    foreach ($candidate in ($candidates | Select-Object -Unique)) {
-        if (-not (Test-Path $candidate -PathType Leaf)) { continue }
-        try {
-            $absolutePath = [System.IO.Path]::GetFullPath($candidate)
-            $versionText = (& $absolutePath --version 2>$null | Select-Object -First 1)
-            if ($versionText -and $versionText -match '(\d+\.\d+\.\d+)') {
-                $detected += [PSCustomObject]@{ Path = $absolutePath; Version = [version]$Matches[1] }
-            }
-        } catch {
-            Write-GuiLog "Could not inspect Alacritty at '$candidate': $($_.Exception.Message)" -Type Warn
-        }
-    }
-    return $detected | Sort-Object Version -Descending | Select-Object -First 1
-}
-
-function Get-PwshExecutablePath {
-    $candidates = @()
-    $command = Get-Command pwsh -ErrorAction SilentlyContinue
-    if ($command -and $command.Source) { $candidates += $command.Source }
-    if ($PSHOME) { $candidates += Join-Path $PSHOME 'pwsh.exe' }
-    if ($env:ProgramFiles) { $candidates += Join-Path $env:ProgramFiles 'PowerShell\7\pwsh.exe' }
-    foreach ($candidate in ($candidates | Select-Object -Unique)) {
-        if (Test-Path $candidate -PathType Leaf) { return [System.IO.Path]::GetFullPath($candidate) }
-    }
-    Write-GuiLog 'PowerShell 7 executable not found. Alacritty configuration requires an absolute pwsh path.' -Type Warn
-    return $null
-}
-
-function Get-AlacrittyThemeContent {
-    param([string]$ThemeName)
-    $theme = Get-TerminalThemeData -Name $ThemeName
-    if (-not $theme) { return $null }
-    $colors = $theme.Ala
-    return @"
-[colors.primary]
-background = "$($colors.primary.background)"
-foreground = "$($colors.primary.foreground)"
-
-[colors.normal]
-black = "$($colors.normal.black)"
-red = "$($colors.normal.red)"
-green = "$($colors.normal.green)"
-yellow = "$($colors.normal.yellow)"
-blue = "$($colors.normal.blue)"
-magenta = "$($colors.normal.magenta)"
-cyan = "$($colors.normal.cyan)"
-white = "$($colors.normal.white)"
-
-[colors.bright]
-black = "$($colors.bright.black)"
-red = "$($colors.bright.red)"
-green = "$($colors.bright.green)"
-yellow = "$($colors.bright.yellow)"
-blue = "$($colors.bright.blue)"
-magenta = "$($colors.bright.magenta)"
-cyan = "$($colors.bright.cyan)"
-white = "$($colors.bright.white)"
-"@
-}
-
-function Test-AlacrittyCandidateConfig {
-    param([string]$AlacrittyPath, [string]$ConfigDir, [string]$BaseContent, [string]$ThemeContent, [string]$UserContent)
-    if (-not $AlacrittyPath -or -not (Test-Path $AlacrittyPath -PathType Leaf)) {
-        Write-GuiLog 'Alacritty executable is required to validate managed configuration.' -Type Warn
-        return $false
-    }
-    $id = [guid]::NewGuid().ToString('N')
-    $candidatePaths = @(
-        (Join-Path $ConfigDir ".config-powershell7-$id-base.toml"),
-        (Join-Path $ConfigDir ".config-powershell7-$id-theme.toml"),
-        (Join-Path $ConfigDir ".config-powershell7-$id-user.toml"),
-        (Join-Path $ConfigDir ".config-powershell7-$id.toml"),
-        (Join-Path $ConfigDir ".config-powershell7-$id.stdout"),
-        (Join-Path $ConfigDir ".config-powershell7-$id.stderr")
-    )
-    try {
-        $utf8 = New-Object System.Text.UTF8Encoding($false)
-        [System.IO.File]::WriteAllText($candidatePaths[0], $BaseContent, $utf8)
-        [System.IO.File]::WriteAllText($candidatePaths[1], $ThemeContent, $utf8)
-        [System.IO.File]::WriteAllText($candidatePaths[2], $UserContent, $utf8)
-        $imports = $candidatePaths[0..2] | ForEach-Object { ConvertTo-AlacrittyTomlString $_ }
-        $candidateWrapper = "[general]`nimport = [`n    " + ($imports -join ",`n    ") + "`n]`n"
-        [System.IO.File]::WriteAllText($candidatePaths[3], $candidateWrapper, $utf8)
-        $arguments = @('migrate', '--dry-run', '--config-file', ('"' + $candidatePaths[3] + '"'))
-        $process = Start-Process -FilePath $AlacrittyPath -ArgumentList $arguments -NoNewWindow -Wait -PassThru `
-            -RedirectStandardOutput $candidatePaths[4] -RedirectStandardError $candidatePaths[5] -ErrorAction Stop
-        return $process.ExitCode -eq 0
-    } catch {
-        Write-GuiLog "Alacritty configuration validation failed: $($_.Exception.Message)" -Type Warn
-        return $false
-    } finally {
-        foreach ($path in $candidatePaths) { if (Test-Path $path) { Remove-Item $path -Force -ErrorAction SilentlyContinue } }
-    }
-}
-
-function ConvertFrom-AlacrittyYaml {
-    param([string]$AlacrittyPath, [string]$LegacyPath)
-    $id = [guid]::NewGuid().ToString('N')
-    $outputPath = Join-Path (Split-Path $LegacyPath -Parent) ".config-powershell7-migrate-$id.stdout"
-    $errorPath = Join-Path (Split-Path $LegacyPath -Parent) ".config-powershell7-migrate-$id.stderr"
-    try {
-        $arguments = @('migrate', '--dry-run', '--config-file', ('"' + $LegacyPath + '"'))
-        $process = Start-Process -FilePath $AlacrittyPath -ArgumentList $arguments -NoNewWindow -Wait -PassThru `
-            -RedirectStandardOutput $outputPath -RedirectStandardError $errorPath -ErrorAction Stop
-        if ($process.ExitCode -ne 0 -or -not (Test-Path $outputPath -PathType Leaf)) { return $null }
-        $output = [System.IO.File]::ReadAllText($outputPath)
-        if ([string]::IsNullOrWhiteSpace($output)) { return $null }
-        $tomlLines = New-Object System.Collections.Generic.List[string]
-        $insideToml = $false
-        foreach ($line in ($output -split '\r?\n')) {
-            if ($line -match '^v-----Start TOML ') { $insideToml = $true; continue }
-            if ($line -match '^\^-----End TOML ') { break }
-            if ($insideToml) { $tomlLines.Add($line) }
-        }
-        if ($tomlLines.Count -eq 0) { return $null }
-        return (($tomlLines -join "`n").Trim() + "`n")
-    } catch {
-        Write-GuiLog "Could not migrate legacy Alacritty YAML: $($_.Exception.Message)" -Type Warn
-        return $null
-    } finally {
-        foreach ($path in @($outputPath, $errorPath)) { if (Test-Path $path) { Remove-Item $path -Force -ErrorAction SilentlyContinue } }
-    }
-}
-
-function Install-AlacrittyConfig {
-    param(
-        [string]$ThemeName = 'Catppuccin Mocha',
-        [string]$AlacrittyPath,
-        [string]$PwshPath
-    )
-    try {
-        if (-not $env:APPDATA) { throw 'APPDATA is not set.' }
-        if (-not $PwshPath) { $PwshPath = Get-PwshExecutablePath }
-        if (-not $PwshPath) { return $false }
-        $themeContent = Get-AlacrittyThemeContent -ThemeName $ThemeName
-        if ($null -eq $themeContent) { throw "Terminal theme '$ThemeName' not found." }
-
-        $configDir = Join-Path $env:APPDATA 'alacritty'
-        $ownedDir = Join-Path $configDir 'config-powershell7'
-        [System.IO.Directory]::CreateDirectory($ownedDir) | Out-Null
-        $configPath = Join-Path $configDir 'alacritty.toml'
-        $userPath = Join-Path $configDir 'alacritty.user.toml'
-        $basePath = Join-Path $ownedDir 'base.toml'
-        $themePath = Join-Path $ownedDir 'theme.toml'
-        $statePath = Join-Path $ownedDir 'state.txt'
-        $marker = '# Managed by config-powershell7. Edit alacritty.user.toml for overrides.'
-        $imports = @($basePath, $themePath, $userPath) | ForEach-Object { ConvertTo-AlacrittyTomlString $_ }
-        $wrapperContent = $marker + "`n[general]`nimport = [`n    " + ($imports -join ",`n    ") + "`n]`n"
-        $baseContent = @"
-[window]
-decorations = "Full"
-opacity = 0.95
-dynamic_padding = true
-
-[window.padding]
-x = 4
-y = 2
-
-[window.dimensions]
-columns = 120
-lines = 35
-
-[font]
-size = 12
-
-[font.normal]
-family = "FiraCode Nerd Font"
-style = "Regular"
-
-[font.bold]
-family = "FiraCode Nerd Font"
-style = "Bold"
-
-[font.italic]
-family = "FiraCode Nerd Font"
-style = "Italic"
-
-[font.bold_italic]
-family = "FiraCode Nerd Font"
-style = "Bold Italic"
-
-[terminal.shell]
-program = $(ConvertTo-AlacrittyTomlString $PwshPath)
-args = ["-NoLogo"]
-"@
-
-        $existingContent = if (Test-Path $configPath -PathType Leaf) { [System.IO.File]::ReadAllText($configPath) } else { $null }
-        $managed = $null -ne $existingContent -and $existingContent.StartsWith($marker, [System.StringComparison]::Ordinal)
-        if ($null -ne $existingContent -and -not $managed) {
-            $userContent = $existingContent
-        } elseif (Test-Path $userPath -PathType Leaf) {
-            $userContent = [System.IO.File]::ReadAllText($userPath)
-        } else {
-            $legacyPath = @((Join-Path $configDir 'alacritty.yml'), (Join-Path $configDir 'alacritty.yaml')) |
-                Where-Object { Test-Path $_ -PathType Leaf } | Select-Object -First 1
-            if ($legacyPath) {
-                if (-not $AlacrittyPath) { throw "Legacy YAML found at '$legacyPath', but Alacritty is unavailable to migrate it safely." }
-                $userContent = ConvertFrom-AlacrittyYaml -AlacrittyPath $AlacrittyPath -LegacyPath $legacyPath
-                if ($null -eq $userContent) { throw "Legacy YAML migration failed; '$legacyPath' was left unchanged." }
-            } else {
-                $userContent = ''
-            }
-        }
-
-        if (-not (Test-AlacrittyCandidateConfig -AlacrittyPath $AlacrittyPath -ConfigDir $configDir -BaseContent $baseContent -ThemeContent $themeContent -UserContent $userContent)) {
-            throw 'Candidate configuration was rejected by Alacritty.'
-        }
-
-        if ($null -ne $existingContent -and -not $managed) {
-            $backupPath = "$configPath.config-powershell7.bak"
-            $suffix = 0
-            while (Test-Path $backupPath) { $suffix++; $backupPath = "$configPath.config-powershell7.bak.$suffix" }
-            [System.IO.File]::Copy($configPath, $backupPath, $false)
-            Set-AlacrittyContentIfChanged -Path $statePath -Content "adopted=$backupPath`n" | Out-Null
-            Write-GuiLog "Existing Alacritty TOML preserved at: $backupPath" -Type Info
-        } elseif (-not (Test-Path $statePath -PathType Leaf)) {
-            Set-AlacrittyContentIfChanged -Path $statePath -Content "created=true`n" | Out-Null
-        }
-
-        Set-AlacrittyContentIfChanged -Path $userPath -Content $userContent | Out-Null
-        Set-AlacrittyContentIfChanged -Path $basePath -Content $baseContent | Out-Null
-        Set-AlacrittyContentIfChanged -Path $themePath -Content $themeContent | Out-Null
-        Set-AlacrittyContentIfChanged -Path $configPath -Content $wrapperContent | Out-Null
-        Write-GuiLog "Alacritty configured at: $configPath" -Type Ok
-        return $true
-    } catch {
-        Write-GuiLog "Failed to configure Alacritty: $($_.Exception.Message)" -Type Warn
-        return $false
-    }
-}
-
-function Uninstall-AlacrittyConfig {
-    try {
-        if (-not $env:APPDATA) { return $true }
-        $configDir = Join-Path $env:APPDATA 'alacritty'
-        $ownedDir = Join-Path $configDir 'config-powershell7'
-        $configPath = Join-Path $configDir 'alacritty.toml'
-        $userPath = Join-Path $configDir 'alacritty.user.toml'
-        $marker = '# Managed by config-powershell7. Edit alacritty.user.toml for overrides.'
-        if (-not (Test-Path $ownedDir -PathType Container)) { return $true }
-        $isManaged = (Test-Path $configPath -PathType Leaf) -and
-            [System.IO.File]::ReadAllText($configPath).StartsWith($marker, [System.StringComparison]::Ordinal)
-        if ($isManaged) {
-            if (Test-Path $userPath -PathType Leaf) {
-                $userContent = [System.IO.File]::ReadAllText($userPath)
-                if ([string]::IsNullOrEmpty($userContent)) { Remove-Item $configPath -Force }
-                else { [System.IO.File]::WriteAllText($configPath, $userContent, (New-Object System.Text.UTF8Encoding($false))) }
-                Remove-Item $userPath -Force
-            } else {
-                Remove-Item $configPath -Force
-            }
-            Write-GuiLog 'Alacritty user configuration restored.' -Type Ok
-        } else {
-            Write-GuiLog 'Alacritty config is not project-managed; leaving it unchanged.' -Type Warn
-            return $false
-        }
-        Remove-Item $ownedDir -Recurse -Force
-        return $true
-    } catch {
-        Write-GuiLog "Failed to restore Alacritty configuration: $($_.Exception.Message)" -Type Warn
-        return $false
-    }
-}
-
-function Install-Alacritty {
-    param([string]$ThemeName = 'Catppuccin Mocha')
-    if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT -or
-        [Environment]::OSVersion.Version.Major -lt 10 -or -not [Environment]::Is64BitOperatingSystem) {
-        Write-GuiLog 'Alacritty managed setup requires Windows 10/11 x64.' -Type Warn
-        return $false
-    }
-
-    $alacritty = Get-AlacrittyExecutable
-    if (-not $alacritty -or $alacritty.Version -lt [version]'0.14.0') {
-        if ($alacritty) { Write-GuiLog "Alacritty $($alacritty.Version) is below required version 0.14.0; upgrading..." -Type Step }
-        if (-not (Install-WingetPackage -Id 'Alacritty.Alacritty' -DisplayName 'Alacritty')) { return $false }
-        $alacritty = Get-AlacrittyExecutable
-    }
-    if (-not $alacritty) { Write-GuiLog 'Alacritty executable not found after install attempt.' -Type Warn; return $false }
-    if ($alacritty.Version -lt [version]'0.14.0') { Write-GuiLog "Alacritty $($alacritty.Version) does not meet required version 0.14.0." -Type Warn; return $false }
-
-    $pwshPath = Get-PwshExecutablePath
-    if (-not $pwshPath) { return $false }
-    Write-GuiLog "Alacritty $($alacritty.Version) found at $($alacritty.Path)." -Type Ok
-    return Install-AlacrittyConfig -ThemeName $ThemeName -AlacrittyPath $alacritty.Path -PwshPath $pwshPath
 }
 
 function Install-Scoop {

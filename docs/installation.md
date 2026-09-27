@@ -44,25 +44,27 @@ The main file `Microsoft.PowerShell_profile.ps1` acts as a **Loader**:
 irm https://github.com/AndersonTavares0/config-powershell7/raw/main/setup.ps1 | iex
 ```
 
-The script detects whether you are in an interactive terminal and launches
-either the WPF GUI (Windows) or the CLI menu. It performs the following:
+The script opens the CLI menu by default. Use `-Gui` from a local clone to open
+the optional WPF installer. Bootstrap accepts Windows 10/11 x64 and reports
+PowerShell, privilege, WinGet, Scoop, and Node.js state before setup. It performs
+the following:
 
-1.  **Runs orchestration as the current user**; individual package installers
-    can request UAC when required
+1.  **Runs orchestration as the current user**; asks before launching an
+    installer that needs elevation
 2.  **Installs dependencies via WinGet** — PowerShell 7, Git, Oh My Posh,
-    Zoxide
+    and Zoxide. If WinGet is missing, CLI setup offers per-user Scoop instead.
 3.  **Downloads the latest stable release** to
     `[Environment]::GetFolderPath('LocalApplicationData')\config-powershell7`
 4.  **Installs FiraCode Nerd Font** via Shell API
-5.  **Configures Alacritty** with PowerShell 7, FiraCode Nerd Font, and
-    managed TOML fragments while preserving user settings
-6.  **Prompts for OMP theme selection** — live list fetched from GitHub API
-    with search and preview
-7.  **Prompts for terminal color theme** — choose from Catppuccin Mocha/Latte,
-    Dracula, Nord, Tokyo Night, One Half Dark for Windows Terminal and/or
-    Alacritty
-8.  **Downloads the selected OMP theme** with validation
-9.  **Optionally installs Topgrade** and Scoop
+5.  **Offers optional tools** — Fastfetch and Topgrade install independently
+6.  **Prompts for OMP theme selection** — bundled and user themes work offline;
+    GUI shows local themes first and stops online lookups after 8 seconds
+7.  **Prompts for Windows Terminal color theme** — choose from Catppuccin
+    Mocha/Latte, Dracula, Nord, Tokyo Night, and One Half Dark
+8.  **Installs the selected OMP theme** from bundled, user, or upstream files
+    and validates its JSON structure
+9.  **Offers optional AI coding CLIs** — Antigravity, OpenCode, Codex, and
+    Claude Code; Scoop remains optional
 10. **Maintains a marked block** in `$PROFILE.CurrentUserAllHosts`
 
 > Managed source files stay outside Documents and OneDrive. PowerShell's small
@@ -80,11 +82,13 @@ downloaded files.
 | Asset | Source | Current validation |
 |---|---|---|
 | Bootstrapper and repository ZIP | This GitHub repository, latest stable release | HTTPS transport; staged repository layout checks before activation |
-| Oh My Posh theme list and selected theme | Official Oh My Posh GitHub repository | HTTPS transport; selected theme file size sanity check |
+| Oh My Posh theme list and selected theme | Official Oh My Posh GitHub repository | HTTPS transport; theme JSON structure validation |
+| Antigravity, Codex, and Claude Code installers | Official vendor URLs | HTTPS download; scripts execute locally; no checksum verification |
+| OpenCode CLI | npm registry | npm package manager trust |
 | FiraCode Nerd Font ZIP | Official `ryanoasis/nerd-fonts` GitHub release URL | HTTPS transport; ZIP extraction must succeed |
 | PowerShell modules | PowerShell Gallery | Repository/package manager trust |
 | WinGet packages | WinGet package sources | Package manager trust |
-| Optional Scoop installer script | Official project installer URL | HTTPS transport; no checksum validation |
+| Scoop fallback installer | Official project installer URL; starts only after confirmation | HTTPS download; no checksum validation |
 
 Some dependency sources still use moving references, including Oh My Posh theme
 files from its upstream default branch. The repository and FiraCode downloads
@@ -104,6 +108,12 @@ published checksums or signature verification.
 | **Git** | `winget install Git.Git` | Yes |
 | **Oh My Posh** | `winget install JanDeDobbeleer.OhMyPosh` | Optional |
 | **Zoxide** | `winget install ajeetdsouza.zoxide` | Optional |
+| **Fastfetch** | `winget install Fastfetch-cli.Fastfetch` | Optional |
+| **Topgrade** | `winget install topgrade-rs.topgrade` | Optional |
+| **Antigravity CLI** | `irm https://antigravity.google/cli/install.ps1 | iex` | Optional |
+| **OpenCode** | `npm install --global opencode-ai` | Optional; requires Node.js |
+| **Codex CLI** | `irm https://chatgpt.com/codex/install.ps1 | iex` | Optional |
+| **Claude Code** | `irm https://claude.ai/install.ps1 | iex` | Optional |
 | **PSReadLine** | Included in PS 7<br>Update: `Install-Module PSReadLine -Force` | Yes |
 | **Terminal-Icons** | `Install-Module Terminal-Icons -Repository PSGallery` | Optional |
 
@@ -126,7 +136,7 @@ cd config-powershell7
 
 > **Remote (recommended):** `irm https://.../setup.ps1 | iex`
 >
-> **Windows GUI:** Double-click `install.cmd` or run `.\setup.ps1`
+> **Windows GUI:** Run the local setup script with `-Gui`.
 >
 > **Headless:** `.\setup.ps1 -NonInteractive`
 >
@@ -139,11 +149,11 @@ uses no symlinks.
 The installer performs these steps:
 1.  **ExecutionPolicy** — reports the effective policy and Group Policy
     conflicts without changing policy silently
-2.  **Dependency installation** — winget packages (PS7, Git, Oh My Posh,
+2.  **Dependency installation** — WinGet packages (PS7, Git, Oh My Posh,
     Zoxide), Nerd Font, PS modules (Terminal-Icons, PSReadLine), and optional
-    Alacritty, Topgrade, Scoop
-3.  **Theme selection** — OMP theme fetched from GitHub API, terminal color
-    theme chosen from curated list
+    Fastfetch, Topgrade, Scoop, and coding CLIs
+3.  **Theme selection** — bundled and user OMP themes work offline; upstream
+    catalog loads from GitHub when network is available
 4.  **Backup** — if an existing non-ours profile exists, backs it up with a
     unique timestamp
 5.  **Profile link** — updates only the managed block in the all-hosts profile
@@ -208,9 +218,10 @@ The uninstaller:
 
 ### Oh My Posh Theme
 
-During installation, you can select from the full list of OMP themes fetched
-live from the GitHub API. The installer downloads the selected theme, validates
-it, and sets `$env:CONFIG_PWSH7_THEME` in your profile stub.
+During installation, you can select a bundled theme, a theme in your user
+theme directory, or an upstream OMP theme when GitHub is reachable. The
+installer validates the selected file and sets `$env:CONFIG_PWSH7_THEME` in
+your profile stub.
 
 To change themes after installation:
 
@@ -218,15 +229,15 @@ To change themes after installation:
 $env:CONFIG_PWSH7_THEME = 'montys'
 ```
 
-The profile reads this variable at boot. Empty or unset falls back to
-`atomic` (included with the repo). Themes are stored in
+The profile reads this variable at boot. Empty or unset uses `atomic`, which is
+bundled with the repo. Custom themes stay in
 `$HOME\.poshthemes\{name}.omp.json` (Windows) or
 `$XDG_DATA_HOME/poshthemes/{name}.omp.json` (Linux/macOS).
 
 ### Terminal Color Theme
 
-During installation you can apply a terminal color scheme to Windows Terminal,
-Alacritty, or both. Available themes:
+During installation you can apply a terminal color scheme to Windows Terminal.
+Available themes:
 - Catppuccin Mocha (dark)
 - Catppuccin Latte (light)
 - Dracula (dark)

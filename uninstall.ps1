@@ -9,14 +9,14 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $repoPath = $PSScriptRoot
+. (Join-Path $repoPath 'lib/executable.ps1')
 
 # The installer writes the PowerShell 7 CurrentUserAllHosts profile. Under Windows
 # PowerShell 5.1 that same variable points at WindowsPowerShell, so uninstalling from
 # 5.1 would inspect the wrong file and report nothing to remove.
 if ($PSVersionTable.PSVersion.Major -lt 7) {
-    $pwshCommand = Get-Command pwsh -ErrorAction SilentlyContinue
-    $pwshPath = if ($pwshCommand) { $pwshCommand.Source } else { Join-Path $env:ProgramFiles 'PowerShell\7\pwsh.exe' }
-    if (-not (Test-Path $pwshPath -PathType Leaf)) {
+    $pwshPath = Get-PwshExecutablePath
+    if (-not $pwshPath) {
         throw 'PowerShell 7 is required to uninstall the managed profile. Install PowerShell 7, then retry.'
     }
     $relaunchArgs = @('-NoProfile', '-File', (Join-Path $repoPath 'uninstall.ps1'))
@@ -38,11 +38,10 @@ $script:SyncHash = $null
 . (Join-Path $modulesDir 'profile.ps1')
 
 $profileResult = Uninstall-Profile -RepoPath $repoPath
-$alacrittyResult = Uninstall-AlacrittyConfig
-if (-not ($profileResult -and $alacrittyResult)) {
+if (-not $profileResult) {
     throw 'Uninstallation did not complete successfully. Review messages above.'
 }
 
 if (-not $NonInteractive) {
-    Write-Host 'Managed profile and Alacritty configuration removed.' -ForegroundColor Green
+    Write-Host 'Managed profile removed.' -ForegroundColor Green
 }

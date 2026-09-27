@@ -12,19 +12,20 @@ function Start-ProfileInstall {
         [bool]$InstallZoxide = $true,
         [bool]$InstallFont = $true,
         [bool]$InstallModules = $true,
-        [bool]$InstallAlacritty = $false,
         [bool]$InstallTopgrade = $false,
+        [bool]$InstallFastfetch = $false,
         [bool]$InstallScoop = $false,
+        [bool]$InstallAntigravity = $false,
+        [bool]$InstallOpenCode = $false,
+        [bool]$InstallCodex = $false,
+        [bool]$InstallClaudeCode = $false,
         [string]$ScoopBuckets = '',
         [string]$ThemeName = '',
         [string]$TerminalThemeName = '',
-        [bool]$TerminalThemeWT = $false,
-        [bool]$TerminalThemeAla = $false
+        [bool]$TerminalThemeWT = $false
     )
 
     try {
-        if ($TerminalThemeAla) { $InstallAlacritty = $true }
-        if ($InstallAlacritty) { $InstallFont = $true }
         $script:_installResults = @()
 
         function Add-Result {
@@ -56,16 +57,24 @@ function Start-ProfileInstall {
         if ($InstallModules) { $totalSteps++ }
         if ($InstallOMP) { $totalSteps++ }
         $totalSteps++
-        if ($InstallAlacritty)   { $totalSteps++ }
         if ($TerminalThemeName) {
             if ($TerminalThemeWT) { $totalSteps++ }
         }
         if ($InstallTopgrade)   { $totalSteps++ }
+        if ($InstallFastfetch)  { $totalSteps++ }
         if ($InstallScoop)      { $totalSteps++ }
+        if ($InstallAntigravity) { $totalSteps++ }
+        if ($InstallOpenCode) { $totalSteps++ }
+        if ($InstallCodex) { $totalSteps++ }
+        if ($InstallClaudeCode) { $totalSteps++ }
 
         Write-GuiLog '' -Type Info
         Write-GuiLog 'STARTING INSTALLATION' -Type Step
         Write-GuiLog '' -Type Info
+
+        $environment = Get-InstallerEnvironment
+        Write-GuiLog "Environment: Windows $($environment.OSVersion), $($environment.Architecture), PowerShell $($environment.PowerShellVersion), administrator=$($environment.IsAdministrator)." -Type Info
+        Write-GuiLog "Package tools: WinGet=$($environment.HasWinGet), Scoop=$($environment.HasScoop), Node.js=$($environment.HasNode), npm=$($environment.HasNpm)." -Type Info
 
         $resolvedProfile = Get-ProfilePath
         $resolvedDocs = [Environment]::GetFolderPath('MyDocuments')
@@ -174,7 +183,7 @@ function Start-ProfileInstall {
             $effectiveTheme = if ($ThemeName) { $ThemeName } else { 'atomic' }
             $step++
             Write-GuiLog "[$step/$totalSteps] Downloading OMP theme '$effectiveTheme'..." -Type Step
-            $rTheme = Install-OmpTheme -ThemeName $effectiveTheme
+            $rTheme = Install-OmpTheme -ThemeName $effectiveTheme -RepoPath $RepoPath
             Add-Result -Name "OMP Theme ($effectiveTheme)" -Success $rTheme -Detail $(if ($rTheme) { 'downloaded' } else { 'failed' })
         } else {
             Add-Result -Name 'OMP Theme' -Success $false -Detail 'not selected' -Status 'skip'
@@ -185,16 +194,15 @@ function Start-ProfileInstall {
         $rProfile = Install-Profile -RepoPath $RepoPath -ThemeName $ThemeName
         Add-Result -Name 'Profile' -Success $rProfile -Detail $(if ($rProfile) { 'linked' } else { 'failed' })
 
-        if ($InstallAlacritty) {
+        if ($InstallFastfetch) {
             $step++
-            Write-GuiLog "[$step/$totalSteps] Installing Alacritty..." -Type Step
-            $alacrittyTheme = if ($TerminalThemeAla -and $TerminalThemeName) { $TerminalThemeName } else { 'Catppuccin Mocha' }
-            $rAlac = Install-Alacritty -ThemeName $alacrittyTheme
-            $exe = Get-Executable -Name 'alacritty'
-            $detail = if ($exe -and $exe.Version) { $exe.Version } elseif ($rAlac) { 'installed' } else { 'failed' }
-            Add-Result -Name 'Alacritty' -Success $rAlac -Detail $detail
+            Write-GuiLog "[$step/$totalSteps] Installing Fastfetch..." -Type Step
+            $rFastfetch = Install-Fastfetch
+            $exe = Get-Executable -Name 'fastfetch'
+            $detail = if ($exe -and $exe.Version) { $exe.Version } elseif ($rFastfetch) { 'installed' } else { 'failed' }
+            Add-Result -Name 'Fastfetch' -Success $rFastfetch -Detail $detail
         } else {
-            Add-Result -Name 'Alacritty' -Success $false -Detail 'not selected' -Status 'skip'
+            Add-Result -Name 'Fastfetch' -Success $false -Detail 'not selected' -Status 'skip'
         }
 
         if ($TerminalThemeName) {
@@ -211,11 +219,6 @@ function Start-ProfileInstall {
                 }
             } else {
                 Add-Result -Name "WT Color Scheme" -Success $false -Detail 'not selected' -Status 'skip'
-            }
-            if ($TerminalThemeAla) {
-                Add-Result -Name "Alacritty Color Scheme ($TerminalThemeName)" -Success $rAlac -Detail $(if ($rAlac) { 'configured with Alacritty' } else { 'failed' })
-            } else {
-                Add-Result -Name "Alacritty Color Scheme" -Success $false -Detail 'not selected' -Status 'skip'
             }
         } else {
             Add-Result -Name 'Terminal Color Theme' -Success $false -Detail 'not selected' -Status 'skip'
@@ -242,6 +245,26 @@ function Start-ProfileInstall {
             Add-Result -Name 'Scoop' -Success $rScoop -Detail $detail
         } else {
             Add-Result -Name 'Scoop' -Success $false -Detail 'not selected' -Status 'skip'
+        }
+
+        $agentCliOptions = @(
+            @{ Name = 'Antigravity'; Selected = $InstallAntigravity }
+            @{ Name = 'OpenCode'; Selected = $InstallOpenCode }
+            @{ Name = 'Codex'; Selected = $InstallCodex }
+            @{ Name = 'ClaudeCode'; Selected = $InstallClaudeCode }
+        )
+        foreach ($agentCli in $agentCliOptions) {
+            if (-not $agentCli.Selected) {
+                Add-Result -Name $agentCli.Name -Success $false -Detail 'not selected' -Status 'skip'
+                continue
+            }
+            $step++
+            $spec = Get-AgentCliInstallSpec -Name $agentCli.Name
+            Write-GuiLog "[$step/$totalSteps] Installing $($spec.DisplayName)..." -Type Step
+            $installed = Install-AgentCli -Name $agentCli.Name
+            $command = Get-Command $spec.Command -ErrorAction SilentlyContinue
+            $detail = if ($command) { $command.Source } elseif ($installed) { 'installed' } else { 'failed' }
+            Add-Result -Name $spec.DisplayName -Success $installed -Detail $detail
         }
 
         Write-InstallSummary -Results $script:_installResults
@@ -292,12 +315,6 @@ function Start-ProfileUninstall {
         Write-GuiLog '' -Type Info
 
         $profileResult = Uninstall-Profile -RepoPath $RepoPath
-        $alacrittyResult = if (Get-Command Uninstall-AlacrittyConfig -ErrorAction SilentlyContinue) {
-            Uninstall-AlacrittyConfig
-        } else {
-            $true
-        }
-
         Write-GuiLog '' -Type Info
         Write-GuiLog 'UNINSTALL COMPLETE' -Type Step
         Write-GuiLog '' -Type Info
@@ -307,10 +324,14 @@ function Start-ProfileUninstall {
         Write-GuiLog '  winget uninstall JanDeDobbeleer.OhMyPosh' -Type Info
         Write-GuiLog '  winget uninstall ajeetdsouza.zoxide' -Type Info
         Write-GuiLog '  winget uninstall Git.Git' -Type Info
+        Write-GuiLog '  winget uninstall Fastfetch-cli.Fastfetch' -Type Info
+        Write-GuiLog '  winget uninstall topgrade-rs.topgrade' -Type Info
+        Write-GuiLog '  npm uninstall --global opencode-ai' -Type Info
+        Write-GuiLog '  Remove agent CLIs with their official uninstall instructions.' -Type Info
 
         $sync = Get-Variable -Name SyncHash -Scope Script -ValueOnly -ErrorAction SilentlyContinue
-        if ($sync) { $sync.InstallComplete = $true; $sync.InstallFailed = -not ($profileResult -and $alacrittyResult) }
-        return $profileResult -and $alacrittyResult
+        if ($sync) { $sync.InstallComplete = $true; $sync.InstallFailed = -not $profileResult }
+        return $profileResult
 
     } catch {
         Write-GuiLog "ERROR: $($_.Exception.Message)" -Type Fail

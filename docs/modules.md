@@ -217,12 +217,13 @@ config-powershell7/
 ├── Microsoft.PowerShell_profile.ps1    # Main Loader
 ├── install.ps1                 # Legacy automated installer
 ├── uninstall.ps1               # Safe uninstaller
-├── install.cmd                 # Double-click GUI launcher
+├── install.cmd                 # Double-click CLI-first setup launcher
 ├── uninstall.cmd               # Double-click uninstaller
 ├── setup.ps1                   # Entry point for new installer
 ├── setup/modules/
 │   ├── core.ps1                # Platform detection, logging
 │   ├── deps.ps1                # Dependency installers + theme data
+│   ├── agent-clis.ps1          # Optional coding-agent CLI installers
 │   ├── profile.ps1             # Profile link management
 │   ├── orchestrator.ps1        # Install/uninstall orchestration
 │   ├── gui.ps1                 # WPF XAML UI with runspaces

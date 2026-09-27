@@ -78,7 +78,7 @@ jobs:
 
   installer:
     # Full end-to-end install on a disposable runner. Manual only:
-    # installs real packages (PS7 deps, fonts, Alacritty) and takes minutes.
+    # installs real packages (PS7 dependencies and fonts) and takes minutes.
     # OneDrive redirection and clicked-through GUI stay on the VM checklist
     # (docs/validacao-vm.md) — runners cannot cover them faithfully.
     if: github.event_name == 'workflow_dispatch'
@@ -113,7 +113,7 @@ jobs:
       - name: Install via PowerShell 7 (NonInteractive)
         run: |
           $ErrorActionPreference = 'Stop'
-          & ./setup.ps1 -NonInteractive -InstallAlacritty
+          & ./setup.ps1 -NonInteractive -InstallFastfetch -InstallTopgrade
 
       - name: Verify managed block and capture state hashes
         run: |
@@ -122,12 +122,7 @@ jobs:
           $content = Get-Content $target -Raw -ErrorAction Stop
           if ($content -notmatch '# >>> config-powershell7 >>>') { throw 'Managed block missing from profile.' }
           if ($content -notmatch 'CI-OWNED-USER-CONTENT-DO-NOT-REMOVE') { throw 'User-owned profile content was destroyed.' }
-          $files = @($target)
-          $alacrittyRoot = Join-Path $env:APPDATA 'alacritty'
-          if (Test-Path $alacrittyRoot) {
-            $files += @(Get-ChildItem $alacrittyRoot -Recurse -File | Select-Object -ExpandProperty FullName)
-          }
-          $hashes = foreach ($f in $files) { Get-FileHash $f -Algorithm SHA256 }
+          $hashes = Get-FileHash $target -Algorithm SHA256
           $stateDir = if ($env:RUNNER_TEMP) { $env:RUNNER_TEMP } else { $env:TEMP }
           $statePath = Join-Path $stateDir 'validate-state.json'
           [PSCustomObject]@{
@@ -140,18 +135,13 @@ jobs:
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          & ./setup.ps1 -NonInteractive -InstallAlacritty
+          & ./setup.ps1 -NonInteractive -InstallFastfetch -InstallTopgrade
           # NOTE: under 5.1, $PROFILE points at WindowsPowerShell. The managed
           # profile lives at the PS7 path captured in the previous step.
           $stateDir = if ($env:RUNNER_TEMP) { $env:RUNNER_TEMP } else { $env:TEMP }
           $state = Get-Content (Join-Path $stateDir 'validate-state.json') -Raw | ConvertFrom-Json
           $target = $state.Target
-          $files = @($target)
-          $alacrittyRoot = Join-Path $env:APPDATA 'alacritty'
-          if (Test-Path $alacrittyRoot) {
-            $files += @(Get-ChildItem $alacrittyRoot -Recurse -File | Select-Object -ExpandProperty FullName)
-          }
-          $after = foreach ($f in $files) { Get-FileHash $f -Algorithm SHA256 }
+          $after = Get-FileHash $target -Algorithm SHA256
           $diff = Compare-Object $state.Files $after -Property Path, Hash
           if ($diff) { $diff | Format-Table -AutoSize; throw 'Repeat run rewrote managed files (not idempotent).' }
           Write-Host 'Idempotent: identical repeat run changed nothing.'
@@ -159,7 +149,7 @@ jobs:
       - name: Theme change converges
         run: |
           $ErrorActionPreference = 'Stop'
-          & ./setup.ps1 -NonInteractive -InstallAlacritty -ThemeName 'jandedobbeleer'
+          & ./setup.ps1 -NonInteractive -ThemeName 'jandedobbeleer'
           $content = Get-Content $PROFILE.CurrentUserAllHosts -Raw -ErrorAction Stop
           if ($content -notmatch 'jandedobbeleer') { throw 'Theme change did not converge to managed profile.' }
           if ($content -notmatch 'CI-OWNED-USER-CONTENT-DO-NOT-REMOVE') { throw 'Theme change destroyed user content.' }
@@ -183,7 +173,7 @@ jobs:
           $ok = Start-ProfileInstall -RepoPath 'C:\definitely-not-here-validate' `
             -InstallPS7 $false -InstallGit $false -InstallOMP $false `
             -InstallZoxide $false -InstallFont $false -InstallModules $false `
-            -InstallAlacritty $false -InstallScoop $false -InstallTopgrade $false
+            -InstallScoop $false -InstallTopgrade $false -InstallFastfetch $false
           if ($ok) { throw 'Failed install reported success.' }
           Write-Host 'Failure correctly reported as $false.'
 
@@ -197,12 +187,6 @@ jobs:
             if ($content -match '# >>> config-powershell7 >>>') { throw 'Managed block survived uninstall.' }
             if ($content -notmatch 'CI-OWNED-USER-CONTENT-DO-NOT-REMOVE') { throw 'Uninstall destroyed user content.' }
           }
-          $wrapper = Join-Path $env:APPDATA 'alacritty\alacritty.toml'
-          if (Test-Path $wrapper) {
-            $w = Get-Content $wrapper -Raw -ErrorAction SilentlyContinue
-            if ($w -match 'config-powershell7') { throw 'Managed Alacritty wrapper survived uninstall.' }
-          }
-          if (Test-Path (Join-Path $env:APPDATA 'alacritty\config-powershell7')) { throw 'Owned Alacritty fragments survived uninstall.' }
           Write-Host 'Uninstall restored user state.'
 
       - name: Upload validation logs

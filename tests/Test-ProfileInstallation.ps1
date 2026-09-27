@@ -193,18 +193,6 @@ $effectivePolicy = Get-ExecutionPolicy -ErrorAction SilentlyContinue
 $policyStatus = if ($effectivePolicy -in @('Bypass', 'RemoteSigned', 'Unrestricted')) { 'PASS' } else { 'WARN' }
 script:Add-Check 'Policy' 'Effective' $policyStatus $effectivePolicy
 
-if ($script:IsWin) {
-    $alacritty = Get-Command alacritty -ErrorAction SilentlyContinue
-    if ($alacritty) {
-        $alacrittyConfig = if ($env:APPDATA) { Join-Path $env:APPDATA 'alacritty\alacritty.toml' } else { $null }
-        $configStatus = if ($alacrittyConfig -and (Test-Path $alacrittyConfig)) { 'PASS' } else { 'WARN' }
-        script:Add-Check 'Alacritty' 'Executable' 'PASS' $alacritty.Source
-        script:Add-Check 'Alacritty' 'Config' $configStatus $(if ($alacrittyConfig) { $alacrittyConfig } else { 'APPDATA is not set' })
-    } else {
-        script:Add-Check 'Alacritty' 'Executable' 'WARN' 'Alacritty is not installed or not available in PATH'
-    }
-}
-
 # ══════════════════════════════════════════════════════════════
 # CATEGORY 4: FUNCTION & ALIAS AVAILABILITY
 # ══════════════════════════════════════════════════════════════

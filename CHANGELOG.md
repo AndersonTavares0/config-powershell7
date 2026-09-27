@@ -18,12 +18,11 @@ All notable changes to this project will be documented in this file.
   left in the project that called `Set-ExecutionPolicy`
 - `Install-CompleteConfig` and `Set-AlacrittyColorScheme`: unreachable wrappers
   around the managed Alacritty and Windows Terminal configuration
+- Alacritty from installer, GUI, theme menu, and uninstaller flows
 
 ### Added
-- Managed Alacritty configuration with PowerShell 7 shell, Nerd Font, theme
-  fragments, validation, legacy YAML migration, and reversible user overrides
-- Regression coverage for repeat installs, profile preservation, path escaping,
-  Alacritty adoption, and configuration restoration
+- Optional CLI installers for Google Antigravity, OpenCode, Codex, and Claude Code
+- Bundled `atomic` Oh My Posh theme with offline fallback and custom theme support
 
 ### Changed
 - Installer now targets the PowerShell 7 `CurrentUserAllHosts` profile and
@@ -36,14 +35,18 @@ All notable changes to this project will be documented in this file.
 - Execution policy is inspected and reported instead of changed silently
 - Profile load guards now use process-local PowerShell variables, preventing
   child shells from skipping profile initialization
-- Alacritty is enabled by default and requires version 0.14 or newer
-- `-NonInteractive` and the terminal menu now honour the `-InstallAlacritty`
-  choice instead of forcing Alacritty on
+- CLI menu is the default installer; pass `-Gui` to open the WPF installer
+- Fastfetch and Topgrade can be selected independently
+- WinGet installs in user scope first; installer asks before elevated retry
+- Missing WinGet can use Scoop after user confirmation
+- Optional agent installers now live in `setup/modules/agent-clis.ps1`
+- Installer logs Windows, architecture, PowerShell, privilege, and package-provider state
+- GUI shows bundled and user themes before online lookup; network requests time out after 8 seconds
+- Existing custom theme files stay untouched, including invalid files
 - A restrictive execution policy and a missing Windows Terminal are reported as
   skipped steps instead of failing the whole installation
-- Oh My Posh theme download now also covers the default `atomic` theme, so a
-  plain install no longer points the profile at a theme file that was never
-  fetched
+- The bundled `atomic` theme works without network access; downloaded themes
+  must pass JSON structure validation
 - Nerd Font installation is per-user (no elevation) and counts only fonts that
   were actually written
 - Windows Terminal `settings.json` is backed up once before it is rewritten
@@ -60,6 +63,12 @@ All notable changes to this project will be documented in this file.
   bound `-and` as a `Test-Path` parameter
 - Terminal menu crashed on the theme list (`${$themes.Count}`) and on a
   `$MyInvocation.MyCommand.Path` lookup that is empty inside a function
+- CLI installs Oh My Posh before loading its theme catalog and accepts a manual
+  theme name if the catalog is unavailable
+- Bootstrapper refreshes `PATH` and resolves PowerShell 7 from WinGet links,
+  WindowsApps, or known install locations
+- Oh My Posh cache initializes its guard variable before dot-sourcing generated
+  startup code under strict mode
 - Uninstalling from Windows PowerShell 5.1 inspected the WindowsPowerShell
   profile instead of the managed PowerShell 7 one; it now relaunches under pwsh
 - Profile unblock check called a `GetIsZoneIdentifier()` method that does not

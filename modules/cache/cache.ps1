@@ -31,6 +31,12 @@ function Import-TerminalIcons {
 }
 Set-Alias icons Import-TerminalIcons
 
+function script:Initialize-OhMyPoshState {
+    if (Get-Variable -Name '_ompInitialized' -Scope Global -ErrorAction SilentlyContinue) { return }
+    if (-not (Get-Command oh-my-posh -ErrorAction SilentlyContinue)) { return }
+    $global:_ompInitialized = $false
+}
+
 # Retorna fingerprint apenas do tema: path + exists flag +
 # (opcional) Length:LastWriteTimeTicks. Usada no hot path para
 # validar que o tema não mudou dentro da janela TTL.
@@ -162,6 +168,7 @@ function script:Initialize-PluginCache {
                 # Ordinal: a comparação padrão de String.EndsWith é sensível à cultura,
                 # e caminhos de tema não devem depender do locale da máquina.
                 if ($cachedFP.EndsWith($themeEnding, [System.StringComparison]::Ordinal)) {
+                    script:Initialize-OhMyPoshState
                     . $script:Config.CachePath
                     return
                 }
@@ -190,7 +197,10 @@ function script:Initialize-PluginCache {
     }
 
     if ($needRebuild) { script:Update-PluginCache -zcmd $zcmd -ocmd $ocmd }
-    if (Test-Path $script:Config.CachePath) { . $script:Config.CachePath }
+    if (Test-Path $script:Config.CachePath) {
+        script:Initialize-OhMyPoshState
+        . $script:Config.CachePath
+    }
 }
 
 script:Initialize-PluginCache

@@ -34,7 +34,9 @@
 param(
     [switch]$NonInteractive,
     [string]$ThemeName = '',
-    [switch]$InstallAlacritty
+    [switch]$Gui,
+    [switch]$InstallFastfetch,
+    [switch]$InstallTopgrade
 )
 
 Set-StrictMode -Version Latest
@@ -53,8 +55,13 @@ if ($PSVersionTable.PSVersion.Major -ge 6) {
 }
 
 if (-not $isWin) {
-    Write-Host "This installer supports Windows 10/11 x64 only." -ForegroundColor Red
-    return
+    throw 'This installer supports Windows 10/11 x64 only.'
+}
+
+$osVersion = [Environment]::OSVersion.Version
+$architecture = if ($env:PROCESSOR_ARCHITEW6432) { $env:PROCESSOR_ARCHITEW6432 } else { $env:PROCESSOR_ARCHITECTURE }
+if ($osVersion.Major -lt 10 -or -not [Environment]::Is64BitOperatingSystem -or $architecture -notin @('AMD64', 'x64')) {
+    throw "This installer supports Windows 10/11 x64 only. Detected Windows $($osVersion) on $architecture."
 }
 
 # Constants
@@ -79,43 +86,87 @@ function Invoke-Launcher {
         [string]$RepoPath,
         [switch]$NonInteractive,
         [string]$ThemeName = '',
-        [switch]$InstallAlacritty
+        [switch]$Gui,
+        [switch]$InstallFastfetch,
+        [switch]$InstallTopgrade
     )
     $setupEntryPoint = Join-Path $RepoPath 'setup\setup.ps1'
     if (-not (Test-Path $setupEntryPoint)) {
         Write-Host "Setup directory not found. The repository may be outdated." -ForegroundColor Red
         return $false
     }
+    . (Join-Path $RepoPath 'lib/executable.ps1')
 
     if ($PSVersionTable.PSVersion.Major -lt 7) {
-        $pwshCommand = Get-Command pwsh -ErrorAction SilentlyContinue
-        $pwshPath = if ($pwshCommand) { $pwshCommand.Source } else { Join-Path $env:ProgramFiles 'PowerShell\7\pwsh.exe' }
-        if (-not (Test-Path $pwshPath -PathType Leaf)) {
+        $pwshPath = Get-PwshExecutablePath
+        if (-not $pwshPath) {
             $wingetCommand = Get-Command winget -ErrorAction SilentlyContinue
             $wingetPath = if ($wingetCommand) { $wingetCommand.Source } else {
                 Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'Microsoft\WindowsApps\winget.exe'
             }
-            if (-not (Test-Path $wingetPath -PathType Leaf)) {
-                Write-Host 'PowerShell 7 and WinGet are unavailable. Install PowerShell 7, then retry.' -ForegroundColor Red
-                return $false
+            if (Test-Path -LiteralPath $wingetPath -PathType Leaf) {
+                Write-Host 'Installing PowerShell 7 with WinGet in user scope...' -ForegroundColor Cyan
+                $installArgs = @('install', '--id', 'Microsoft.PowerShell', '--exact', '--source', 'winget',
+                    '--scope', 'user', '--accept-source-agreements', '--accept-package-agreements')
+                $installProcess = Start-Process -FilePath $wingetPath -ArgumentList $installArgs `
+                    -NoNewWindow -Wait -PassThru -ErrorAction Stop
+                if ($installProcess.ExitCode -ne 0 -and $Host.Name -eq 'ConsoleHost' -and -not $NonInteractive -and -not $env:CI) {
+                    $retryElevated = Read-Host "PowerShell 7 user-scope install failed (exit $($installProcess.ExitCode)). Retry with administrator rights? (y/n) [n]"
+                    if ($retryElevated -match '^(?i)y(es)?$') {
+                        $installArgs = @('install', '--id', 'Microsoft.PowerShell', '--exact', '--source', 'winget',
+                            '--scope', 'machine', '--accept-source-agreements', '--accept-package-agreements')
+                        $installProcess = Start-Process -FilePath $wingetPath -ArgumentList $installArgs `
+                            -Verb RunAs -Wait -PassThru -ErrorAction Stop
+                    }
+                }
+                if ($installProcess.ExitCode -ne 0) {
+                    Write-Host 'PowerShell 7 installation failed through WinGet.' -ForegroundColor Red
+                    return $false
+                }
+            } else {
+                . (Join-Path $RepoPath 'lib/executable.ps1')
+                . (Join-Path $RepoPath 'setup/modules/core.ps1')
+                . (Join-Path $RepoPath 'setup/modules/deps.ps1')
+                $scoop = Get-Command scoop -ErrorAction SilentlyContinue
+                if (-not $scoop) {
+                    if ($Host.Name -ne 'ConsoleHost' -or $NonInteractive -or $env:CI) {
+                        Write-Host 'WinGet is unavailable. Run interactively and approve the per-user Scoop fallback, or install PowerShell 7 manually.' -ForegroundColor Red
+                        return $false
+                    }
+                    $installScoop = Read-Host 'WinGet is unavailable. Install Scoop for this user to install PowerShell 7? (y/n) [n]'
+                    if ($installScoop -notmatch '^(?i)y(es)?$' -or -not (Install-Scoop)) {
+                        Write-Host 'PowerShell 7 installation cancelled. No administrator rights were requested.' -ForegroundColor Yellow
+                        return $false
+                    }
+                }
+                $scoop = Get-Command scoop -ErrorAction SilentlyContinue
+                if (-not $scoop) { Write-Host 'Scoop command is unavailable after installation.' -ForegroundColor Red; return $false }
+                Write-Host 'Installing PowerShell 7 with Scoop...' -ForegroundColor Cyan
+                & $scoop.Source install pwsh
+                if ($LASTEXITCODE -ne 0) {
+                    Write-Host 'Scoop could not install PowerShell 7.' -ForegroundColor Red
+                    return $false
+                }
+                Update-ProcessPathFromUser
             }
-            Write-Host 'Installing PowerShell 7 before configuring its profile...' -ForegroundColor Cyan
-            & $wingetPath install --id Microsoft.PowerShell --exact --source winget --accept-source-agreements --accept-package-agreements
-            if ($LASTEXITCODE -ne 0 -or -not (Test-Path $pwshPath -PathType Leaf)) {
-                Write-Host 'PowerShell 7 installation failed.' -ForegroundColor Red
+            $pwshPath = Get-PwshExecutablePath
+            if (-not $pwshPath) {
+                Write-Host 'PowerShell 7 install completed, but pwsh.exe is still unavailable. Open a new terminal and retry.' -ForegroundColor Red
                 return $false
             }
         }
 
         $launcherArgs = @('-NoProfile', '-File', $setupEntryPoint, '-RepoPath', $RepoPath)
         if ($NonInteractive) { $launcherArgs += '-NonInteractive' }
+        if ($Gui) { $launcherArgs += '-Gui' }
         if ($ThemeName) { $launcherArgs += @('-ThemeName', $ThemeName) }
-        if ($InstallAlacritty) { $launcherArgs += '-InstallAlacritty' }
+        if ($InstallFastfetch) { $launcherArgs += '-InstallFastfetch' }
+        if ($InstallTopgrade) { $launcherArgs += '-InstallTopgrade' }
         & $pwshPath @launcherArgs
         return $LASTEXITCODE -eq 0
     }
     . $setupEntryPoint -RepoPath $RepoPath -NonInteractive:$NonInteractive `
-        -ThemeName $ThemeName -InstallAlacritty:$InstallAlacritty
+        -ThemeName $ThemeName -Gui:$Gui -InstallFastfetch:$InstallFastfetch -InstallTopgrade:$InstallTopgrade
     return $true
 }
 
@@ -223,7 +274,7 @@ if ($localRepoPath) {
     Get-ChildItem -Path $localRepoPath -Filter '*.ps1' -Recurse -ErrorAction SilentlyContinue |
         Unblock-File -ErrorAction SilentlyContinue
     $launcherOk = Invoke-Launcher -RepoPath $localRepoPath -NonInteractive:$NonInteractive `
-        -ThemeName $ThemeName -InstallAlacritty:$InstallAlacritty
+        -ThemeName $ThemeName -Gui:$Gui -InstallFastfetch:$InstallFastfetch -InstallTopgrade:$InstallTopgrade
     if (-not $launcherOk) { throw 'Installation failed. Review messages above.' }
     return
 }
@@ -246,7 +297,7 @@ if (-not $isHeadless) {
     Write-Host "The installer can configure:" -ForegroundColor White
     Write-Host "  - PowerShell 7, Git, Oh My Posh, Zoxide" -ForegroundColor Gray
     Write-Host "  - FiraCode Nerd Font, PowerShell modules" -ForegroundColor Gray
-    Write-Host "  - Alacritty; optional terminal themes, Topgrade, Scoop" -ForegroundColor Gray
+    Write-Host "  - Windows Terminal theme; optional Fastfetch, Topgrade, Scoop, and AI CLIs" -ForegroundColor Gray
     Write-Host ""
 
     # Ask install directory
@@ -265,7 +316,7 @@ if (-not $isHeadless) {
             if (Test-RepoReleaseCurrent $repoPath) {
                 Write-Host "Current stable release found at: $repoPath" -ForegroundColor Green
                 $launcherOk = Invoke-Launcher -RepoPath $repoPath -NonInteractive:$NonInteractive `
-                    -ThemeName $ThemeName -InstallAlacritty:$InstallAlacritty
+                    -ThemeName $ThemeName -Gui:$Gui -InstallFastfetch:$InstallFastfetch -InstallTopgrade:$InstallTopgrade
                 if (-not $launcherOk) { throw 'Installation failed. Review messages above.' }
                 return
             }
@@ -293,7 +344,7 @@ if (-not $isHeadless) {
     if ((Test-Path $repoPath) -and (Test-IsValidRepo $repoPath)) {
         if (Test-RepoReleaseCurrent $repoPath) {
             $launcherOk = Invoke-Launcher -RepoPath $repoPath -NonInteractive:$NonInteractive `
-                -ThemeName $ThemeName -InstallAlacritty:$InstallAlacritty
+                -ThemeName $ThemeName -Gui:$Gui -InstallFastfetch:$InstallFastfetch -InstallTopgrade:$InstallTopgrade
             if (-not $launcherOk) { throw 'Installation failed. Review messages above.' }
             return
         }
@@ -308,5 +359,5 @@ if (-not $downloadOk) {
 
 # Launch installer
 $launcherOk = Invoke-Launcher -RepoPath $repoPath -NonInteractive:$NonInteractive `
-    -ThemeName $ThemeName -InstallAlacritty:$InstallAlacritty
+    -ThemeName $ThemeName -Gui:$Gui -InstallFastfetch:$InstallFastfetch -InstallTopgrade:$InstallTopgrade
 if (-not $launcherOk) { throw 'Installation failed. Review messages above.' }

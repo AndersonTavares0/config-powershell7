@@ -142,6 +142,27 @@ if (-not (Test-Path $script:ModulePath)) {
 
 . $script:ModulePath
 
+$ompStateInitializer = Test-Path Function:\Initialize-OhMyPoshState
+Test-Result -Name 'OMP state initializer is available' -Passed $ompStateInitializer `
+    -Message 'Initialize-OhMyPoshState is missing'
+if ($ompStateInitializer) {
+    $hadOmpState = $null -ne (Get-Variable -Name '_ompInitialized' -Scope Global -ErrorAction SilentlyContinue)
+    $oldOmpState = if ($hadOmpState) { $global:_ompInitialized } else { $null }
+    $script:MockCommandResults['oh-my-posh'] = [PSCustomObject]@{ Name = 'oh-my-posh' }
+    try {
+        Remove-Variable -Name '_ompInitialized' -Scope Global -ErrorAction SilentlyContinue
+        Initialize-OhMyPoshState
+        Assert-False -Condition $global:_ompInitialized -TestName 'OMP state initializer defines strict-mode guard'
+        $global:_ompInitialized = $true
+        Initialize-OhMyPoshState
+        Assert-True -Condition $global:_ompInitialized -TestName 'OMP state initializer preserves existing true state'
+    } finally {
+        if ($hadOmpState) { $global:_ompInitialized = $oldOmpState }
+        else { Remove-Variable -Name '_ompInitialized' -Scope Global -ErrorAction SilentlyContinue }
+        $script:MockCommandResults.Remove('oh-my-posh')
+    }
+}
+
 # ── LOAD SYSTEM MODULE ────────────────────────────────────────
 $script:SystemModulePath = Join-Path $PSScriptRoot '..\modules\system\system.ps1'
 if (-not (Test-Path $script:SystemModulePath)) {

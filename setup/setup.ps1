@@ -5,7 +5,9 @@ param(
     [string]$RepoPath,
     [switch]$NonInteractive,
     [string]$ThemeName = '',
-    [switch]$InstallAlacritty
+    [switch]$Gui,
+    [switch]$InstallFastfetch,
+    [switch]$InstallTopgrade
 )
 
 # Set explicitly: the PS 5.1 relaunch enters through `pwsh -File`, which does not
@@ -19,23 +21,27 @@ $modulesDir = Join-Path $setupDir 'modules'
 . (Join-Path $RepoPath 'lib/executable.ps1')
 . (Join-Path $modulesDir 'core.ps1')
 . (Join-Path $modulesDir 'deps.ps1')
+. (Join-Path $modulesDir 'agent-clis.ps1')
 . (Join-Path $modulesDir 'profile.ps1')
 . (Join-Path $modulesDir 'orchestrator.ps1')
 . (Join-Path $modulesDir 'gui.ps1')
 . (Join-Path $modulesDir 'cli.ps1')
 
-$canShowGui = $true
-try {
-    Add-Type -AssemblyName PresentationFramework -ErrorAction Stop
-} catch {
-    $canShowGui = $false
+$canShowGui = $false
+if ($Gui) {
+    try {
+        Add-Type -AssemblyName PresentationFramework -ErrorAction Stop
+        $canShowGui = $true
+    } catch {
+        $canShowGui = $false
+    }
 }
 
 if ($NonInteractive) {
     $installResult = Start-ProfileInstall -RepoPath $RepoPath -ThemeName $ThemeName `
-        -InstallAlacritty ([bool]$InstallAlacritty)
+        -InstallFastfetch ([bool]$InstallFastfetch) -InstallTopgrade ([bool]$InstallTopgrade)
     if (-not $installResult) { throw 'One or more required installation steps failed.' }
-} elseif (-not $canShowGui -or ($Host.Name -notmatch 'ConsoleHost' -and $env:CI)) {
+} elseif (-not $Gui -or -not $canShowGui -or ($Host.Name -notmatch 'ConsoleHost' -and $env:CI)) {
     Start-CliMenu -RepoPath $RepoPath
 } else {
     Show-Gui -SetupDir $setupDir -RepoPath $RepoPath

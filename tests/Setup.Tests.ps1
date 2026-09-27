@@ -116,6 +116,7 @@ if (-not (Test-Path $modulesDir)) {
 . (Join-Path $repoRoot 'lib/executable.ps1')
 . (Join-Path $modulesDir 'core.ps1')
 . (Join-Path $modulesDir 'deps.ps1')
+. (Join-Path $modulesDir 'agent-clis.ps1')
 . (Join-Path $modulesDir 'profile.ps1')
 . (Join-Path $modulesDir 'orchestrator.ps1')
 
@@ -160,6 +161,22 @@ Assert-NotNull -Value $script:RepoOwner -TestName "RepoOwner is set"
 Assert-NotNull -Value $script:RepoName -TestName "RepoName is set"
 Assert-NotNull -Value $script:RepoZipUrl -TestName "RepoZipUrl is set"
 Assert-True -Condition ($script:RepoZipUrl -match 'github\.com') -TestName "RepoZipUrl points to GitHub"
+
+$environmentCommand = Get-Command Get-InstallerEnvironment -ErrorAction SilentlyContinue
+Test-Result -Name 'Installer environment report is available' -Passed ($null -ne $environmentCommand) `
+    -Message 'Get-InstallerEnvironment is missing'
+if ($environmentCommand) {
+    $environmentReport = Get-InstallerEnvironment
+    Assert-NotNull -Value $environmentReport.OSVersion -TestName 'Environment report has Windows version'
+    Assert-NotNull -Value $environmentReport.Architecture -TestName 'Environment report has architecture'
+    Assert-NotNull -Value $environmentReport.PowerShellVersion -TestName 'Environment report has PowerShell version'
+    Assert-NotNull -Value $environmentReport.IsAdministrator -TestName 'Environment report has administrator status'
+    Assert-NotNull -Value $environmentReport.Is64Bit -TestName 'Environment report has operating-system bitness'
+    Assert-True -Condition ($environmentReport.PSObject.Properties.Name -contains 'HasWinGet') `
+        -TestName 'Environment report records WinGet availability'
+    Assert-True -Condition ($environmentReport.PSObject.Properties.Name -contains 'HasScoop') `
+        -TestName 'Environment report records Scoop availability'
+}
 
 # ══════════════════════════════════════════════════════════════
 # TEST SUITE: CORE — Get-FileFromUrl
@@ -227,6 +244,27 @@ if ($wingetPath) {
     Assert-True -Condition (Test-Path $wingetPath) -TestName "Get-WingetPath returns existing file"
 } else {
     Test-Skip -Name "Get-WingetPath returns path" -Reason "winget not installed on this machine"
+}
+
+$pwshResolutionCommand = Get-Command Get-PwshExecutablePath -ErrorAction SilentlyContinue
+Test-Result -Name 'PowerShell executable resolver is available' -Passed ($null -ne $pwshResolutionCommand) `
+    -Message 'Get-PwshExecutablePath is missing'
+if ($pwshResolutionCommand) {
+    $pwshResolutionDir = Join-Path $env:TEMP "test-pwsh-resolution-$(Get-Random)"
+    try {
+        New-MockDir $pwshResolutionDir
+        $mockPwshPath = Join-Path $pwshResolutionDir 'pwsh.exe'
+        New-MockFile -Path $mockPwshPath -Content 'test executable placeholder'
+        $resolvedPwshPath = Get-PwshExecutablePath -CandidatePaths @(
+            (Join-Path $pwshResolutionDir 'missing.exe'), $mockPwshPath
+        )
+        Assert-Equal -Expected ([System.IO.Path]::GetFullPath($mockPwshPath)) -Actual $resolvedPwshPath `
+            -TestName 'PowerShell resolver selects first existing executable candidate'
+        Assert-Equal -Expected $null -Actual (Get-PwshExecutablePath -CandidatePaths @('C:\not-installed\pwsh.exe')) `
+            -TestName 'PowerShell resolver returns null when no candidate exists'
+    } finally {
+        Remove-MockDir $pwshResolutionDir
+    }
 }
 
 # ══════════════════════════════════════════════════════════════
@@ -354,6 +392,51 @@ try {
 # TEST SUITE: DEPS — Install-WingetPackage (detection only)
 # ══════════════════════════════════════════════════════════════
 Write-Host "`nTesting Winget Detection..." -ForegroundColor Yellow
+$depsContent = Get-Content (Join-Path $modulesDir 'deps.ps1') -Raw -Encoding UTF8
+
+$wingetArgsCommand = Get-Command Get-WingetPackageArguments -ErrorAction SilentlyContinue
+Test-Result -Name 'WinGet argument builder is available' -Passed ($null -ne $wingetArgsCommand) -Message 'Get-WingetPackageArguments is missing'
+if ($wingetArgsCommand) {
+    $userScopeArgs = @(Get-WingetPackageArguments -Id 'Git.Git')
+    Assert-True -Condition ($userScopeArgs -contains '--scope' -and $userScopeArgs -contains 'user') `
+        -TestName 'WinGet installs into current-user scope by default'
+    Assert-False -Condition ($userScopeArgs -contains '--scope' -and $userScopeArgs -contains 'machine') `
+        -TestName 'WinGet does not request machine scope by default'
+    Assert-True -Condition ($userScopeArgs -contains '--accept-package-agreements' -and $userScopeArgs -contains '--accept-source-agreements') `
+        -TestName 'WinGet arguments accept source and package agreements'
+    Assert-True -Condition ($depsContent -match 'Install-ScoopFallbackPackage -Id \$Id') `
+        -TestName 'Dependency installer uses Scoop when WinGet is missing'
+}
+$scoopMapCommand = Get-Command Get-ScoopPackageName -ErrorAction SilentlyContinue
+Test-Result -Name 'Scoop fallback package map is available' -Passed ($null -ne $scoopMapCommand) -Message 'Get-ScoopPackageName is missing'
+if ($scoopMapCommand) {
+    Assert-Equal -Expected 'pwsh' -Actual (Get-ScoopPackageName -Id 'Microsoft.PowerShell') `
+        -TestName 'Scoop fallback maps PowerShell package'
+    Assert-Equal -Expected 'fastfetch' -Actual (Get-ScoopPackageName -Id 'Fastfetch-cli.Fastfetch') `
+        -TestName 'Scoop fallback maps Fastfetch package'
+    Assert-Equal -Expected $null -Actual (Get-ScoopPackageName -Id 'Unknown.Package') `
+        -TestName 'Scoop fallback rejects unmapped package'
+}
+
+$originalWingetPathLookup = ${function:Get-WingetPath}
+$originalScoopFallback = ${function:Install-ScoopFallbackPackage}
+$script:scoopFallbackRequest = $null
+${function:Get-WingetPath} = { return $null }
+${function:Install-ScoopFallbackPackage} = {
+    param([string]$Id, [string]$DisplayName)
+    $script:scoopFallbackRequest = [PSCustomObject]@{ Id = $Id; DisplayName = $DisplayName }
+    return $true
+}
+try {
+    $fallbackResult = Install-WingetPackage -Id 'Git.Git' -DisplayName 'Git'
+    Assert-True -Condition $fallbackResult -TestName 'Missing WinGet invokes package fallback'
+    Assert-Equal -Expected 'Git.Git' -Actual $script:scoopFallbackRequest.Id `
+        -TestName 'WinGet fallback receives requested package identifier'
+} finally {
+    ${function:Get-WingetPath} = $originalWingetPathLookup
+    ${function:Install-ScoopFallbackPackage} = $originalScoopFallback
+    Remove-Variable -Name scoopFallbackRequest -Scope Script -ErrorAction SilentlyContinue
+}
 
 $wingetCmd = Get-Command winget -ErrorAction SilentlyContinue
 if ($wingetCmd -or $wingetPath) {
@@ -386,6 +469,69 @@ if ($gallery) {
 # ══════════════════════════════════════════════════════════════
 Write-Host "`nTesting Install-OmpTheme..." -ForegroundColor Yellow
 
+$bundledThemePath = Join-Path $repoRoot 'themes/atomic.omp.json'
+$themeValidatorCommand = Get-Command Test-OmpThemeFile -ErrorAction SilentlyContinue
+Test-Result -Name 'OMP theme validator is available' -Passed ($null -ne $themeValidatorCommand) -Message 'Test-OmpThemeFile is missing'
+if ($themeValidatorCommand) {
+    Assert-True -Condition (Test-OmpThemeFile -Path $bundledThemePath) `
+        -TestName 'Bundled atomic theme has valid Oh My Posh structure'
+
+    $invalidThemePath = Join-Path $env:TEMP "invalid-omp-theme-$(Get-Random).json"
+    try {
+        Set-Content -LiteralPath $invalidThemePath -Value '{"blocks":[]}' -Encoding UTF8
+        Assert-False -Condition (Test-OmpThemeFile -Path $invalidThemePath) `
+            -TestName 'OMP theme validator rejects missing version and segments'
+    } finally {
+        Remove-Item -LiteralPath $invalidThemePath -Force -ErrorAction SilentlyContinue
+    }
+}
+$themeNameValidator = Get-Command Test-OmpThemeName -ErrorAction SilentlyContinue
+Test-Result -Name 'OMP theme name validator is available' -Passed ($null -ne $themeNameValidator) -Message 'Test-OmpThemeName is missing'
+if ($themeNameValidator) {
+    Assert-True -Condition (Test-OmpThemeName -Name 'atomic') -TestName 'OMP theme name accepts bundled theme'
+    Assert-True -Condition (Test-OmpThemeName -Name 'my_custom-theme.2') -TestName 'OMP theme name accepts simple custom filename'
+    Assert-True -Condition (Test-OmpThemeName -Name 'My custom theme') -TestName 'OMP theme name accepts spaces in custom filename'
+    Assert-True -Condition (Test-OmpThemeName -Name 'tema-á') -TestName 'OMP theme name accepts Unicode letters'
+    Assert-False -Condition (Test-OmpThemeName -Name '..') -TestName 'OMP theme name rejects parent path'
+    Assert-False -Condition (Test-OmpThemeName -Name '..\outside') -TestName 'OMP theme name rejects path traversal'
+}
+
+$localThemeCatalog = Get-Command Get-LocalOmpThemeList -ErrorAction SilentlyContinue
+Test-Result -Name 'Local OMP theme catalog is available' -Passed ($null -ne $localThemeCatalog) -Message 'Get-LocalOmpThemeList is missing'
+if ($localThemeCatalog) {
+    $localThemeTestDir = Join-Path $env:TEMP "local-omp-themes-$(Get-Random)"
+    $originalThemeDirectory = ${function:Get-OmpThemeDirectory}
+    $originalRestMethodFunction = Get-Command Invoke-RestMethod -CommandType Function -ErrorAction SilentlyContinue
+    try {
+        New-MockDir $localThemeTestDir
+        ${function:Get-OmpThemeDirectory} = { return $localThemeTestDir }
+        $validCustomTheme = '{"version":4,"blocks":[{"type":"prompt","segments":[{"type":"text","style":"plain"}]}]}'
+        Set-Content -LiteralPath (Join-Path $localThemeTestDir 'custom-local.omp.json') -Value $validCustomTheme -Encoding UTF8
+        Set-Content -LiteralPath (Join-Path $localThemeTestDir 'broken-local.omp.json') -Value '{"blocks":[]}' -Encoding UTF8
+        $availableThemes = @(Get-LocalOmpThemeList -RepoPath $repoRoot)
+        Assert-True -Condition ($availableThemes -contains 'atomic') -TestName 'Local theme catalog always includes bundled atomic'
+        Assert-True -Condition ($availableThemes -contains 'custom-local') -TestName 'Local theme catalog includes valid user theme'
+        Assert-False -Condition ($availableThemes -contains 'broken-local') -TestName 'Local theme catalog hides invalid user theme'
+
+        ${function:Invoke-RestMethod} = {
+            [CmdletBinding()]
+            param([string]$Uri, [int]$TimeoutSec)
+            throw 'simulated offline host'
+        }
+        $offlineThemes = @(Get-OmpThemeList -RepoPath $repoRoot)
+        Assert-True -Condition ($offlineThemes -contains 'atomic' -and $offlineThemes -contains 'custom-local') `
+            -TestName 'Theme list keeps local themes when online catalog fails'
+    } finally {
+        ${function:Get-OmpThemeDirectory} = $originalThemeDirectory
+        if ($originalRestMethodFunction) {
+            Set-Item Function:\Invoke-RestMethod -Value $originalRestMethodFunction.ScriptBlock
+        } else {
+            Remove-Item Function:\Invoke-RestMethod -ErrorAction SilentlyContinue
+        }
+        Remove-MockDir $localThemeTestDir
+    }
+}
+
 # Save original functions we'll mock
 $origGetExecutable = ${function:Get-Executable}
 
@@ -404,30 +550,38 @@ Assert-False -Condition $result2 -TestName "Install-OmpTheme returns false when 
 
 # Test 3: Returns true when theme already exists and is valid
 $ompThemeTestDir = Join-Path $env:TEMP "test-omp-theme-$(Get-Random)"
-$origUserProfile = [Environment]::GetFolderPath('UserProfile')
+$origOmpThemeDirectory = ${function:Get-OmpThemeDirectory}
 try {
-    # Mock UserProfile to our test dir
-    # We can't easily mock GetFolderPath, so we create the actual path structure
-    # Instead, test via the function's behavior with a pre-existing file
-    
+    New-MockDir $ompThemeTestDir
+    ${function:Get-OmpThemeDirectory} = { return $ompThemeTestDir }
     ${function:Get-Executable} = {
         return [PSCustomObject]@{ Name = 'oh-my-posh'; Path = 'C:\dummy\oh-my-posh.exe'; Found = $true; Version = '23.0.0' }
     }
-    
-    # Create a mock theme dir and file
-    $mockThemeDir = Join-Path $env:USERPROFILE '.poshthemes'
-    if (-not (Test-Path $mockThemeDir)) {
-        New-Item -ItemType Directory -Force -Path $mockThemeDir | Out-Null
-    }
-    $mockThemeFile = Join-Path $mockThemeDir 'test-theme.omp.json'
-    Set-Content -Path $mockThemeFile -Value ('{"$schema": "https://raw.githubusercontent.com/JanDeDobbeleer/oh-my-posh/main/themes/schema.json", "version": 2}' * 5) -Encoding UTF8 -Force
-    
+
+    $mockThemeFile = Join-Path $ompThemeTestDir 'test-theme.omp.json'
+    $validThemeContent = '{"version":4,"blocks":[{"type":"prompt","segments":[{"type":"text","style":"plain"}]}]}'
+    Set-Content -LiteralPath $mockThemeFile -Value $validThemeContent -Encoding UTF8 -Force
     $result3 = Install-OmpTheme -ThemeName 'test-theme'
     Assert-True -Condition $result3 -TestName "Install-OmpTheme returns true when theme already exists and is valid"
-    
-    Remove-Item $mockThemeFile -Force -ErrorAction SilentlyContinue
+    Assert-Equal -Expected $validThemeContent -Actual (Get-Content -LiteralPath $mockThemeFile -Raw).Trim() `
+        -TestName 'Install-OmpTheme preserves existing valid custom theme'
+
+    $invalidCustomTheme = '{"blocks":[]}'
+    Set-Content -LiteralPath $mockThemeFile -Value $invalidCustomTheme -Encoding UTF8 -Force
+    $invalidExistingResult = Install-OmpTheme -ThemeName 'test-theme' -RepoPath $repoRoot
+    Assert-False -Condition $invalidExistingResult -TestName 'Install-OmpTheme refuses to replace invalid user theme'
+    Assert-Equal -Expected $invalidCustomTheme -Actual (Get-Content -LiteralPath $mockThemeFile -Raw).Trim() `
+        -TestName 'Install-OmpTheme preserves invalid user theme for recovery'
+
+    $result4 = Install-OmpTheme -ThemeName 'atomic' -RepoPath $repoRoot
+    $installedAtomicPath = Join-Path $ompThemeTestDir 'atomic.omp.json'
+    Assert-True -Condition $result4 -TestName 'Install-OmpTheme copies bundled atomic theme offline'
+    Assert-Equal -Expected ([System.IO.File]::ReadAllText($bundledThemePath)) `
+        -Actual ([System.IO.File]::ReadAllText($installedAtomicPath)) `
+        -TestName 'Bundled theme copy matches project source'
 } finally {
-    if (Test-Path $ompThemeTestDir) { Remove-Item $ompThemeTestDir -Recurse -Force -ErrorAction SilentlyContinue }
+    ${function:Get-OmpThemeDirectory} = $origOmpThemeDirectory
+    Remove-MockDir $ompThemeTestDir
 }
 
 # Restore original functions
@@ -441,6 +595,15 @@ Write-Host "`nTesting Orchestrator..." -ForegroundColor Yellow
 $testRepoDir3 = Join-Path $env:TEMP "test-setup-repo3-$(Get-Random)"
 $testProfileDir3 = Join-Path $env:TEMP "test-setup-profile3-$(Get-Random)"
 $testProfilePath3 = Join-Path $testProfileDir3 "Microsoft.PowerShell_profile.ps1"
+$originalFastfetchInstaller = ${function:Install-Fastfetch}
+$originalTopgradeInstaller = ${function:Install-Topgrade}
+$originalAgentCliInstaller = ${function:Install-AgentCli}
+$originalGetExecutableForOptions = ${function:Get-Executable}
+$script:selectedOptionalInstallers = @()
+${function:Install-Fastfetch} = { $script:selectedOptionalInstallers += 'Fastfetch'; return $true }
+${function:Install-Topgrade} = { $script:selectedOptionalInstallers += 'Topgrade'; return $true }
+${function:Install-AgentCli} = { param($Name) $script:selectedOptionalInstallers += $Name; return $true }
+${function:Get-Executable} = { param($Name, $VersionArg) return $null }
 
 try {
     New-MockDir $testRepoDir3
@@ -454,9 +617,27 @@ try {
     Start-ProfileInstall -RepoPath $testRepoDir3 `
         -InstallPS7 $false -InstallGit $false -InstallOMP $false `
         -InstallZoxide $false -InstallFont $false -InstallModules $false `
-        -InstallAlacritty $false -InstallScoop $false
+        -InstallFastfetch $true -InstallTopgrade $false -InstallScoop $false
 
     Assert-True -Condition (Test-Path $testProfilePath3) -TestName "Orchestrator creates profile link (dry-run)"
+    Assert-Equal -Expected 'Fastfetch' -Actual ($script:selectedOptionalInstallers -join ',') `
+        -TestName 'Fastfetch installs without Topgrade'
+
+    $script:selectedOptionalInstallers = @()
+    Start-ProfileInstall -RepoPath $testRepoDir3 `
+        -InstallPS7 $false -InstallGit $false -InstallOMP $false `
+        -InstallZoxide $false -InstallFont $false -InstallModules $false `
+        -InstallFastfetch $false -InstallTopgrade $true -InstallScoop $false
+    Assert-Equal -Expected 'Topgrade' -Actual ($script:selectedOptionalInstallers -join ',') `
+        -TestName 'Topgrade installs without Fastfetch'
+
+    $script:selectedOptionalInstallers = @()
+    Start-ProfileInstall -RepoPath $testRepoDir3 `
+        -InstallPS7 $false -InstallGit $false -InstallOMP $false `
+        -InstallZoxide $false -InstallFont $false -InstallModules $false `
+        -InstallScoop $false -InstallCodex $true
+    Assert-Equal -Expected 'Codex' -Actual ($script:selectedOptionalInstallers -join ',') `
+        -TestName 'Orchestrator installs only selected agent CLI'
 
     $content = Get-Content $testProfilePath3 -Raw
     Assert-True -Condition ($content -match 'Microsoft\.PowerShell_profile\.ps1') -TestName "Orchestrator profile has dot-source"
@@ -466,10 +647,15 @@ try {
     Start-ProfileInstall -RepoPath (Join-Path $testRepoDir3 'missing') `
         -InstallPS7 $false -InstallGit $false -InstallOMP $false `
         -InstallZoxide $false -InstallFont $false -InstallModules $false `
-        -InstallAlacritty $false -InstallScoop $false
+        -InstallScoop $false
     Assert-True -Condition $script:SyncHash.InstallFailed -TestName 'Orchestrator component failure sets overall failure'
 
 } finally {
+    ${function:Install-Fastfetch} = $originalFastfetchInstaller
+    ${function:Install-Topgrade} = $originalTopgradeInstaller
+    ${function:Install-AgentCli} = $originalAgentCliInstaller
+    ${function:Get-Executable} = $originalGetExecutableForOptions
+    Remove-Variable -Name selectedOptionalInstallers -Scope Script -ErrorAction SilentlyContinue
     Remove-MockDir $testRepoDir3
     Remove-MockDir $testProfileDir3
     $global:PROFILE = $originalProfile
@@ -509,7 +695,7 @@ $testResults = @(
     @{ Name = 'PowerShell 7'; Status = 'ok'; Detail = 'v7.4.6' }
     @{ Name = 'Git'; Status = 'ok'; Detail = 'v2.45.0' }
     @{ Name = 'FiraCode Nerd Font'; Status = 'fail'; Detail = 'download failed' }
-    @{ Name = 'Alacritty'; Status = 'skip'; Detail = 'not selected' }
+    @{ Name = 'Fastfetch'; Status = 'skip'; Detail = 'not selected' }
 )
 
 Write-InstallSummary -Results $testResults
@@ -522,7 +708,7 @@ Summary-Assert-True -Condition ($null -ne $okRows -and $okRows.Count -gt 0) -Tes
 $failRows = $summarySyncHash.LogMessages | Where-Object { $_.Type -eq 'Fail' -and $_.Message -match 'FiraCode' }
 Summary-Assert-True -Condition ($null -ne $failRows -and $failRows.Count -gt 0) -TestName "Write-InstallSummary fail row uses Fail type"
 
-$skipRows = $summarySyncHash.LogMessages | Where-Object { $_.Type -eq 'Warn' -and $_.Message -match 'Alacritty' }
+$skipRows = $summarySyncHash.LogMessages | Where-Object { $_.Type -eq 'Warn' -and $_.Message -match 'Fastfetch' }
 Summary-Assert-True -Condition ($null -ne $skipRows -and $skipRows.Count -gt 0) -TestName "Write-InstallSummary skip row uses Warn type"
 
 $summarySyncHash.LogMessages.Clear()
@@ -671,6 +857,23 @@ Assert-True -Condition ($bootContent -match 'Invoke-Launcher') -TestName "Bootst
 Assert-True -Condition ($bootContent -match 'Download-Repo') -TestName "Bootstrapper has Download-Repo helper"
 Assert-True -Condition ($bootContent -match 'NonInteractive') -TestName "Bootstrapper accepts -NonInteractive"
 Assert-True -Condition ($bootContent -match 'env:CI') -TestName "Bootstrapper detects CI mode"
+Assert-True -Condition ($bootContent -match 'throw "This installer supports Windows 10/11 x64 only\.') `
+    -TestName 'Bootstrapper fails with an error on unsupported operating systems'
+$executableContent = Get-Content (Join-Path $repoRoot 'lib/executable.ps1') -Raw -Encoding UTF8
+Assert-True -Condition ($bootContent -match "lib/executable\.ps1") `
+    -TestName 'Bootstrapper loads shared executable resolver'
+Assert-True -Condition ($executableContent -match 'function Get-PwshExecutablePath') `
+    -TestName 'Shared executable resolver finds PowerShell 7'
+Assert-True -Condition ($executableContent -match 'Microsoft\\WindowsApps\\pwsh\.exe') `
+    -TestName 'Shared resolver checks WindowsApps PowerShell path'
+Assert-True -Condition ($executableContent -match 'Microsoft\\WinGet\\Links\\pwsh\.exe') `
+    -TestName 'Shared resolver checks WinGet PowerShell link'
+Assert-True -Condition ($bootContent -match "'--scope', 'user'") `
+    -TestName 'Bootstrapper installs PowerShell in user scope first'
+    Assert-True -Condition ($bootContent -match 'Retry with administrator rights') `
+        -TestName 'Bootstrapper asks before elevated PowerShell install'
+    Assert-True -Condition ($bootContent -match 'scoop\.Source install pwsh') `
+        -TestName 'Bootstrapper can install PowerShell without WinGet'
 
 # Verify local flow detection exists
 Assert-True -Condition ($bootContent -match 'localRepoPath') -TestName "Bootstrapper detects local repo path"
@@ -766,16 +969,19 @@ $bootText = Get-Content $bootstrapperPath -Raw -Encoding UTF8
 Assert-True -Condition ($bootText -match '\(Test-Path \$repoPath\) -and \(Test-IsValidRepo \$repoPath\)') `
     -TestName "Headless repo check groups Test-Path before -and"
 
-# The launcher entry point must forward the switch instead of forcing Alacritty on.
+# The launcher exposes GUI as an explicit option and keeps optional tools selectable.
 $entryText = Get-Content (Join-Path $setupDir 'setup.ps1') -Raw -Encoding UTF8
-Assert-True -Condition ($entryText -match '-InstallAlacritty \(\[bool\]\$InstallAlacritty\)') `
-    -TestName "Setup entry point forwards -InstallAlacritty"
+Assert-True -Condition ($entryText -match '\[switch\]\$Gui') `
+    -TestName "Setup entry point exposes optional GUI"
+Assert-True -Condition $entryText.Contains('agent-clis.ps1') `
+    -TestName 'Setup entry point loads agent CLI installers'
 Assert-True -Condition ($entryText -match "Set-StrictMode -Version Latest") `
     -TestName "Setup entry point sets its own strict mode for the pwsh -File relaunch"
 
 # Verify remote package manager installers are downloaded to disk before execution
 $depsPath = Join-Path $modulesDir 'deps.ps1'
 $depsContent = Get-Content $depsPath -Raw -Encoding UTF8
+$orchestratorContent = Get-Content (Join-Path $modulesDir 'orchestrator.ps1') -Raw -Encoding UTF8
 Assert-False -Condition ($depsContent -match 'Invoke-Expression') -TestName "Remote installers do not use Invoke-Expression"
 Assert-True -Condition ($depsContent -match 'Remote installer notice: Scoop') -TestName "Scoop remote installer notice is logged"
 Assert-True -Condition ($depsContent -match 'get\.scoop\.sh') -TestName "Scoop installer source URL is present"
@@ -785,99 +991,48 @@ Assert-True -Condition ($depsContent -match '& \$scoopInstallPath') -TestName "S
 Assert-False -Condition ($depsContent -match 'Set-ExecutionPolicy') -TestName "Installer never mutates the execution policy"
 
 # ══════════════════════════════════════════════════════════════
-# TEST SUITE: DEPS — Install-AlacrittyConfig and Install-Alacritty
+# TEST SUITE: INSTALLER OPTIONS — user-facing defaults
 # ══════════════════════════════════════════════════════════════
-Write-Host "`nTesting Alacritty installer..." -ForegroundColor Yellow
-# Guard against scope corruption from prior test suites
-$script:TestResults = [System.Collections.Generic.List[object]]::new()
-
-$origGetExecutable = ${function:Get-Executable}
-$originalAppData = $env:APPDATA
-$alacrittyTestRoot = Join-Path $env:TEMP "test-alacritty-managed-$(Get-Random)"
-$pwshPath = (Get-Command pwsh -ErrorAction Stop).Source
-$origConvertFromAlacrittyYaml = ${function:ConvertFrom-AlacrittyYaml}
-$origTestAlacrittyCandidateConfig = ${function:Test-AlacrittyCandidateConfig}
-
-try {
-    New-MockDir $alacrittyTestRoot
-    $env:APPDATA = $alacrittyTestRoot
-    $configDir = Join-Path $alacrittyTestRoot 'alacritty'
-    New-MockDir $configDir
-    $configPath = Join-Path $configDir 'alacritty.toml'
-    $originalToml = "[window]`nstartup_mode = `"Maximized`"`n"
-    [System.IO.File]::WriteAllText($configPath, $originalToml)
-
-    ${function:Test-AlacrittyCandidateConfig} = { return $true }
-    $configResult = Install-AlacrittyConfig -ThemeName 'Nord' -PwshPath $pwshPath
-    Assert-True -Condition $configResult -TestName 'Install-AlacrittyConfig creates managed configuration'
-
-    $ownedDir = Join-Path $configDir 'config-powershell7'
-    $basePath = Join-Path $ownedDir 'base.toml'
-    $themePath = Join-Path $ownedDir 'theme.toml'
-    $userPath = Join-Path $configDir 'alacritty.user.toml'
-    $wrapper = [System.IO.File]::ReadAllText($configPath)
-    $base = [System.IO.File]::ReadAllText($basePath)
-    $theme = [System.IO.File]::ReadAllText($themePath)
-    $importLines = @($wrapper -split "`n" | Where-Object { $_ -match '^\s+"' })
-    Assert-True -Condition ($importLines.Count -eq 3 -and $importLines[0] -match 'base\.toml' -and $importLines[1] -match 'theme\.toml' -and $importLines[2] -match 'alacritty\.user\.toml') -TestName 'Managed wrapper imports base, theme, then user config'
-    Assert-True -Condition ($base -match 'program = ".*pwsh\.exe"') -TestName 'Alacritty base uses absolute pwsh executable path'
-    Assert-True -Condition ($base -match 'FiraCode Nerd Font') -TestName 'Alacritty base configures managed Nerd Font'
-    Assert-True -Condition ($theme -match '#2E3440') -TestName 'Alacritty theme fragment contains selected theme'
-    Assert-Equal -Expected $originalToml -Actual ([System.IO.File]::ReadAllText($userPath)) -TestName 'Existing TOML is preserved as user-owned config'
-
-    $backups = @(Get-ChildItem $configDir -Filter 'alacritty.toml.config-powershell7.bak*')
-    Assert-Equal -Expected 1 -Actual $backups.Count -TestName 'Adoption creates one unique backup'
-    Assert-Equal -Expected $originalToml -Actual ([System.IO.File]::ReadAllText($backups[0].FullName)) -TestName 'Adoption backup preserves original TOML'
-
-    $trackedPaths = @($configPath, $userPath, $basePath, $themePath, (Join-Path $ownedDir 'state.txt'))
-    $oldTime = [datetime]'2001-01-01T00:00:00Z'
-    foreach ($path in $trackedPaths) { [System.IO.File]::SetLastWriteTimeUtc($path, $oldTime) }
-    $trackedTimes = @{}
-    foreach ($path in $trackedPaths) { $trackedTimes[$path] = [System.IO.File]::GetLastWriteTimeUtc($path) }
-    $repeatResult = Install-AlacrittyConfig -ThemeName 'Nord' -PwshPath $pwshPath
-    Assert-True -Condition $repeatResult -TestName 'Repeated managed Alacritty setup succeeds'
-    Assert-True -Condition (@($trackedPaths | Where-Object { [System.IO.File]::GetLastWriteTimeUtc($_) -ne $trackedTimes[$_] }).Count -eq 0) -TestName 'Repeated setup does not rewrite unchanged files'
-    Assert-Equal -Expected 1 -Actual @(Get-ChildItem $configDir -Filter 'alacritty.toml.config-powershell7.bak*').Count -TestName 'Repeated setup does not create another backup'
-
-    $updatedUserToml = "[window]`nstartup_mode = `"Fullscreen`"`n"
-    [System.IO.File]::WriteAllText($userPath, $updatedUserToml)
-    $uninstallResult = Uninstall-AlacrittyConfig
-    Assert-True -Condition $uninstallResult -TestName 'Uninstall-AlacrittyConfig succeeds'
-    Assert-Equal -Expected $updatedUserToml -Actual ([System.IO.File]::ReadAllText($configPath)) -TestName 'Uninstall restores latest user-owned TOML'
-    Assert-False -Condition (Test-Path $ownedDir) -TestName 'Uninstall removes project-owned Alacritty fragments'
-
-    Remove-MockDir $configDir
-    New-MockDir $configDir
-    $legacyPath = Join-Path $configDir 'alacritty.yml'
-    $legacyContent = "window:`n  opacity: 0.9`n"
-    [System.IO.File]::WriteAllText($legacyPath, $legacyContent)
-    ${function:ConvertFrom-AlacrittyYaml} = { param($AlacrittyPath, $LegacyPath) "[window]`nopacity = 0.9`n" }
-    ${function:Test-AlacrittyCandidateConfig} = { return $true }
-    $legacyResult = Install-AlacrittyConfig -ThemeName 'Nord' -AlacrittyPath 'C:\mock\alacritty.exe' -PwshPath $pwshPath
-    Assert-True -Condition $legacyResult -TestName 'Legacy YAML is migrated into user-owned TOML'
-    Assert-Equal -Expected $legacyContent -Actual ([System.IO.File]::ReadAllText($legacyPath)) -TestName 'Legacy YAML remains unchanged during migration'
-    Assert-True -Condition ([System.IO.File]::ReadAllText((Join-Path $configDir 'alacritty.user.toml')) -match 'opacity = 0.9') -TestName 'Migrated legacy settings are imported after managed fragments'
-    ${function:ConvertFrom-AlacrittyYaml} = $origConvertFromAlacrittyYaml
-    ${function:Test-AlacrittyCandidateConfig} = $origTestAlacrittyCandidateConfig
-
-    $guiContent = Get-Content (Join-Path $modulesDir 'gui.ps1') -Raw
-    $cliContent = Get-Content (Join-Path $modulesDir 'cli.ps1') -Raw
-    Assert-True -Condition ($guiContent -match 'x:Name="ChkAlacritty"[^>]+IsChecked="True"') -TestName 'GUI enables Alacritty by default'
-    Assert-True -Condition ($guiContent -match '\$chkThemeAla\.Add_Checked\(\{ \$chkAlacritty\.IsChecked = \$true \}\)') -TestName 'GUI theme selection enables complete Alacritty setup'
-# Nothing reads the background runspace's error stream, so an escaping error would
-# leave the window disabled forever waiting for InstallComplete.
+Write-Host "`nTesting installer options..." -ForegroundColor Yellow
+$guiContent = Get-Content (Join-Path $modulesDir 'gui.ps1') -Raw
+$cliContent = Get-Content (Join-Path $modulesDir 'cli.ps1') -Raw
+Assert-False -Condition ($guiContent -match 'ChkAlacritty|Alacritty') -TestName 'GUI has no Alacritty setup'
+Assert-True -Condition (([regex]::Matches($guiContent, 'modules/agent-clis\.ps1')).Count -ge 2) `
+    -TestName 'GUI runspaces load agent CLI installers'
+# GUI runspaces must release controls after success or failure.
 $guiRunspaceCatches = ([regex]::Matches($guiContent, '\$SyncHash\.InstallComplete = \$true')).Count
 Assert-True -Condition ($guiRunspaceCatches -ge 2) -TestName 'GUI runspaces always release the UI on failure'
-    Assert-True -Condition ($cliContent -match 'Install Alacritty terminal emulator\? \(y/n\) \[y\]') -TestName 'CLI offers Alacritty with yes default'
-    Assert-True -Condition ($cliContent -match '-InstallAlacritty \$installAlacritty') -TestName 'CLI passes the chosen Alacritty option'
-    Assert-True -Condition ($cliContent -match '\$installAlacritty = \$termThemeAla') -TestName 'CLI theme selection implies Alacritty'
-    Assert-True -Condition ($depsContent -match "\[version\]'0\.14\.0'") -TestName 'Alacritty installer enforces minimum version 0.14.0'
-} finally {
-    ${function:Get-Executable} = $origGetExecutable
-    ${function:ConvertFrom-AlacrittyYaml} = $origConvertFromAlacrittyYaml
-    ${function:Test-AlacrittyCandidateConfig} = $origTestAlacrittyCandidateConfig
-    if ($null -ne $originalAppData) { $env:APPDATA = $originalAppData } else { Remove-Item Env:\APPDATA -ErrorAction SilentlyContinue }
-    Remove-MockDir $alacrittyTestRoot
+Assert-True -Condition ($guiContent -match 'Set-LocalOmpThemeList -ThemeRepoPath \$RepoPath') `
+    -TestName 'GUI displays local OMP themes before online lookup'
+Assert-True -Condition ($guiContent -match 'Invoke-RestMethod -Uri \$apiUrl -TimeoutSec 8') `
+    -TestName 'GUI OMP lookup has an eight-second timeout'
+Assert-True -Condition ($guiContent -match 'Invoke-RestMethod -Uri \$url -TimeoutSec 8') `
+    -TestName 'GUI remote theme preview has an eight-second timeout'
+Assert-False -Condition ($cliContent -match 'Alacritty') -TestName 'CLI has no Alacritty setup'
+Assert-True -Condition ($cliContent -match 'Install Fastfetch\? \(y/n\) \[n\]') -TestName 'CLI offers Fastfetch as an optional tool'
+Assert-True -Condition ($cliContent -match 'Install Topgrade\? \(y/n\) \[n\]') -TestName 'CLI offers Topgrade as an optional tool'
+Assert-True -Condition ($cliContent -match "'m' for manual name") -TestName 'CLI allows a manual OMP theme name'
+Assert-True -Condition ($depsContent -match "Fastfetch-cli\.Fastfetch") -TestName 'Fastfetch installer uses the official WinGet package'
+Assert-True -Condition ($depsContent -match "topgrade-rs\.topgrade") -TestName 'Topgrade installer uses the current WinGet package'
+Assert-False -Condition ($orchestratorContent -match 'Install-Alacritty|InstallAlacritty') -TestName 'Orchestrator does not install Alacritty'
+
+$guiAst = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path $modulesDir 'gui.ps1'), [ref]$null, [ref]$null)
+$xamlNode = $guiAst.FindAll({ param($node) $node -is [System.Management.Automation.Language.StringConstantExpressionAst] -and $node.Value.StartsWith('<Window') }, $true) |
+    Select-Object -First 1
+Test-Result -Name 'GUI XAML is present in the parsed installer' -Passed ($null -ne $xamlNode) -Message 'Window XAML was not found'
+if ($xamlNode) {
+    try {
+        Add-Type -AssemblyName PresentationFramework -ErrorAction Stop
+        $windowXml = [xml]$xamlNode.Value
+        $windowReader = [System.Xml.XmlNodeReader]::new($windowXml)
+        $setupWindow = [Windows.Markup.XamlReader]::Load($windowReader)
+        foreach ($controlName in @('ChkFastfetch', 'ChkTopgrade', 'ChkAntigravity', 'ChkOpenCode', 'ChkCodex', 'ChkClaudeCode')) {
+            Test-Result -Name "GUI contains $controlName option" -Passed ($null -ne $setupWindow.FindName($controlName)) -Message 'Control was not created by WPF'
+        }
+        Assert-True -Condition ($null -eq $setupWindow.FindName('ChkAlacritty')) -TestName 'WPF has no Alacritty control'
+    } catch {
+        Test-Result -Name 'GUI XAML loads in WPF' -Passed $false -Message $_.Exception.Message
+    }
 }
 
 # Preserve user-owned profile content and escape PowerShell metacharacters.
@@ -902,6 +1057,91 @@ try {
     Remove-MockDir $testPreserveRepo
     Remove-MockDir $testPreserveDir
     $global:PROFILE = $originalProfile
+}
+
+# ══════════════════════════════════════════════════════════════
+# TEST SUITE: AGENT CLIs — install metadata
+# ══════════════════════════════════════════════════════════════
+Write-Host "`nTesting agent CLI definitions..." -ForegroundColor Yellow
+. (Join-Path $modulesDir 'cli.ps1')
+
+$agentSpecCommand = Get-Command Get-AgentCliInstallSpec -ErrorAction SilentlyContinue
+Test-Result -Name 'Agent CLI definitions are available' -Passed ($null -ne $agentSpecCommand) -Message 'Get-AgentCliInstallSpec is missing'
+if ($agentSpecCommand) {
+    $expectedAgentCliNames = @('Antigravity', 'ClaudeCode', 'Codex', 'OpenCode')
+    $actualAgentCliNames = @(Get-AgentCliInstallSpec | ForEach-Object { $_.Name } | Sort-Object)
+    Assert-Equal -Expected ($expectedAgentCliNames -join ',') -Actual ($actualAgentCliNames -join ',') `
+        -TestName 'Agent CLI catalog contains supported tools'
+
+    $selectionCommand = Get-Command Get-AgentCliSelection -ErrorAction SilentlyContinue
+    Test-Result -Name 'Agent CLI selection parser is available' -Passed ($null -ne $selectionCommand) -Message 'Get-AgentCliSelection is missing'
+    if ($selectionCommand) {
+        $selection = Get-AgentCliSelection -Selection '2,4'
+        Assert-Equal -Expected 'ClaudeCode,OpenCode' -Actual (@($selection.Selected | ForEach-Object { $_.Name }) -join ',') `
+            -TestName 'Agent CLI selection resolves multiple menu choices'
+        $allSelection = Get-AgentCliSelection -Selection 'A'
+        Assert-Equal -Expected 4 -Actual $allSelection.Selected.Count -TestName 'Agent CLI selection supports all tools'
+        $invalidSelection = Get-AgentCliSelection -Selection '1,x'
+        Assert-False -Condition $invalidSelection.Valid -TestName 'Agent CLI selection rejects invalid input atomically'
+        Assert-Equal -Expected 0 -Actual $invalidSelection.Selected.Count -TestName 'Invalid agent CLI selection installs nothing'
+    }
+
+    $menuIndexCommand = Get-Command ConvertFrom-MenuIndex -ErrorAction SilentlyContinue
+    Test-Result -Name 'Menu index validator is available' -Passed ($null -ne $menuIndexCommand) -Message 'ConvertFrom-MenuIndex is missing'
+    if ($menuIndexCommand) {
+        $firstIndex = ConvertFrom-MenuIndex -Value '1' -Count 3
+        Assert-True -Condition $firstIndex.Valid -TestName 'Menu index accepts first item'
+        Assert-Equal -Expected 0 -Actual $firstIndex.Index -TestName 'Menu index converts one-based choice to zero-based index'
+        Assert-False -Condition (ConvertFrom-MenuIndex -Value 'x' -Count 3).Valid -TestName 'Menu index rejects text'
+        Assert-False -Condition (ConvertFrom-MenuIndex -Value '4' -Count 3).Valid -TestName 'Menu index rejects out-of-range choice'
+    }
+
+    $antigravitySpec = Get-AgentCliInstallSpec -Name 'Antigravity'
+    Assert-Equal -Expected 'https://antigravity.google/cli/install.ps1' -Actual $antigravitySpec.Source `
+        -TestName 'Antigravity uses official PowerShell installer'
+
+    $claudeSpec = Get-AgentCliInstallSpec -Name 'ClaudeCode'
+    Assert-Equal -Expected 'https://claude.ai/install.ps1' -Actual $claudeSpec.Source `
+        -TestName 'Claude Code uses official PowerShell installer'
+
+    $codexSpec = Get-AgentCliInstallSpec -Name 'Codex'
+    Assert-Equal -Expected 'https://chatgpt.com/codex/install.ps1' -Actual $codexSpec.Source `
+        -TestName 'Codex uses official PowerShell installer'
+
+    $openCodeSpec = Get-AgentCliInstallSpec -Name 'OpenCode'
+    Assert-Equal -Expected 'opencode-ai' -Actual $openCodeSpec.Package `
+        -TestName 'OpenCode uses official npm package'
+
+    $agentCommandHelper = Test-Path Function:\Get-AgentCliCommand
+    Test-Result -Name 'Agent command lookup is replaceable in tests' -Passed $agentCommandHelper `
+        -Message 'Get-AgentCliCommand is missing'
+    if ($agentCommandHelper) {
+        $originalAgentCommandHelper = ${function:Get-AgentCliCommand}
+        ${function:Get-AgentCliCommand} = { param([string]$Name) return $null }
+        try {
+            Assert-False -Condition (Install-AgentCli -Name 'OpenCode') `
+                -TestName 'OpenCode reports missing Node.js without depending on developer machine'
+        } finally {
+            ${function:Get-AgentCliCommand} = $originalAgentCommandHelper
+        }
+    }
+
+    $originalOfficialInstaller = ${function:Invoke-OfficialPowerShellInstaller}
+    $script:installedAgentSpec = $null
+    ${function:Invoke-OfficialPowerShellInstaller} = {
+        param($Spec)
+        $script:installedAgentSpec = $Spec
+        return $true
+    }
+    try {
+        $installAgentResult = Install-AgentCli -Name 'Antigravity' -Force
+        Assert-True -Condition $installAgentResult -TestName 'Install-AgentCli delegates to official PowerShell installer'
+        Assert-Equal -Expected 'Antigravity' -Actual $script:installedAgentSpec.Name `
+            -TestName 'Install-AgentCli passes selected tool to official installer'
+    } finally {
+        ${function:Invoke-OfficialPowerShellInstaller} = $originalOfficialInstaller
+        Remove-Variable -Name installedAgentSpec -Scope Script -ErrorAction SilentlyContinue
+    }
 }
 
 # ══════════════════════════════════════════════════════════════
