@@ -1,5 +1,102 @@
 #Requires -Version 5.1
-# Dependency installers: winget, PS7, Git, OMP, Zoxide, NerdFont, PSModules, Alacritty, Chocolatey, Scoop
+# Dependency installers: WinGet, PowerShell, Git, Oh My Posh, Zoxide, Fastfetch, fonts, modules, Scoop, coding CLIs
+
+function Get-WingetPackageArguments {
+    param(
+        [Parameter(Mandatory)][string]$Id,
+        [ValidateSet('user', 'machine')][string]$Scope = 'user'
+    )
+
+    return @(
+        'install', '--id', $Id, '--exact', '--scope', $Scope,
+        '--silent', '--accept-package-agreements', '--accept-source-agreements'
+    )
+}
+
+function Update-ProcessPathFromUser {
+    $userPath = [Environment]::GetEnvironmentVariable('PATH', 'User')
+    $machinePath = [Environment]::GetEnvironmentVariable('PATH', 'Machine')
+    if ([string]::IsNullOrWhiteSpace($userPath) -and [string]::IsNullOrWhiteSpace($machinePath)) { return }
+
+    $entries = @($env:PATH -split ';') + @($machinePath -split ';') + @($userPath -split ';')
+    $seen = @{}
+    $uniqueEntries = foreach ($entry in $entries) {
+        $normalized = $entry.Trim()
+        if ($normalized -and -not $seen.ContainsKey($normalized)) {
+            $seen[$normalized] = $true
+            $entry.Trim()
+        }
+    }
+    $env:PATH = $uniqueEntries -join ';'
+}
+
+function Get-ScoopPackageName {
+    param([Parameter(Mandatory)][string]$Id)
+
+    switch ($Id) {
+        'Microsoft.PowerShell' { return 'pwsh' }
+        'Git.Git' { return 'git' }
+        'JanDeDobbeleer.OhMyPosh' { return 'oh-my-posh' }
+        'ajeetdsouza.zoxide' { return 'zoxide' }
+        'Fastfetch-cli.Fastfetch' { return 'fastfetch' }
+        'topgrade-rs.topgrade' { return 'topgrade' }
+        default { return $null }
+    }
+}
+
+function Install-ScoopFallbackPackage {
+    param(
+        [Parameter(Mandatory)][string]$Id,
+        [Parameter(Mandatory)][string]$DisplayName
+    )
+
+    $packageName = Get-ScoopPackageName -Id $Id
+    if (-not $packageName) {
+        Write-GuiLog "No Scoop fallback is configured for $DisplayName ($Id)." -Type Warn
+        return $false
+    }
+
+    $extraPackages = @('fastfetch', 'topgrade')
+    $buckets = @(if ($packageName -in $extraPackages) { 'extras' })
+    $scoop = Get-Command scoop -ErrorAction SilentlyContinue
+    if (-not $scoop) {
+        $interactiveConsole = Test-InstallerInteractive
+        if (-not $interactiveConsole) {
+            Write-GuiLog "WinGet is unavailable. Install Scoop manually to install $DisplayName without WinGet." -Type Warn
+            return $false
+        }
+        $installScoop = Read-Host "WinGet is unavailable. Install Scoop for ${DisplayName}? (y/n) [n]"
+        if ($installScoop -notmatch '^(?i)y(es)?$') { return $false }
+        if (-not (Install-Scoop -Buckets $buckets)) { return $false }
+    } elseif ($buckets.Count -gt 0) {
+        if (-not (Install-Scoop -Buckets $buckets)) { return $false }
+    }
+
+    $scoop = Get-Command scoop -ErrorAction SilentlyContinue
+    if (-not $scoop) {
+        Write-GuiLog 'Scoop finished installing, but its command is unavailable in this session.' -Type Warn
+        return $false
+    }
+
+    try {
+        Write-GuiLog "Installing $DisplayName with Scoop package '$packageName'." -Type Step
+        & $scoop.Source install $packageName 2>&1 | ForEach-Object { Write-GuiLog "$_" -Type Info }
+        if ($LASTEXITCODE -ne 0) {
+            Write-GuiLog "Scoop failed to install $DisplayName (exit code $LASTEXITCODE)." -Type Warn
+            return $false
+        }
+        Update-ProcessPathFromUser
+        if (Get-Command $packageName -ErrorAction SilentlyContinue) {
+            Write-GuiLog "$DisplayName installed with Scoop." -Type Ok
+            return $true
+        }
+        Write-GuiLog "Scoop did not expose '$packageName' after installation." -Type Warn
+        return $false
+    } catch {
+        Write-GuiLog "Scoop could not install $($DisplayName): $($_.Exception.Message)" -Type Warn
+        return $false
+    }
+}
 
 function Install-WingetPackage {
     param(
@@ -10,17 +107,36 @@ function Install-WingetPackage {
     try {
         $winget = Get-WingetPath
         if (-not $winget) {
-            Write-GuiLog "winget not found. Install manually or use Windows 10 1709+." -Type Warn
-            return $false
+            Write-GuiLog 'WinGet not found. Trying the approved per-user Scoop fallback.' -Type Warn
+            return Install-ScoopFallbackPackage -Id $Id -DisplayName $DisplayName
         }
-        $proc = Start-Process -FilePath $winget -ArgumentList 'install','--id',$Id,'--exact',
-            '--silent','--accept-package-agreements','--accept-source-agreements' `
+        $arguments = Get-WingetPackageArguments -Id $Id -Scope user
+        $proc = Start-Process -FilePath $winget -ArgumentList $arguments `
             -NoNewWindow -Wait -PassThru -ErrorAction Stop
         if ($proc.ExitCode -eq 0) {
+            Update-ProcessPathFromUser
             Write-GuiLog "$DisplayName installed." -Type Ok
             return $true
         }
-        Write-GuiLog "$DisplayName - winget exited with code $($proc.ExitCode)" -Type Warn
+
+        $interactiveConsole = Test-InstallerInteractive
+        if ($interactiveConsole) {
+            $retryElevated = Read-Host "$DisplayName failed in user scope (exit $($proc.ExitCode)). Retry with administrator rights? (y/n) [n]"
+            if ($retryElevated -match '^(?i)y(es)?$') {
+                $elevatedArguments = Get-WingetPackageArguments -Id $Id -Scope machine
+                $elevatedProcess = Start-Process -FilePath $winget -ArgumentList $elevatedArguments `
+                    -Verb RunAs -Wait -PassThru -ErrorAction Stop
+                if ($elevatedProcess.ExitCode -eq 0) {
+                    Update-ProcessPathFromUser
+                    Write-GuiLog "$DisplayName installed with administrator approval." -Type Ok
+                    return $true
+                }
+                Write-GuiLog "$DisplayName - elevated WinGet exited with code $($elevatedProcess.ExitCode)." -Type Warn
+                return $false
+            }
+        }
+
+        Write-GuiLog "$DisplayName - WinGet exited with code $($proc.ExitCode); no administrator retry was started." -Type Warn
         return $false
     } catch {
         Write-GuiLog "$DisplayName failed: $($_.Exception.Message)" -Type Warn
@@ -69,17 +185,70 @@ function Install-Zoxide {
 }
 
 function Get-OmpThemeList {
+    param([string]$RepoPath)
+
     $apiUrl = 'https://api.github.com/repos/JanDeDobbeleer/oh-my-posh/contents/themes'
+    $themeNames = New-Object System.Collections.Generic.List[string]
+    foreach ($themeName in (Get-LocalOmpThemeList -RepoPath $RepoPath)) { $themeNames.Add($themeName) }
+
     try {
         Enable-Tls12
-        $items = Invoke-RestMethod -Uri $apiUrl -ErrorAction Stop
-        $themes = $items | Where-Object { $_.name -like '*.omp.json' } |
-            ForEach-Object { $_.name -replace '\.omp\.json$', '' } |
-            Sort-Object
-        return @($themes)
+        $items = Invoke-RestMethod -Uri $apiUrl -TimeoutSec 8 -ErrorAction Stop
+        foreach ($item in ($items | Where-Object { $_.name -like '*.omp.json' })) {
+            $themeName = $item.name -replace '\.omp\.json$', ''
+            if ((Test-OmpThemeName -Name $themeName) -and $themeName -notin $themeNames) { $themeNames.Add($themeName) }
+        }
     } catch {
-        Write-GuiLog "Failed to fetch theme list: $($_.Exception.Message)" -Type Warn
-        return $null
+        Write-GuiLog "Could not fetch online OMP themes; using bundled and user themes: $($_.Exception.Message)" -Type Warn
+    }
+    return @($themeNames | Sort-Object -Unique)
+}
+
+function Get-LocalOmpThemeList {
+    param([string]$RepoPath)
+
+    $themeNames = New-Object System.Collections.Generic.List[string]
+    $themeDirs = @()
+    if ($RepoPath) { $themeDirs += Join-Path $RepoPath 'themes' }
+    $themeDirs += Get-OmpThemeDirectory
+
+    foreach ($themeDir in ($themeDirs | Select-Object -Unique)) {
+        if (-not (Test-Path -LiteralPath $themeDir -PathType Container)) { continue }
+        foreach ($themeFile in (Get-ChildItem -LiteralPath $themeDir -Filter '*.omp.json' -File -ErrorAction SilentlyContinue)) {
+            $themeName = $themeFile.Name -replace '\.omp\.json$', ''
+            if ((Test-OmpThemeName -Name $themeName) -and
+                (Test-OmpThemeFile -Path $themeFile.FullName) -and
+                $themeName -notin $themeNames) {
+                $themeNames.Add($themeName)
+            }
+        }
+    }
+    return @($themeNames | Sort-Object -Unique)
+}
+
+function Test-OmpThemeName {
+    param([AllowEmptyString()][string]$Name)
+
+    if ([string]::IsNullOrWhiteSpace($Name) -or $Name -in @('.', '..')) { return $false }
+    return $Name -match '^[\p{L}\p{Nd}][\p{L}\p{Nd} ._-]{0,63}$' -and $Name -notmatch '[ .]$'
+}
+
+function Test-OmpThemeFile {
+    param([Parameter(Mandatory)][string]$Path)
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $false }
+    try {
+        $theme = Get-Content -LiteralPath $Path -Raw -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop
+        if ($theme.version -notin @(2, 3, 4) -or @($theme.blocks).Count -eq 0) { return $false }
+        foreach ($block in $theme.blocks) {
+            if (-not $block.type -or @($block.segments).Count -eq 0) { return $false }
+            foreach ($segment in $block.segments) {
+                if (-not $segment.type) { return $false }
+            }
+        }
+        return $true
+    } catch {
+        return $false
     }
 }
 
@@ -99,13 +268,6 @@ function Initialize-TerminalThemes {
                     brightBlack = '#585B70'; brightRed = '#F38BA8'; brightGreen = '#A6E3A1'
                     brightYellow = '#F9E2AF'; brightBlue = '#89B4FA'; brightPurple = '#F5C2E7'
                     brightCyan = '#94E2D5'; brightWhite = '#A6ADC8' }
-            Ala = @{ primary = @{ background = '#1E1E2E'; foreground = '#CDD6F4' }
-                     normal = @{ black = '#45475A'; red = '#F38BA8'; green = '#A6E3A1'
-                                 yellow = '#F9E2AF'; blue = '#89B4FA'; magenta = '#F5C2E7'
-                                 cyan = '#94E2D5'; white = '#BAC2DE' }
-                     bright = @{ black = '#585B70'; red = '#F38BA8'; green = '#A6E3A1'
-                                 yellow = '#F9E2AF'; blue = '#89B4FA'; magenta = '#F5C2E7'
-                                 cyan = '#94E2D5'; white = '#A6ADC8' } }
         }
         'Catppuccin Latte' = @{
             Type = 'light'; Description = 'Light theme from Catppuccin project'
@@ -115,13 +277,6 @@ function Initialize-TerminalThemes {
                     brightBlack = '#6C6F85'; brightRed = '#D20F39'; brightGreen = '#40A02B'
                     brightYellow = '#DF8E1D'; brightBlue = '#1E66F5'; brightPurple = '#EA76CB'
                     brightCyan = '#179299'; brightWhite = '#BCC0CC' }
-            Ala = @{ primary = @{ background = '#EFF1F5'; foreground = '#4C4F69' }
-                     normal = @{ black = '#5C5F77'; red = '#D20F39'; green = '#40A02B'
-                                 yellow = '#DF8E1D'; blue = '#1E66F5'; magenta = '#EA76CB'
-                                 cyan = '#179299'; white = '#ACB0BE' }
-                     bright = @{ black = '#6C6F85'; red = '#D20F39'; green = '#40A02B'
-                                 yellow = '#DF8E1D'; blue = '#1E66F5'; magenta = '#EA76CB'
-                                 cyan = '#179299'; white = '#BCC0CC' } }
         }
         'Dracula' = @{
             Type = 'dark'; Description = 'Popular dark theme with purple accents'
@@ -131,13 +286,6 @@ function Initialize-TerminalThemes {
                     brightBlack = '#6272A4'; brightRed = '#FF6E6E'; brightGreen = '#69FF94'
                     brightYellow = '#FFFFA5'; brightBlue = '#D6ACFF'; brightPurple = '#FF92DF'
                     brightCyan = '#A4FFFF'; brightWhite = '#FFFFFF' }
-            Ala = @{ primary = @{ background = '#282A36'; foreground = '#F8F8F2' }
-                     normal = @{ black = '#21222C'; red = '#FF5555'; green = '#50FA7B'
-                                 yellow = '#F1FA8C'; blue = '#BD93F9'; magenta = '#FF79C6'
-                                 cyan = '#8BE9FD'; white = '#F8F8F2' }
-                     bright = @{ black = '#6272A4'; red = '#FF6E6E'; green = '#69FF94'
-                                 yellow = '#FFFFA5'; blue = '#D6ACFF'; magenta = '#FF92DF'
-                                 cyan = '#A4FFFF'; white = '#FFFFFF' } }
         }
         'Nord' = @{
             Type = 'dark'; Description = 'Arctic bluish dark theme'
@@ -147,13 +295,6 @@ function Initialize-TerminalThemes {
                     brightBlack = '#4C566A'; brightRed = '#BF616A'; brightGreen = '#A3BE8C'
                     brightYellow = '#EBCB8B'; brightBlue = '#81A1C1'; brightPurple = '#B48EAD'
                     brightCyan = '#8FBCBB'; brightWhite = '#ECEFF4' }
-            Ala = @{ primary = @{ background = '#2E3440'; foreground = '#D8DEE9' }
-                     normal = @{ black = '#3B4252'; red = '#BF616A'; green = '#A3BE8C'
-                                 yellow = '#EBCB8B'; blue = '#81A1C1'; magenta = '#B48EAD'
-                                 cyan = '#88C0D0'; white = '#E5E9F0' }
-                     bright = @{ black = '#4C566A'; red = '#BF616A'; green = '#A3BE8C'
-                                 yellow = '#EBCB8B'; blue = '#81A1C1'; magenta = '#B48EAD'
-                                 cyan = '#8FBCBB'; white = '#ECEFF4' } }
         }
         'Tokyo Night' = @{
             Type = 'dark'; Description = 'Deep blue night theme'
@@ -163,13 +304,6 @@ function Initialize-TerminalThemes {
                     brightBlack = '#565F89'; brightRed = '#F7768E'; brightGreen = '#9ECE6A'
                     brightYellow = '#E0AF68'; brightBlue = '#7AA2F7'; brightPurple = '#BB9AF7'
                     brightCyan = '#7DCFFF'; brightWhite = '#C0CAF5' }
-            Ala = @{ primary = @{ background = '#1A1B26'; foreground = '#A9B1D6' }
-                     normal = @{ black = '#1D202F'; red = '#F7768E'; green = '#9ECE6A'
-                                 yellow = '#E0AF68'; blue = '#7AA2F7'; magenta = '#BB9AF7'
-                                 cyan = '#7DCFFF'; white = '#A9B1D6' }
-                     bright = @{ black = '#565F89'; red = '#F7768E'; green = '#9ECE6A'
-                                 yellow = '#E0AF68'; blue = '#7AA2F7'; magenta = '#BB9AF7'
-                                 cyan = '#7DCFFF'; white = '#C0CAF5' } }
         }
         'One Half Dark' = @{
             Type = 'dark'; Description = 'Popular dark theme with warm accents'
@@ -179,13 +313,6 @@ function Initialize-TerminalThemes {
                     brightBlack = '#5C6370'; brightRed = '#E06C75'; brightGreen = '#98C379'
                     brightYellow = '#D19A66'; brightBlue = '#61AFEF'; brightPurple = '#C678DD'
                     brightCyan = '#56B6C2'; brightWhite = '#DCDFE4' }
-            Ala = @{ primary = @{ background = '#282C34'; foreground = '#DCDFE4' }
-                     normal = @{ black = '#383C42'; red = '#E06C75'; green = '#98C379'
-                                 yellow = '#D19A66'; blue = '#61AFEF'; magenta = '#C678DD'
-                                 cyan = '#56B6C2'; white = '#ABB2BF' }
-                     bright = @{ black = '#5C6370'; red = '#E06C75'; green = '#98C379'
-                                 yellow = '#D19A66'; blue = '#61AFEF'; magenta = '#C678DD'
-                                 cyan = '#56B6C2'; white = '#DCDFE4' } }
         }
     }
 }
@@ -204,19 +331,31 @@ function Get-TerminalThemeData {
     return $script:TerminalThemeData[$Name]
 }
 
+function Get-WindowsTerminalSettingsPath {
+    $knownPaths = @(
+        "$env:LOCALAPPDATA\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json",
+        "$env:LOCALAPPDATA\Packages\Microsoft.WindowsTerminalPreview_8wekyb3d8bbwe\LocalState\settings.json",
+        "$env:LOCALAPPDATA\Microsoft\Windows Terminal\settings.json"
+    )
+    return $knownPaths | Where-Object { Test-Path $_ -PathType Leaf } | Select-Object -First 1
+}
+
+function Backup-WindowsTerminalSettings {
+    param([string]$SettingsPath)
+    # Rewriting settings.json through ConvertTo-Json drops the JSON comments Windows
+    # Terminal ships by default, so keep one recoverable copy of the original.
+    $backupPath = "$SettingsPath.config-powershell7.bak"
+    if (Test-Path $backupPath -PathType Leaf) { return }
+    Copy-Item -LiteralPath $SettingsPath -Destination $backupPath -Force
+    Write-GuiLog "Windows Terminal settings backed up: $backupPath" -Type Info
+}
+
 function Set-WindowsTerminalColorScheme {
     param([string]$ThemeName, [string]$SettingsPath)
     $theme = Get-TerminalThemeData -Name $ThemeName
     if (-not $theme) { Write-GuiLog "Terminal theme '$ThemeName' not found." -Type Warn; return $false }
 
-    if (-not $SettingsPath) {
-        $knownPaths = @(
-            "$env:LOCALAPPDATA\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json",
-            "$env:LOCALAPPDATA\Packages\Microsoft.WindowsTerminalPreview_8wekyb3d8bbwe\LocalState\settings.json",
-            "$env:LOCALAPPDATA\Microsoft\Windows Terminal\settings.json"
-        )
-        $SettingsPath = $knownPaths | Where-Object { Test-Path $_ -PathType Leaf } | Select-Object -First 1
-    }
+    if (-not $SettingsPath) { $SettingsPath = Get-WindowsTerminalSettingsPath }
     if (-not $SettingsPath) { Write-GuiLog "Windows Terminal settings.json not found." -Type Info; return $false }
 
     try {
@@ -238,11 +377,13 @@ function Set-WindowsTerminalColorScheme {
             brightCyan = $wtColors.brightCyan; brightWhite = $wtColors.brightWhite
         }
 
-        if (-not $settings.schemes) {
+        $schemesProperty = $settings.PSObject.Properties['schemes']
+        if (-not $schemesProperty -or -not $schemesProperty.Value) {
             $settings | Add-Member -Name 'schemes' -Value @($scheme) -MemberType NoteProperty -Force
         } else {
-            $existing = $settings.schemes | Where-Object { $_.name -eq $ThemeName }
-            if ($existing) {
+            $existingSchemes = @($settings.schemes | Where-Object { $_.name -eq $ThemeName })
+            if ($existingSchemes.Count -gt 0) {
+                $existing = $existingSchemes[0]
                 $idx = [array]::IndexOf($settings.schemes, $existing)
                 $settings.schemes[$idx] = $scheme
             } else {
@@ -250,15 +391,18 @@ function Set-WindowsTerminalColorScheme {
             }
         }
 
-        if (-not $settings.profiles) {
+        $profilesProperty = $settings.PSObject.Properties['profiles']
+        if (-not $profilesProperty -or -not $profilesProperty.Value) {
             Write-GuiLog "Windows Terminal settings has no profiles section." -Type Warn; return $false
         }
-        if (-not $settings.profiles.defaults) {
-            $settings.profiles | Add-Member -Name 'defaults' -Value @{} -MemberType NoteProperty -Force
+        $defaultsProperty = $settings.profiles.PSObject.Properties['defaults']
+        if (-not $defaultsProperty -or -not $defaultsProperty.Value) {
+            $settings.profiles | Add-Member -Name 'defaults' -Value ([PSCustomObject]@{}) -MemberType NoteProperty -Force
         }
         $settings.profiles.defaults | Add-Member -Name 'colorScheme' -Value $ThemeName -MemberType NoteProperty -Force
 
-        $settings | ConvertTo-Json -Depth 15 | Set-Content $SettingsPath -Encoding UTF8 -Force
+        Backup-WindowsTerminalSettings -SettingsPath $SettingsPath
+        [System.IO.File]::WriteAllText($SettingsPath, ($settings | ConvertTo-Json -Depth 15), (New-Object System.Text.UTF8Encoding($false)))
         Write-GuiLog "Windows Terminal color scheme set to '$ThemeName'." -Type Ok
         return $true
     } catch {
@@ -267,87 +411,17 @@ function Set-WindowsTerminalColorScheme {
     }
 }
 
-function Set-AlacrittyColorScheme {
-    param([string]$ThemeName)
-    $theme = Get-TerminalThemeData -Name $ThemeName
-    if (-not $theme) { Write-GuiLog "Terminal theme '$ThemeName' not found." -Type Warn; return $false }
-
-    $configDir = Join-Path $env:APPDATA 'alacritty'
-    if (-not (Test-Path $configDir)) { New-Item -ItemType Directory -Path $configDir -Force | Out-Null }
-    $configPath = Join-Path $configDir 'alacritty.toml'
-
-    if (Test-Path $configPath) {
-        $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-        Copy-Item $configPath "$configPath.bak-$timestamp" -Force
-    }
-
-    $colors = $theme.Ala
-    $colorLines = @(
-        "[colors.primary]",
-        "background = `"$($colors.primary.background)`"",
-        "foreground = `"$($colors.primary.foreground)`"",
-        "",
-        "[colors.normal]",
-        "black   = `"$($colors.normal.black)`"",
-        "red     = `"$($colors.normal.red)`"",
-        "green   = `"$($colors.normal.green)`"",
-        "yellow  = `"$($colors.normal.yellow)`"",
-        "blue    = `"$($colors.normal.blue)`"",
-        "magenta = `"$($colors.normal.magenta)`"",
-        "cyan    = `"$($colors.normal.cyan)`"",
-        "white   = `"$($colors.normal.white)`"",
-        "",
-        "[colors.bright]",
-        "black   = `"$($colors.bright.black)`"",
-        "red     = `"$($colors.bright.red)`"",
-        "green   = `"$($colors.bright.green)`"",
-        "yellow  = `"$($colors.bright.yellow)`"",
-        "blue    = `"$($colors.bright.blue)`"",
-        "magenta = `"$($colors.bright.magenta)`"",
-        "cyan    = `"$($colors.bright.cyan)`"",
-        "white   = `"$($colors.bright.white)`""
-    )
-
-    try {
-        if (Test-Path $configPath) {
-            $existing = Get-Content $configPath -Raw -Encoding UTF8
-            $colorSectionStart = $existing.IndexOf('[colors.primary]')
-            if ($colorSectionStart -ge 0) {
-                $colorSectionEnd = $existing.IndexOf('[[', $colorSectionStart + 1)
-                if ($colorSectionEnd -lt 0) { $colorSectionEnd = $existing.IndexOf('[', $existing.IndexOf('[', 1) + 1) }
-                if ($colorSectionEnd -lt 0) { $colorSectionEnd = $existing.Length }
-                # Replace colors, keep other sections
-                $newContent = $existing.Substring(0, $colorSectionStart) + ($colorLines -join "`r`n") + "`r`n`r`n" + $existing.Substring($colorSectionEnd).TrimStart()
-            } else {
-                # No colors section — append before first [[ or end
-                $lastSection = $existing.LastIndexOf('[', $existing.LastIndexOf('[') - 1)
-                if ($lastSection -le 0) { $lastSection = $existing.Length }
-                $newContent = $existing.Substring(0, $lastSection).TrimEnd() + "`r`n`r`n" + ($colorLines -join "`r`n") + "`r`n`r`n" + $existing.Substring($lastSection).TrimStart()
-            }
-            Set-Content -Path $configPath -Value $newContent -Encoding UTF8 -Force
-        } else {
-            Set-Content -Path $configPath -Value (($colorLines -join "`r`n") + "`r`n") -Encoding UTF8 -Force
-        }
-        Write-GuiLog "Alacritty theme set to '$ThemeName'." -Type Ok
-        return $true
-    } catch {
-        Write-GuiLog "Failed to set Alacritty color scheme: $($_.Exception.Message)" -Type Warn
-        return $false
-    }
-}
-
-function Install-CompleteConfig {
-    param([string]$ThemeName)
-    Set-WindowsTerminalColorScheme -ThemeName $ThemeName
-    Set-AlacrittyColorScheme -ThemeName $ThemeName
-}
 #endregion
 
 function Install-OmpTheme {
-    param([string]$ThemeName)
+    param([string]$ThemeName, [string]$RepoPath)
 
     if ([string]::IsNullOrWhiteSpace($ThemeName)) {
         Write-GuiLog "No theme selected - skipping theme download." -Type Info
+        return $false
+    }
+    if (-not (Test-OmpThemeName -Name $ThemeName)) {
+        Write-GuiLog "Invalid OMP theme name '$ThemeName'. Use letters, numbers, dot, dash, or underscore." -Type Warn
         return $false
     }
 
@@ -357,7 +431,7 @@ function Install-OmpTheme {
         return $false
     }
 
-    $themeDir = Join-Path ([Environment]::GetFolderPath('UserProfile')) '.poshthemes'
+    $themeDir = Get-OmpThemeDirectory
     if (-not (Test-Path $themeDir)) {
         New-Item -ItemType Directory -Force -Path $themeDir | Out-Null
     }
@@ -365,41 +439,76 @@ function Install-OmpTheme {
     $themeFile = Join-Path $themeDir "$ThemeName.omp.json"
 
     if (Test-Path $themeFile) {
-        try {
-            $raw = Get-Content $themeFile -Raw -ErrorAction SilentlyContinue
-            if ($raw -and $raw.Length -gt 100) {
-                Write-GuiLog "Theme '$ThemeName' already exists." -Type Ok
-                return $true
-            }
-        } catch {
-            # Corrupted file - re-download
+        if (Test-OmpThemeFile -Path $themeFile) {
+            Write-GuiLog "Theme '$ThemeName' already exists." -Type Ok
+            return $true
         }
+        Write-GuiLog "Theme file already exists but is invalid: $themeFile. It was not overwritten." -Type Warn
+        return $false
+    }
+
+    $bundledTheme = if ($RepoPath) { Join-Path (Join-Path $RepoPath 'themes') "$ThemeName.omp.json" } else { $null }
+    if ($bundledTheme -and (Test-OmpThemeFile -Path $bundledTheme)) {
+        Copy-Item -LiteralPath $bundledTheme -Destination $themeFile -Force
+        Write-GuiLog "Bundled theme '$ThemeName' installed from the project." -Type Ok
+        return $true
     }
 
     $themeUrl = "https://raw.githubusercontent.com/JanDeDobbeleer/oh-my-posh/main/themes/$ThemeName.omp.json"
     Write-GuiLog "Downloading theme '$ThemeName'..." -Type Step
 
-    if (Get-FileFromUrl -Url $themeUrl -OutFile $themeFile -MinBytes 100 -Description "theme '$ThemeName'") {
+    $downloaded = Get-FileFromUrl -Url $themeUrl -OutFile $themeFile -MinBytes 100 -Description "theme '$ThemeName'"
+    if ($downloaded -and (Test-OmpThemeFile -Path $themeFile)) {
         Write-GuiLog "Theme '$ThemeName' downloaded successfully." -Type Ok
         return $true
     }
 
+    Remove-Item -LiteralPath $themeFile -Force -ErrorAction SilentlyContinue
+    Write-GuiLog "Downloaded theme '$ThemeName' is invalid." -Type Warn
+
     return $false
 }
 
+function Get-OmpThemeDirectory {
+    $userProfile = [Environment]::GetFolderPath('UserProfile')
+    if ([string]::IsNullOrWhiteSpace($userProfile)) { $userProfile = $HOME }
+    return Join-Path $userProfile '.poshthemes'
+}
+
+function Add-FontResource {
+    param([Parameter(Mandatory = $true)][string]$Path)
+    # Registry alone only takes effect at next logon; AddFontResourceW publishes the
+    # font to the running session so a terminal restart is enough.
+    if (-not ('ConfigPowerShell7.NativeFonts' -as [type])) {
+        Add-Type -Namespace 'ConfigPowerShell7' -Name 'NativeFonts' -MemberDefinition @'
+[System.Runtime.InteropServices.DllImport("gdi32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+public static extern int AddFontResourceW(string lpszFilename);
+'@
+    }
+    return [ConfigPowerShell7.NativeFonts]::AddFontResourceW($Path)
+}
+
+function Test-NerdFontPresent {
+    try {
+        Add-Type -AssemblyName System.Drawing -ErrorAction Stop
+        return @([System.Drawing.FontFamily]::Families | Where-Object { $_.Name -match 'FiraCode Nerd' }).Count -gt 0
+    } catch {
+        Write-GuiLog "Could not enumerate installed fonts: $($_.Exception.Message)" -Type Warn
+        return $false
+    }
+}
+
 function Install-NerdFont {
-    Add-Type -AssemblyName System.Drawing -ErrorAction SilentlyContinue
-    $existingFamilies = [System.Drawing.FontFamily]::Families | Where-Object { $_.Name -match 'FiraCode Nerd' }
-    if ($existingFamilies) {
-        Write-GuiLog "FiraCode Nerd Font already installed ($($existingFamilies.Count) variant(s))." -Type Ok
+    if (Test-NerdFontPresent) {
+        Write-GuiLog 'FiraCode Nerd Font already installed.' -Type Ok
         return $true
     }
 
     Write-GuiLog "Installing FiraCode Nerd Font..." -Type Step
+    $fontZip = Join-Path $env:TEMP 'FiraCode-NerdFont.zip'
+    $fontDir = Join-Path $env:TEMP 'FiraCode-NerdFont'
     try {
         $fontZipUrl = 'https://github.com/ryanoasis/nerd-fonts/releases/download/v3.3.0/FiraCode.zip'
-        $fontZip = Join-Path $env:TEMP 'FiraCode-NerdFont.zip'
-        $fontDir = Join-Path $env:TEMP 'FiraCode-NerdFont'
 
         if (-not (Get-FileFromUrl -Url $fontZipUrl -OutFile $fontZip -MinBytes 100 -Description 'FiraCode Nerd Font archive')) {
             return $false
@@ -411,33 +520,38 @@ function Install-NerdFont {
         Add-Type -AssemblyName System.IO.Compression.FileSystem
         [System.IO.Compression.ZipFile]::ExtractToDirectory($fontZip, $fontDir)
 
-        Add-Type -AssemblyName System.Windows.Forms
-        $shell = New-Object -ComObject Shell.Application
-        $fontsFolder = $shell.Namespace(0x14)
+        # Per-user install (Windows 10 1809+). The Shell.Application route targets the
+        # machine-wide Fonts folder, needs elevation, and reports no error when it is denied.
+        $userFontDir = Join-Path $env:LOCALAPPDATA 'Microsoft\Windows\Fonts'
+        $userFontKey = 'HKCU:\Software\Microsoft\Windows NT\CurrentVersion\Fonts'
+        New-Item -ItemType Directory -Force -Path $userFontDir | Out-Null
+        if (-not (Test-Path $userFontKey)) { New-Item -Path $userFontKey -Force | Out-Null }
 
         $installedCount = 0
         foreach ($fontFile in (Get-ChildItem $fontDir -Filter '*.ttf' -Recurse)) {
             try {
-                $fontsFolder.CopyHere($fontFile.FullName, 0x14)
+                $destination = Join-Path $userFontDir $fontFile.Name
+                Copy-Item -LiteralPath $fontFile.FullName -Destination $destination -Force
+                Set-ItemProperty -Path $userFontKey -Name "$($fontFile.BaseName) (TrueType)" -Value $destination -Force
+                $null = Add-FontResource -Path $destination
                 $installedCount++
             } catch {
                 Write-GuiLog "Could not install font $($fontFile.Name): $($_.Exception.Message)" -Type Warn
             }
         }
 
-        Remove-Item $fontZip -Force -ErrorAction SilentlyContinue
-        Remove-Item $fontDir -Recurse -Force -ErrorAction SilentlyContinue
-
         if ($installedCount -gt 0) {
-            Write-GuiLog "FiraCode Nerd Font installed ($installedCount variants)." -Type Ok
+            Write-GuiLog "FiraCode Nerd Font installed ($installedCount variants). Restart the terminal to use it." -Type Ok
             return $true
-        } else {
-            Write-GuiLog "No font files were installed." -Type Warn
-            return $false
         }
+        Write-GuiLog "No font files were installed." -Type Warn
+        return $false
     } catch {
         Write-GuiLog "Failed to install Nerd Font: $($_.Exception.Message)" -Type Warn
         return $false
+    } finally {
+        Remove-Item $fontZip -Force -ErrorAction SilentlyContinue
+        Remove-Item $fontDir -Recurse -Force -ErrorAction SilentlyContinue
     }
 }
 
@@ -448,7 +562,17 @@ function Install-Topgrade {
         Write-GuiLog "Topgrade already installed: $($existing.Path)$verStr" -Type Ok
         return $true
     }
-    return Install-WingetPackage -Id 'topgrade.topgrade' -DisplayName 'Topgrade'
+    return Install-WingetPackage -Id 'topgrade-rs.topgrade' -DisplayName 'Topgrade'
+}
+
+function Install-Fastfetch {
+    $existing = Get-Executable -Name 'fastfetch'
+    if ($existing) {
+        $verStr = if ($existing.Version) { " $($existing.Version)" } else { '' }
+        Write-GuiLog "Fastfetch already installed: $($existing.Path)$verStr" -Type Ok
+        return $true
+    }
+    return Install-WingetPackage -Id 'Fastfetch-cli.Fastfetch' -DisplayName 'Fastfetch'
 }
 
 function Install-PSModules {
@@ -457,7 +581,7 @@ function Install-PSModules {
         Write-GuiLog "Installing NuGet package provider..." -Type Step
         try {
             Enable-Tls12
-            Install-PackageProvider -Name NuGet -Force -Scope CurrentUser -ErrorAction Stop
+            Install-PackageProvider -Name NuGet -Force -Scope CurrentUser -ErrorAction Stop | Out-Null
             Write-GuiLog "NuGet installed." -Type Ok
         } catch {
             Write-GuiLog "NuGet install failed: $($_.Exception.Message)" -Type Warn
@@ -477,29 +601,36 @@ function Install-PSModules {
         return $false
     }
 
-    foreach ($mod in @(@{ Name = 'PSReadLine'; MinVersion = '2.3.0' }, @{ Name = 'Terminal-Icons'; MinVersion = '0.11.0' })) {
-        $existing = Get-Module -ListAvailable -Name $mod.Name -ErrorAction SilentlyContinue |
-            Where-Object { $_.Version -ge [version]$mod.MinVersion }
-        if ($existing) {
-            Write-GuiLog "$($mod.Name) $($existing[0].Version) already installed." -Type Ok
-            continue
+    $allInstalled = $true
+    try {
+        foreach ($mod in @(@{ Name = 'PSReadLine'; MinVersion = '2.3.0' }, @{ Name = 'Terminal-Icons'; MinVersion = '0.11.0' })) {
+            $existing = @(Get-Module -ListAvailable -Name $mod.Name -ErrorAction SilentlyContinue |
+                Where-Object { $_.Version -ge [version]$mod.MinVersion })
+            if ($existing.Count -gt 0) {
+                Write-GuiLog "$($mod.Name) $($existing[0].Version) already installed." -Type Ok
+                continue
+            }
+            Write-GuiLog "Installing $($mod.Name)..." -Type Step
+            try {
+                Install-Module -Name $mod.Name -MinimumVersion $mod.MinVersion -Scope CurrentUser -Force -AllowClobber -ErrorAction Stop
+                Write-GuiLog "$($mod.Name) installed." -Type Ok
+            } catch {
+                $allInstalled = $false
+                Write-GuiLog "$($mod.Name) install failed: $($_.Exception.Message)" -Type Warn
+            }
         }
-        Write-GuiLog "Installing $($mod.Name)..." -Type Step
-        try {
-            Install-Module -Name $mod.Name -Scope CurrentUser -Force -AllowClobber -ErrorAction Stop
-            Write-GuiLog "$($mod.Name) installed." -Type Ok
-        } catch {
-            Write-GuiLog "$($mod.Name) install failed: $($_.Exception.Message)" -Type Warn
+    } finally {
+        if ($galleryTrusted) {
+            try {
+                Set-PSRepository -Name PSGallery -InstallationPolicy Untrusted -ErrorAction Stop
+            } catch {
+                $allInstalled = $false
+                Write-GuiLog "Could not restore PSGallery trust: $($_.Exception.Message)" -Type Warn
+            }
         }
     }
 
-    if ($galleryTrusted) {
-        try {
-            Set-PSRepository -Name PSGallery -InstallationPolicy Untrusted -ErrorAction SilentlyContinue
-        } catch { }
-    }
-
-    return $true
+    return $allInstalled
 }
 
 function Set-WindowsTerminalFont {
@@ -507,16 +638,9 @@ function Set-WindowsTerminalFont {
 
     $fontName = 'FiraCode Nerd Font'
 
-    if (-not $SettingsPath) {
-        $knownPaths = @(
-            "$env:LOCALAPPDATA\Packages\Microsoft.WindowsTerminal_8wekyb3d8bbwe\LocalState\settings.json",
-            "$env:LOCALAPPDATA\Packages\Microsoft.WindowsTerminalPreview_8wekyb3d8bbwe\LocalState\settings.json",
-            "$env:LOCALAPPDATA\Microsoft\Windows Terminal\settings.json"
-        )
-        $SettingsPath = $knownPaths | Where-Object { Test-Path $_ -PathType Leaf } | Select-Object -First 1
-    }
+    if (-not $SettingsPath) { $SettingsPath = Get-WindowsTerminalSettingsPath }
 
-    if (-not $settingsPath) {
+    if (-not $SettingsPath) {
         Write-GuiLog "Windows Terminal settings.json not found." -Type Info
         return $false
     }
@@ -524,15 +648,17 @@ function Set-WindowsTerminalFont {
     try {
         $settings = Get-Content $settingsPath -Raw -Encoding UTF8 | ConvertFrom-Json
 
-        if (-not $settings.profiles) {
+        $profilesProperty = $settings.PSObject.Properties['profiles']
+        if (-not $profilesProperty -or -not $profilesProperty.Value) {
             Write-GuiLog "Windows Terminal settings has no profiles section." -Type Warn
             return $false
         }
 
         $changed = $false
 
-        if (-not $settings.profiles.defaults) {
-            $settings.profiles | Add-Member -Name 'defaults' -Value @{} -MemberType NoteProperty -Force
+        $defaultsProperty = $settings.profiles.PSObject.Properties['defaults']
+        if (-not $defaultsProperty -or -not $defaultsProperty.Value) {
+            $settings.profiles | Add-Member -Name 'defaults' -Value ([PSCustomObject]@{}) -MemberType NoteProperty -Force
         }
         $defaultsFontProp = $settings.profiles.defaults.PSObject.Properties['font']
         $defaultsFont = if ($defaultsFontProp) { $defaultsFontProp.Value } else { $null }
@@ -564,7 +690,8 @@ function Set-WindowsTerminalFont {
         }
 
         if ($changed) {
-            $settings | ConvertTo-Json -Depth 10 | Set-Content $settingsPath -Encoding UTF8 -Force
+            Backup-WindowsTerminalSettings -SettingsPath $SettingsPath
+            [System.IO.File]::WriteAllText($SettingsPath, ($settings | ConvertTo-Json -Depth 15), (New-Object System.Text.UTF8Encoding($false)))
             Write-GuiLog "Windows Terminal font set to $fontName." -Type Ok
         } else {
             Write-GuiLog "Windows Terminal already using $fontName." -Type Ok
@@ -576,180 +703,6 @@ function Set-WindowsTerminalFont {
     }
 }
 
-function Install-AlacrittyConfig {
-    try {
-        $configDir = Join-Path $env:APPDATA 'alacritty'
-        if (-not (Test-Path $configDir)) {
-            New-Item -ItemType Directory -Path $configDir -Force | Out-Null
-        }
-
-        $configPath = Join-Path $configDir 'alacritty.toml'
-
-        if (Test-Path $configPath) {
-            $timestamp = Get-Date -Format 'yyyyMMdd-HHmmss'
-            Copy-Item $configPath "$configPath.bak-$timestamp" -Force
-            Write-GuiLog "Existing Alacritty config backed up." -Type Info
-        }
-
-        Set-Content -Path $configPath -Value @'
-[window]
-decorations = "Full"
-opacity = 0.95
-dynamic_padding = true
-
-[window.padding]
-x = 4
-y = 2
-
-[window.dimensions]
-columns = 120
-lines = 35
-
-[font]
-size = 12
-
-[font.normal]
-family = "FiraCode Nerd Font"
-style = "Regular"
-
-[font.bold]
-family = "FiraCode Nerd Font"
-style = "Bold"
-
-[font.italic]
-family = "FiraCode Nerd Font"
-style = "Italic"
-
-[font.bold_italic]
-family = "FiraCode Nerd Font"
-style = "Bold Italic"
-
-[colors.primary]
-background = "#1E1E2E"
-foreground = "#CDD6F4"
-
-[colors.normal]
-black   = "#45475A"
-red     = "#F38BA8"
-green   = "#A6E3A1"
-yellow  = "#F9E2AF"
-blue    = "#89B4FA"
-magenta = "#F5C2E7"
-cyan    = "#94E2D5"
-white   = "#BAC2DE"
-
-[colors.bright]
-black   = "#585B70"
-red     = "#F38BA8"
-green   = "#A6E3A1"
-yellow  = "#F9E2AF"
-blue    = "#89B4FA"
-magenta = "#F5C2E7"
-cyan    = "#94E2D5"
-white   = "#A6ADC8"
-
-[[keyboard.bindings]]
-action = "Paste"
-key = "V"
-mods = "Control|Shift"
-
-[terminal.shell]
-program = "pwsh"
-args = ["-NoLogo"]
-'@ -Encoding UTF8 -Force
-
-        Write-GuiLog "Alacritty configured at: $configPath" -Type Ok
-        return $true
-    } catch {
-        Write-GuiLog "Failed to configure Alacritty: $($_.Exception.Message)" -Type Warn
-        return $false
-    }
-}
-
-function Install-Alacritty {
-    $existing = Get-Executable -Name 'alacritty'
-    if (-not $existing) {
-        $null = Install-WingetPackage -Id 'Alacritty.Alacritty' -DisplayName 'Alacritty'
-    } else {
-        $verStr = if ($existing.Version) { " $($existing.Version)" } else { '' }
-        Write-GuiLog "Alacritty already installed: $($existing.Path)$verStr" -Type Ok
-    }
-
-    if (Get-Command alacritty -ErrorAction SilentlyContinue) {
-        Write-GuiLog "Configuring Alacritty..." -Type Step
-        $configResult = Install-AlacrittyConfig
-        return $configResult
-    }
-    Write-GuiLog "Alacritty not found after install attempt." -Type Warn
-    return $false
-}
-
-function Install-Chocolatey {
-    param([string[]]$Sources = @())
-
-    $existing = Get-Command choco -ErrorAction SilentlyContinue
-    if ($existing) {
-        Write-GuiLog "Chocolatey already installed: $($existing.Source)" -Type Ok
-        return $true
-    }
-
-    $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
-
-    if (-not $isAdmin) {
-        Write-GuiLog "Chocolatey requires administrator privileges to install to the default path." -Type Warn
-        Write-GuiLog "Install manually as Administrator or run this installer as Admin." -Type Info
-        return $false
-    }
-
-    Write-GuiLog "Installing Chocolatey..." -Type Step
-    try {
-        Set-ExecutionPolicy Bypass -Scope Process -Force -ErrorAction Stop
-        Enable-Tls12
-        $chocolateyInstallUrl = 'https://community.chocolatey.org/install.ps1'
-        $chocolateyInstallPath = Join-Path $env:TEMP "config-pwsh7-install-chocolatey-$([guid]::NewGuid().ToString('N')).ps1"
-        Write-GuiLog "Remote installer notice: Chocolatey setup executes the official script from $chocolateyInstallUrl." -Type Warn
-        Write-GuiLog "Downloading Chocolatey installer to: $chocolateyInstallPath" -Type Info
-        Invoke-WebRequest -Uri $chocolateyInstallUrl -OutFile $chocolateyInstallPath -UseBasicParsing -ErrorAction Stop
-        Unblock-File -Path $chocolateyInstallPath -ErrorAction SilentlyContinue
-        & $chocolateyInstallPath
-
-        $chocoBin = 'C:\ProgramData\chocolatey\bin'
-        if (Test-Path $chocoBin) {
-            $currentPath = [Environment]::GetEnvironmentVariable('PATH', 'Process')
-            if ($currentPath -notmatch [regex]::Escape($chocoBin)) {
-                [Environment]::SetEnvironmentVariable('PATH', "$currentPath;$chocoBin", 'Process')
-                $env:PATH = "$env:PATH;$chocoBin"
-            }
-        }
-
-        if (Get-Command choco -ErrorAction SilentlyContinue) {
-            Write-GuiLog "Chocolatey installed." -Type Ok
-        } else {
-            Write-GuiLog "Chocolatey installed but not in PATH. Restart terminal." -Type Warn
-            return $false
-        }
-    } catch {
-        Write-GuiLog "Chocolatey install failed: $($_.Exception.Message)" -Type Warn
-        return $false
-    }
-
-    foreach ($source in $Sources) {
-        $trimmed = $source.Trim()
-        if (-not $trimmed) { continue }
-        $sourceName = ($trimmed -replace 'https?://', '' -replace '[^a-zA-Z0-9]', '-').Trim('-')
-        if (-not $sourceName) { $sourceName = "custom-$(Get-Random -Maximum 9999)" }
-        Write-GuiLog "Adding Chocolatey source: $trimmed" -Type Info
-        try {
-            choco source add -n $sourceName -s $trimmed --priority=1 2>&1 | Out-Null
-            Write-GuiLog "Source added: $sourceName" -Type Ok
-        } catch {
-            Write-GuiLog "Failed to add source: $($_.Exception.Message)" -Type Warn
-        }
-    }
-
-    return $true
-}
-
 function Install-Scoop {
     param([string[]]$Buckets = @())
 
@@ -757,7 +710,6 @@ function Install-Scoop {
     if (-not $existing) {
         Write-GuiLog "Installing Scoop..." -Type Step
         try {
-            Set-ExecutionPolicy RemoteSigned -Scope CurrentUser -Force -ErrorAction Stop
             Enable-Tls12
             $scoopInstallUrl = 'https://get.scoop.sh'
             $scoopInstallPath = Join-Path $env:TEMP "config-pwsh7-install-scoop-$([guid]::NewGuid().ToString('N')).ps1"
@@ -765,7 +717,7 @@ function Install-Scoop {
             Write-GuiLog "Downloading Scoop installer to: $scoopInstallPath" -Type Info
             Invoke-WebRequest -Uri $scoopInstallUrl -OutFile $scoopInstallPath -UseBasicParsing -ErrorAction Stop
             Unblock-File -Path $scoopInstallPath -ErrorAction SilentlyContinue
-            & $scoopInstallPath
+            & $scoopInstallPath 2>&1 | ForEach-Object { Write-GuiLog "$_" -Type Info }
 
             $scoopBin = Join-Path $HOME 'scoop\bin'
             if (Test-Path $scoopBin) {

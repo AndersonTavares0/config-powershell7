@@ -13,15 +13,22 @@ the downloaded content.
 
 Current posture:
 
-- Repository bootstrap downloads use this repository's GitHub `main` branch.
+- The bootstrap script uses this repository's GitHub `main` branch; repository
+  archives use the latest stable GitHub Release returned by the GitHub API.
 - Oh My Posh themes are downloaded from the official Oh My Posh GitHub
   repository.
 - FiraCode Nerd Font downloads use the official `ryanoasis/nerd-fonts` release
   URL.
-- WinGet, PowerShell Gallery, Scoop, and Chocolatey flows trust their package
-  manager or official installer source.
+- WinGet, PowerShell Gallery, and Scoop flows trust their package manager or
+  official installer source.
 - The installer performs basic sanity checks where implemented, such as theme
-  file size validation and successful archive extraction.
+  JSON structure validation and mandatory repository layout checks.
+- Existing unrelated installation directories are refused. Repository updates
+  retain the previous directory for recovery; profile migration removes only
+  attributable generated stubs and preserves surrounding user code.
+- Optional vendor CLI installers execute downloaded scripts after selection;
+  their output is logged separately from success/failure results. They inherit
+  the privileges of the user launching setup.
 
 Current limitations:
 

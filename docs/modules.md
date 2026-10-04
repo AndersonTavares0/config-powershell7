@@ -157,7 +157,8 @@ by using a cache file with a 24-hour Time-To-Live.
 **How it works:**
 
 1. On startup, reads the first line of the cache file
-   (`# fp:<hash> ts:<unix_epoch>`).
+   (`# fp:<fingerprint> ts:<unix_epoch>`); the fingerprint is a delimited string,
+   not a cryptographic hash, and supports paths containing spaces.
 2. If TTL is still valid (< 24h), loads the cache directly — skips
    `Get-Command` and `Get-FileHash` entirely (~5ms hot path validation, then
    ~120ms for OMP init script execution via dot-source).
@@ -215,26 +216,28 @@ text_utils).
 config-powershell7/
 ├── .github/workflows/          # CI/CD Automation
 ├── Microsoft.PowerShell_profile.ps1    # Main Loader
-├── install.ps1                 # Legacy automated installer
+├── install.ps1                 # Compatibility wrapper for setup.ps1
 ├── uninstall.ps1               # Safe uninstaller
-├── install.cmd                 # Double-click GUI launcher
+├── install.cmd                 # Double-click CLI-first setup launcher
 ├── uninstall.cmd               # Double-click uninstaller
 ├── setup.ps1                   # Entry point for new installer
 ├── setup/modules/
 │   ├── core.ps1                # Platform detection, logging
 │   ├── deps.ps1                # Dependency installers + theme data
+│   ├── agent-clis.ps1          # Optional coding-agent CLI installers
 │   ├── profile.ps1             # Profile link management
 │   ├── orchestrator.ps1        # Install/uninstall orchestration
 │   ├── gui.ps1                 # WPF XAML UI with runspaces
-│   └── cli.ps1                 # Terminal menu fallback
+│   └── cli.ps1                 # Default terminal menu
 ├── lib/
 │   ├── platform.ps1            # Cross-platform detection + elevation
 │   ├── ux-helpers.ps1          # Console output helpers
-│   └── profile-paths.ps1       # Profile path resolution
+│   └── executable.ps1          # Executable discovery and version probing
 ├── tests/
 │   ├── benchmark.ps1                    # Boot timing benchmark
 │   ├── Unit.Tests.ps1                  # Unit tests (cache, system, git, text)
-│   ├── POSH_THEME.Tests.ps1            # 5 env-var theme tests
+│   ├── ThemeOverride.Tests.ps1         # 6 env-var theme tests
+│   ├── WindowsCompatibility.Tests.ps1 # Isolated Windows regression tests
 │   ├── Setup.Tests.ps1                 # Setup module tests
 │   ├── Test-ProfileInstallation.ps1    # Post-install health checks
 │   └── Microsoft.PowerShell_profile.Tests.ps1  # Integration tests
@@ -256,9 +259,9 @@ The execution order when opening a new session:
 
 ```
 1. PowerShell loads $PROFILE automatically.
-2. Guard: checks $env:__PROFILE_LOADED to prevent double-loading.
+2. Guard: checks a process-local global variable to prevent double-loading.
 3. Stopwatch starts for performance measurement.
-4. Resolves repository root via $env:__PROFILE_REPO_ROOT or $PSScriptRoot.
+4. Resolves repository root via $PSScriptRoot.
 5. Loads config module (critical -- must succeed, return on failure).
 6. Loads remaining modules in try/catch (non-critical):
    - cache:    TTL check -> hot path or rebuild -> dot-source cache
@@ -374,17 +377,17 @@ Initialized via TTL cache. `Update-PluginCache` checks availability with
 
 ---
 
-## POSH_THEME (Runtime Theme Override)
+## CONFIG_PWSH7_THEME (Runtime Theme Override)
 
 You can switch your Oh My Posh theme at runtime without reinstalling:
 
 ```powershell
-$env:POSH_THEME = 'montys'
+$env:CONFIG_PWSH7_THEME = 'montys'
 ```
 
 The profile reads this variable at boot. Unset or empty falls back to the
 theme selected during installation. The profile stub sets
-`$env:POSH_THEME` at session start.
+`$env:CONFIG_PWSH7_THEME` at session start.
 
 ---
 
@@ -549,8 +552,8 @@ integration.
 
 ### No silent failures
 
-- All `catch` blocks log at minimum `Write-Verbose` or `Write-Warning`
-- Zero bare `catch {}` blocks in the codebase
+- Operational failures should log at minimum `Write-Verbose` or `Write-Warning`;
+  some optional platform probes still suppress errors and remain lint follow-ups
 - Plugin init failures write `Write-Warning` (visible to user)
 
 ### Guaranteed Dispose
@@ -566,9 +569,11 @@ files, CI pipeline).
 
 ### ExecutionPolicy
 
-The profile requires `RemoteSigned` or higher at `CurrentUser` scope.
-Downloaded files must be unblocked with `Unblock-File` to avoid the digital
-signature error.
+The unsigned profile needs an effective policy that permits it. `RemoteSigned`
+permits local/unblocked scripts; `AllSigned` still requires a signature.
+Inspect `Get-ExecutionPolicy -List` in PowerShell 7: PS5.1 settings are separate,
+Process overrides expire, and Group Policy takes precedence. The installer
+reports this state without changing it.
 
 ---
 
@@ -576,9 +581,9 @@ signature error.
 
 | Scenario | Behavior |
 |---|---|
-| Windows 10+ | Full support -- all features enabled |
-| Linux (Fedora) | Full support -- native `sudo`, XDG paths |
-| macOS | Full support -- native `sudo`, `sysctl` |
+| Windows 10/11 x64 | Automated installer target; desktop VM matrix remains required for release qualification |
+| Linux | Profile platform guards, native `sudo`, XDG paths; no automated installer support or current homologation |
+| macOS | Profile platform guards, native `sudo`, `sysctl`; no automated installer support or current homologation |
 | PS 5.1, without updated PSReadLine | Configured without history prediction |
 | PS 7+, with PSReadLine | History prediction with ListView |
 | No git in PATH | Git module entirely skipped |
@@ -632,8 +637,9 @@ generated cache, so it is expected to be the largest slice when OMP is enabled.
 | Test Suite | Scope | Description |
 |---|---|---|
 | `tests/Unit.Tests.ps1` | Unit | Cache, system, git, text utils |
-| `tests/POSH_THEME.Tests.ps1` | Theme | POSH_THEME env var override |
+| `tests/ThemeOverride.Tests.ps1` | Theme | CONFIG_PWSH7_THEME env var override |
 | `tests/Setup.Tests.ps1` | Setup | Installer modules |
+| `tests/WindowsCompatibility.Tests.ps1` | Regression | PS7/PS5.1 isolated Windows scenarios |
 | `tests/Test-ProfileInstallation.ps1` | Health | Post-install health check |
 | `tests/Microsoft.PowerShell_profile.Tests.ps1` | Integration | Behavioral integration |
 | `tests/benchmark.ps1` | Benchmark | Boot timing (fresh pwsh processes) |
@@ -644,8 +650,8 @@ generated cache, so it is expected to be the largest slice when OMP is enabled.
 # Unit tests (fastest feedback)
 .\tests\Unit.Tests.ps1
 
-# POSH_THEME tests
-.\tests\POSH_THEME.Tests.ps1
+# CONFIG_PWSH7_THEME tests
+.\tests\ThemeOverride.Tests.ps1
 
 # Post-install health check
 .\tests\Test-ProfileInstallation.ps1 -Detailed
@@ -661,5 +667,9 @@ generated cache, so it is expected to be the largest slice when OMP is enabled.
 
 One pipeline validates every push or pull request to `main`:
 
-- **`test.yml`** -- copies profile + modules to `$PROFILE` path, runs
-  PSScriptAnalyzer, runs custom test suites on `windows-latest`.
+- **`validate.yml`**, job `suites` -- copies profile + modules to `$PROFILE`
+  path, runs PSScriptAnalyzer, runs custom test suites on `windows-2022` and
+  `windows-2025`; Windows compatibility regressions run under PS7 and PS5.1.
+- **`validate.yml`**, job `installer` -- `workflow_dispatch` only: full
+  end-to-end install on a disposable runner, with idempotency, theme-change,
+  child-shell, failure-propagation, and uninstall checks.

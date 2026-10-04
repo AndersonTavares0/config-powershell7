@@ -274,7 +274,9 @@ function sudo {
     [CmdletBinding(SupportsShouldProcess)]
     param([Parameter(ValueFromRemainingArguments)][string[]]$Command)
 
-    if ($Command.Count -eq 1 -and $Command[0] -eq '!!') {
+    # $Command chega como $null quando sudo roda sem argumentos, e sob StrictMode
+    # ler .Count de $null aborta a função em vez de abrir a sessão elevada.
+    if ($Command -and $Command.Count -eq 1 -and $Command[0] -eq '!!') {
         $last = (Get-History -Count 1).CommandLine
         if ($last) { $Command = @($last) }
         else       { Write-Verbose "Nenhum comando no histórico."; return }

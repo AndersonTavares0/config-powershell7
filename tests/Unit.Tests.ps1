@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 # ============================================================
 # UNIT TESTS — Cache module (Phase 1 / 4)
 # Framework + mock helpers shared across phases
@@ -141,6 +141,27 @@ if (-not (Test-Path $script:ModulePath)) {
 }
 
 . $script:ModulePath
+
+$ompStateInitializer = Test-Path Function:\Initialize-OhMyPoshState
+Test-Result -Name 'OMP state initializer is available' -Passed $ompStateInitializer `
+    -Message 'Initialize-OhMyPoshState is missing'
+if ($ompStateInitializer) {
+    $hadOmpState = $null -ne (Get-Variable -Name '_ompInitialized' -Scope Global -ErrorAction SilentlyContinue)
+    $oldOmpState = if ($hadOmpState) { $global:_ompInitialized } else { $null }
+    $script:MockCommandResults['oh-my-posh'] = [PSCustomObject]@{ Name = 'oh-my-posh' }
+    try {
+        Remove-Variable -Name '_ompInitialized' -Scope Global -ErrorAction SilentlyContinue
+        Initialize-OhMyPoshState
+        Assert-False -Condition $global:_ompInitialized -TestName 'OMP state initializer defines strict-mode guard'
+        $global:_ompInitialized = $true
+        Initialize-OhMyPoshState
+        Assert-True -Condition $global:_ompInitialized -TestName 'OMP state initializer preserves existing true state'
+    } finally {
+        if ($hadOmpState) { $global:_ompInitialized = $oldOmpState }
+        else { Remove-Variable -Name '_ompInitialized' -Scope Global -ErrorAction SilentlyContinue }
+        $script:MockCommandResults.Remove('oh-my-posh')
+    }
+}
 
 # ── LOAD SYSTEM MODULE ────────────────────────────────────────
 $script:SystemModulePath = Join-Path $PSScriptRoot '..\modules\system\system.ps1'
@@ -737,6 +758,24 @@ function Write-SystemSuite {
     }
 
     # ============================================================
+    # SYS-14: bare sudo opens an elevated session
+    # $Command is $null with no arguments, so reading .Count aborted
+    # the function under StrictMode instead of elevating.
+    # ============================================================
+    try {
+        $script:MockStartProcessArgs = $null
+        sudo -Confirm:$false
+        Assert-NotNull -Value $script:MockStartProcessArgs -TestName 'SYS-14: bare sudo starts elevated session'
+        if ($script:MockStartProcessArgs) {
+            Assert-Equal -Expected 'RunAs' -Actual $script:MockStartProcessArgs.Verb -TestName 'SYS-14: bare sudo uses RunAs'
+            Assert-True -Condition ($null -eq $script:MockStartProcessArgs.ArgumentList) -TestName 'SYS-14: bare sudo passes no command'
+        }
+    }
+    catch {
+        Test-Result -Name 'SYS-14: bare sudo' -Passed $false -Message $_.Exception.Message
+    }
+
+    # ============================================================
     # SYS-11: sysinfo dispatches to script:Get-WindowsSystemInfo
     # ============================================================
     try {
@@ -1231,11 +1270,49 @@ function Write-PSReadLineSuite {
     Write-Host "PSReadLine suite complete." -ForegroundColor Cyan
 }
 
+# ── NAVIGATION MODULE TESTS ───────────────────────────────────
+
+$script:NavigationModulePath = Join-Path $PSScriptRoot '..\modules\navigation\navigation.ps1'
+if (Test-Path $script:NavigationModulePath) {
+    . $script:NavigationModulePath
+}
+
+function Write-NavigationSuite {
+    Write-Host "`n=== NAVIGATION MODULE TESTS ===" -ForegroundColor Cyan
+
+    # NAV-01: nf creates a file that does not exist yet
+    $navFile = Join-Path $script:CacheDir 'nav01_new.txt'
+    try {
+        Remove-MockFile $navFile
+        nf $navFile
+        Assert-True -Condition (Test-Path $navFile) -TestName 'NAV-01: nf creates a missing file'
+    }
+    catch { Test-Result -Name 'NAV-01' -Passed $false -Message $_.Exception.Message }
+    finally { Remove-MockFile $navFile }
+
+    # NAV-02: nf never truncates an existing file
+    # New-Item -Force silently wipes the target, so nf must refuse instead.
+    $navExisting = Join-Path $script:CacheDir 'nav02_existing.txt'
+    try {
+        Set-Content -Path $navExisting -Value 'conteudo do usuario' -Encoding UTF8
+        $script:MockWarnings = @()
+        nf $navExisting
+        Assert-Equal -Expected 'conteudo do usuario' -Actual ((Get-Content $navExisting -Raw).Trim()) `
+            -TestName 'NAV-02: nf preserves existing file content'
+        Assert-True -Condition ($script:MockWarnings.Count -ge 1) -TestName 'NAV-02: nf warns instead of overwriting'
+    }
+    catch { Test-Result -Name 'NAV-02' -Passed $false -Message $_.Exception.Message }
+    finally { Remove-MockFile $navExisting }
+
+    Write-Host "Navigation suite complete." -ForegroundColor Cyan
+}
+
 Write-CacheSuite
 Write-SystemSuite
 Write-TextUtilsSuite
 Write-GitSuite
 Write-PSReadLineSuite
+Write-NavigationSuite
 
 # ── CLEANUP ───────────────────────────────────────────────────
 Remove-Item $script:CacheDir -Force -Recurse -ErrorAction SilentlyContinue

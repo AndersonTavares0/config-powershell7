@@ -17,8 +17,8 @@ $ErrorActionPreference = 'Stop'
 
 # Nomes em inglês + alias, convenção unificada
 function Clear-PluginCache {
-    if (Test-Path $script:Config.CachePath) {
-        Remove-Item $script:Config.CachePath -ErrorAction SilentlyContinue
+    if (Test-Path -LiteralPath $script:Config.CachePath) {
+        Remove-Item -LiteralPath $script:Config.CachePath -ErrorAction SilentlyContinue
     }
 }
 Set-Alias Clear-Cache Clear-PluginCache
@@ -31,16 +31,22 @@ function Import-TerminalIcons {
 }
 Set-Alias icons Import-TerminalIcons
 
+function script:Initialize-OhMyPoshState {
+    if (Get-Variable -Name '_ompInitialized' -Scope Global -ErrorAction SilentlyContinue) { return }
+    if (-not (Get-Command oh-my-posh -ErrorAction SilentlyContinue)) { return }
+    $global:_ompInitialized = $false
+}
+
 # Retorna fingerprint apenas do tema: path + exists flag +
 # (opcional) Length:LastWriteTimeTicks. Usada no hot path para
 # validar que o tema não mudou dentro da janela TTL.
 function script:Get-ThemeFingerprint {
     $result = @()
     $result += $script:Config.ThemePath
-    $result += [int](Test-Path $script:Config.ThemePath)
-    if (Test-Path $script:Config.ThemePath) {
+    $result += [int](Test-Path -LiteralPath $script:Config.ThemePath)
+    if (Test-Path -LiteralPath $script:Config.ThemePath) {
         try {
-            $info = Get-Item $script:Config.ThemePath -ErrorAction SilentlyContinue
+            $info = Get-Item -LiteralPath $script:Config.ThemePath -ErrorAction SilentlyContinue
             if ($info) {
                 $result += "$($info.Length):$($info.LastWriteTimeUtc.Ticks)"
             }
@@ -103,7 +109,12 @@ function script:Update-PluginCache {
 
     if ($zcmd) {
         try {
-            [void]$buf.AppendLine((zoxide init powershell 2>&1 | Out-String))
+            # 2>&1 captura o stderr como texto: sem checar o exit code, a mensagem de
+            # erro entraria no cache e seria dot-sourced em toda sessão seguinte.
+            $global:LASTEXITCODE = 0
+            $zoxideInit = zoxide init powershell 2>&1 | Out-String
+            if ($LASTEXITCODE -ne 0) { throw "zoxide init retornou código $LASTEXITCODE." }
+            [void]$buf.AppendLine($zoxideInit)
             [void]$buf.AppendLine("`$script:StartupModules.Add('Zoxide')")
         } catch {
             Write-Warning "Update-PluginCache: zoxide init falhou — Zoxide não inicializado. $_"
@@ -112,21 +123,23 @@ function script:Update-PluginCache {
 
     if ($ocmd) {
         try {
-            $themeExists = Test-Path $script:Config.ThemePath
+            $themeExists = Test-Path -LiteralPath $script:Config.ThemePath
             $label       = if ($themeExists) { "OMP:$($script:Config.ThemeName)" } else { 'OMP:default' }
-            $initCmd     = if ($themeExists) {
-                oh-my-posh init pwsh --config $script:Config.ThemePath 2>&1
+            $global:LASTEXITCODE = 0
+            $ompInit     = if ($themeExists) {
+                oh-my-posh init pwsh --config $script:Config.ThemePath 2>&1 | Out-String
             } else {
-                oh-my-posh init pwsh 2>&1
+                oh-my-posh init pwsh 2>&1 | Out-String
             }
-            [void]$buf.AppendLine(($initCmd | Out-String))
+            if ($LASTEXITCODE -ne 0) { throw "oh-my-posh init retornou código $LASTEXITCODE." }
+            [void]$buf.AppendLine($ompInit)
             [void]$buf.AppendLine("`$script:StartupModules.Add('$label')")
         } catch {
             Write-Warning "Update-PluginCache: oh-my-posh init falhou — Oh My Posh não inicializado. $_"
         }
     }
 
-    try   { Set-Content -Path $script:Config.CachePath -Value $buf.ToString() -Encoding UTF8 -ErrorAction Stop }
+    try   { Set-Content -LiteralPath $script:Config.CachePath -Value $buf.ToString() -Encoding UTF8 -ErrorAction Stop }
     catch { Write-Warning "Update-PluginCache: falha ao salvar cache — cache será regenerado na próxima sessão. $_" }
 }
 
@@ -141,9 +154,9 @@ function script:Initialize-PluginCache {
     $cachedFP = $null
 
     # HOT PATH: cache válido com TTL ok — valida só fingerprint do tema (~0ms)
-    if (Test-Path $script:Config.CachePath) {
-        $firstLine = Get-Content $script:Config.CachePath -TotalCount 1 -ErrorAction SilentlyContinue
-        if ($firstLine -match '^# fp:(\S+)\s+ts:(\d+)$') {
+    if (Test-Path -LiteralPath $script:Config.CachePath) {
+        $firstLine = Get-Content -LiteralPath $script:Config.CachePath -TotalCount 1 -ErrorAction SilentlyContinue
+        if ($firstLine -match '^# fp:(.+) ts:(\d+)$') {
             $cachedTS = [long]$Matches[2]
             $cachedFP = $Matches[1]
             $nowTS    = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
@@ -152,7 +165,10 @@ function script:Initialize-PluginCache {
             if ($ageMin -lt $script:Config.CacheTTLMinutes) {
                 # TTL válido — valida fingerprint do tema antes do early return
                 $themeEnding = (script:Get-ThemeFingerprint) -join '|'
-                if ($cachedFP.EndsWith($themeEnding)) {
+                # Ordinal: a comparação padrão de String.EndsWith é sensível à cultura,
+                # e caminhos de tema não devem depender do locale da máquina.
+                if ($cachedFP.EndsWith($themeEnding, [System.StringComparison]::Ordinal)) {
+                    script:Initialize-OhMyPoshState
                     . $script:Config.CachePath
                     return
                 }
@@ -172,16 +188,19 @@ function script:Initialize-PluginCache {
         $currentFP = script:Get-PluginFingerprint -zcmd $zcmd -ocmd $ocmd
         if ($cachedFP -eq $currentFP) {
             # Fingerprint idêntico — apenas atualizar o timestamp (touch)
-            $content = Get-Content $script:Config.CachePath -Raw -ErrorAction SilentlyContinue
+            $content = Get-Content -LiteralPath $script:Config.CachePath -Raw -ErrorAction SilentlyContinue
             $newTs   = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
-            $content = $content -replace '^# fp:(\S+)\s+ts:\d+', "# fp:`$1 ts:${newTs}"
-            Set-Content -Path $script:Config.CachePath -Value $content -Encoding UTF8 -ErrorAction SilentlyContinue
+            $content = $content -replace '^# fp:(.+) ts:\d+', "# fp:`$1 ts:${newTs}"
+            Set-Content -LiteralPath $script:Config.CachePath -Value $content -Encoding UTF8 -ErrorAction SilentlyContinue
             $needRebuild = $false
         }
     }
 
     if ($needRebuild) { script:Update-PluginCache -zcmd $zcmd -ocmd $ocmd }
-    if (Test-Path $script:Config.CachePath) { . $script:Config.CachePath }
+    if (Test-Path -LiteralPath $script:Config.CachePath) {
+        script:Initialize-OhMyPoshState
+        . $script:Config.CachePath
+    }
 }
 
 script:Initialize-PluginCache

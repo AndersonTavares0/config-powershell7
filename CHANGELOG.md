@@ -4,8 +4,135 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+### CI
+- Validation runs on Windows Server 2022 and 2025, including isolated Windows
+  compatibility regressions under both PowerShell 7 and Windows PowerShell 5.1.
+- `validate.yml`: full validation workflow (suites on push/PR, disposable-runner
+  end-to-end installer on manual dispatch with idempotency, theme-change,
+  child-shell, failure-propagation, and uninstall checks)
+
+### Removed
+- `test.yml`: `validate.yml` already ran the same analyzer and suites on the
+  same events, so every push and pull request paid for both
+- `lib/profile-paths.ps1`: never dot-sourced; `Get-ProfilePath` in
+  `setup/modules/profile.ps1` is the live implementation
+- `Install-Chocolatey`: unreachable from every entry point, and the only code
+  left in the project that called `Set-ExecutionPolicy`
+- `Install-CompleteConfig` and `Set-AlacrittyColorScheme`: unreachable wrappers
+  around the managed Alacritty and Windows Terminal configuration
+- Alacritty from installer, GUI, theme menu, and uninstaller flows
+
 ### Added
-- (nothing yet)
+- Optional CLI installers for Google Antigravity, OpenCode, Codex, and Claude Code
+- Bundled `atomic` Oh My Posh theme with offline fallback and custom theme support
+
+### Changed
+- Installer now targets the PowerShell 7 `CurrentUserAllHosts` profile and
+  updates a marked block without replacing user-owned profile content
+- Remote installs use the latest stable GitHub Release and stage repository
+  replacement before activation
+- Default managed repository location moved from Documents to
+  `LocalApplicationData` to avoid OneDrive redirection
+- `install.cmd` now invokes the modular `setup.ps1` flow
+- Execution policy is inspected and reported instead of changed silently
+- Profile load guards now use process-local PowerShell variables, preventing
+  child shells from skipping profile initialization
+- CLI menu is the default installer; pass `-Gui` to open the WPF installer
+- Fastfetch and Topgrade can be selected independently
+- WinGet installs in user scope first; installer asks before elevated retry
+- Missing WinGet can use Scoop after user confirmation
+- Optional agent installers now live in `setup/modules/agent-clis.ps1`
+- Installer logs Windows, architecture, PowerShell, privilege, and package-provider state
+- GUI shows bundled and user themes before online lookup; network requests time out after 8 seconds
+- Existing custom theme files stay untouched, including invalid files
+- A restrictive execution policy and a missing Windows Terminal are reported as
+  skipped steps instead of failing the whole installation
+- The bundled `atomic` theme works without network access; downloaded themes
+  must pass JSON structure validation
+- Nerd Font installation is per-user (no elevation) and counts only fonts that
+  were actually written
+- Windows Terminal `settings.json` is backed up once before it is rewritten
+- Installing the Nerd Font now also sets it as the Windows Terminal font face;
+  before, the font was installed but never applied
+- **Breaking:** the runtime theme override is `$env:CONFIG_PWSH7_THEME`, not
+  `$env:POSH_THEME`. `POSH_THEME` belongs to oh-my-posh, which uses it for a
+  full config path, so a child shell inherited a path where this project
+  expected a bare theme name. `tests/POSH_THEME.Tests.ps1` is now
+  `tests/ThemeOverride.Tests.ps1`
+
+### Fixed
+- Second audit: dependency stdout no longer contaminates boolean results;
+  Scoop/npm/vendor failures propagate, and interactive CLI failures reach the
+  launcher instead of reporting completion.
+- Legacy current-host profiles migrate with backups; only contiguous generated
+  stubs with matching repository paths are removed, preserving unrelated code.
+- Repository updates refuse unrelated directories and retain previous trees for
+  recovery instead of deleting backups inside the activation transaction.
+- Real profile/cache loading supports bracketed paths and cache fingerprints
+  containing spaces. Unicode PowerShell sources use BOM for PS5.1 parsing.
+- GUI workers initialize strict mode/error preferences explicitly.
+- Documentation now distinguishes tested Windows scope, process execution
+  policy, remote bootstrap/release sources, and actual uninstall behavior.
+- Managed profile updates preserve literal dollar signs in repository paths;
+  relative repository paths are resolved before linking, and profile operations
+  handle bracketed paths without interpreting wildcards.
+- Windows Terminal font and color setup accepts missing optional `defaults`
+  and `schemes` properties and adding a scheme to an existing nonempty list.
+- `-NonInteractive` reaches dependency installers: failures no longer prompt
+  for elevation or Scoop. CI also selects the noninteractive dispatcher.
+- Scoop confirmation no longer reads an undefined `$DisplayName?` variable.
+- Failed PowerShell module installs report failure and restore PSGallery trust
+  in `finally`; downloads enforce the required minimum module versions.
+- Setup uninstall tests use a temporary home/cache instead of deleting the
+  user's real plugin cache.
+- Headless install aborted immediately: an ungrouped `Test-Path $repoPath -and`
+  bound `-and` as a `Test-Path` parameter
+- Terminal menu crashed on the theme list (`${$themes.Count}`) and on a
+  `$MyInvocation.MyCommand.Path` lookup that is empty inside a function
+- CLI installs Oh My Posh before loading its theme catalog and accepts a manual
+  theme name if the catalog is unavailable
+- Bootstrapper refreshes `PATH` and resolves PowerShell 7 from WinGet links,
+  WindowsApps, or known install locations
+- Oh My Posh cache initializes its guard variable before dot-sourcing generated
+  startup code under strict mode
+- Uninstalling from Windows PowerShell 5.1 inspected the WindowsPowerShell
+  profile instead of the managed PowerShell 7 one; it now relaunches under pwsh
+- Profile unblock check called a `GetIsZoneIdentifier()` method that does not
+  exist, so downloaded files were never unblocked
+- `setup/setup.ps1` sets its own strict mode and error preference, which the
+  `pwsh -File` relaunch from 5.1 did not inherit
+- Windows Terminal scheme update overwrote the wrong entry when the settings
+  file already held duplicate scheme names
+- GUI log replayed its whole buffer every tick because the tick handler wrote to
+  a local copy of the log index
+- `install.cmd` unblocks the downloaded installer before running it
+- winget lookup no longer recurses through `Program Files\WindowsApps`, which
+  stalls and denies enumeration to non-elevated users
+- Downloads use `-UseBasicParsing` and suppress progress rendering, avoiding the
+  Internet Explorer dependency and the slow path on Windows PowerShell 5.1
+- Bare `sudo` aborted instead of opening an elevated session: with no arguments
+  the parameter is `$null`, and reading `.Count` on it fails under strict mode
+- `nf` silently truncated an existing file (`New-Item -Force` overwrites); it now
+  refuses and points at `touch`
+- A failing `zoxide` or `oh-my-posh` init wrote its own error text into the
+  plugin cache, which was then dot-sourced by every later session. Both init
+  calls now check the exit code before the output is cached
+- Theme fingerprint comparison is ordinal, so cache validity no longer depends
+  on the machine's locale
+- `Config.ThemeName` follows `ThemePath` when a missing theme falls back to
+  `atomic`; the boot summary used to name a theme that was not in use
+- Theme and start-directory paths are checked with `-LiteralPath`, so a value
+  containing `[`, `]` or `*` is no longer treated as a wildcard
+- GUI install and uninstall runspaces catch their own errors. Nothing reads
+  their error stream, so an escaping error left the window disabled and stuck on
+  `Installing...` forever
+- `Test-ProfileInstallation.ps1`: boot time and a restrictive execution policy
+  are reported as warnings instead of failing the health check, and the
+  duplicated exit block was removed
+- Profile no longer leaks `Set-StrictMode -Version Latest` and
+  `$ErrorActionPreference = 'Stop'` into the interactive session. Dot-sourcing
+  runs in the caller's scope, so every routine non-terminating error became
+  terminating; both now apply only while the profile loads
 
 ## [v0.3] — 2026-07-07
 

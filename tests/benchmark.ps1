@@ -25,7 +25,7 @@ foreach ($run in 1..$Runs) {
 
     $scriptBlock = {
         $sw = [Diagnostics.Stopwatch]::StartNew()
-        $env:__PROFILE_LOADED = '1'
+        $global:__CONFIG_POWERSHELL7_PROFILE_LOADED = $true
         $script:ProfileRoot = $args[0]
 
         . (Join-Path $script:ProfileRoot 'modules/config/config.ps1')

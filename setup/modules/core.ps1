@@ -13,18 +13,35 @@ if (-not (Get-Variable -Name 'IsWin' -Scope Script -ErrorAction SilentlyContinue
     }
 }
 
+if ($script:IsWin) {
+    $script:IsAdmin = ([Security.Principal.WindowsPrincipal] `
+        [Security.Principal.WindowsIdentity]::GetCurrent()
+    ).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+} else {
+    $script:IsAdmin = ((id -u 2>$null) -eq '0')
+}
+
 $script:RepoOwner  = 'AndersonTavares0'
 $script:RepoName   = 'config-powershell7'
-$script:RepoBranch = 'main'
-$script:RepoZipUrl = "https://github.com/$script:RepoOwner/$script:RepoName/archive/refs/heads/$script:RepoBranch.zip"
+$script:RepoZipUrl = "https://api.github.com/repos/$script:RepoOwner/$script:RepoName/releases/latest"
+
+if (-not (Get-Variable -Name InstallerNonInteractive -Scope Script -ErrorAction SilentlyContinue)) {
+    $script:InstallerNonInteractive = $false
+}
+
+function Test-InstallerInteractive {
+    return $Host.Name -eq 'ConsoleHost' -and -not $script:InstallerNonInteractive -and
+        -not $env:CI -and -not [Console]::IsInputRedirected
+}
 
 function Write-GuiLog {
     param(
         [string]$Message,
         [string]$Type = 'Info'
     )
-    if ($script:SyncHash) {
-        $script:SyncHash.LogMessages.Add(@{ Message = $Message; Type = $Type; Time = Get-Date })
+    $syncHash = Get-Variable -Name SyncHash -Scope Script -ValueOnly -ErrorAction SilentlyContinue
+    if ($syncHash) {
+        $syncHash.LogMessages.Add(@{ Message = $Message; Type = $Type; Time = Get-Date })
     }
     $prefix = switch ($Type) {
         'Ok'   { '[OK]' }
@@ -42,14 +59,41 @@ function Get-WingetPath {
 
     $localAppData = [Environment]::GetFolderPath('LocalApplicationData')
     $winApps = Join-Path $localAppData 'Microsoft\WindowsApps\winget.exe'
-    if (Test-Path $winApps -ErrorAction SilentlyContinue) { return $winApps }
+    if (Test-Path $winApps -PathType Leaf) { return $winApps }
 
-    $programFiles = Join-Path $env:ProgramFiles 'WindowsApps'
-    if (Test-Path $programFiles -ErrorAction SilentlyContinue) {
-        $wingetAlt = Get-ChildItem $programFiles -Filter 'winget.exe' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1
+    # Targeted, not recursive: WindowsApps holds thousands of files and denies
+    # enumeration to non-elevated users, so a -Recurse scan there stalls and finds nothing.
+    if ($env:ProgramFiles) {
+        $packageGlob = Join-Path $env:ProgramFiles 'WindowsApps\Microsoft.DesktopAppInstaller_*_x64__8wekyb3d8bbwe\winget.exe'
+        $wingetAlt = Get-Item -Path $packageGlob -ErrorAction SilentlyContinue |
+            Sort-Object Name -Descending | Select-Object -First 1
         if ($wingetAlt) { return $wingetAlt.FullName }
     }
     return $null
+}
+
+function Get-InstallerEnvironment {
+    $architecture = if ($env:PROCESSOR_ARCHITEW6432) {
+        $env:PROCESSOR_ARCHITEW6432
+    } else {
+        $env:PROCESSOR_ARCHITECTURE
+    }
+    $wingetPath = Get-WingetPath
+    $scoop = Get-Command scoop -ErrorAction SilentlyContinue
+    $node = Get-Command node -ErrorAction SilentlyContinue
+    $npm = Get-Command npm -ErrorAction SilentlyContinue
+
+    return [PSCustomObject]@{
+        OSVersion        = [Environment]::OSVersion.Version
+        Architecture     = $architecture
+        Is64Bit          = [Environment]::Is64BitOperatingSystem
+        PowerShellVersion = $PSVersionTable.PSVersion
+        IsAdministrator  = $script:IsAdmin
+        HasWinGet        = [bool]$wingetPath
+        HasScoop         = [bool]$scoop
+        HasNode          = [bool]$node
+        HasNpm           = [bool]$npm
+    }
 }
 
 function Enable-Tls12 {
@@ -69,9 +113,14 @@ function Get-FileFromUrl {
         [string]$Description = 'file'
     )
     Write-GuiLog "Downloading from $Url..." -Type Step
+    # Progress rendering makes Invoke-WebRequest an order of magnitude slower on PS 5.1.
+    $previousProgress = $ProgressPreference
+    $ProgressPreference = 'SilentlyContinue'
     try {
         Enable-Tls12
-        Invoke-WebRequest -Uri $Url -OutFile $OutFile -ErrorAction Stop
+        # -UseBasicParsing: PS 5.1 otherwise needs the Internet Explorer engine, which
+        # is absent or blocked by its first-run prompt on clean Windows installs.
+        Invoke-WebRequest -Uri $Url -OutFile $OutFile -UseBasicParsing -ErrorAction Stop
 
         $fileItem = Get-Item $OutFile -ErrorAction SilentlyContinue
         if ($fileItem -and $fileItem.Length -ge $MinBytes) {
@@ -88,59 +137,86 @@ function Get-FileFromUrl {
         Write-GuiLog "Download failed: $($_.Exception.Message)" -Type Fail
         Remove-Item $OutFile -Force -ErrorAction SilentlyContinue
         return $false
+    } finally {
+        $ProgressPreference = $previousProgress
     }
+}
+
+function Test-RepositoryLayout {
+    param([string]$Path)
+    foreach ($requiredFile in @('Microsoft.PowerShell_profile.ps1', 'modules/config/config.ps1', 'setup/setup.ps1', 'lib/executable.ps1')) {
+        if (-not (Test-Path -LiteralPath (Join-Path $Path $requiredFile) -PathType Leaf)) { return $false }
+    }
+    return $true
 }
 
 function Download-Repo {
     param([string]$TargetDir)
 
-    $zipPath = Join-Path $env:TEMP "$($script:RepoName)-archive.zip"
-    $extractDir = Join-Path $env:TEMP "$($script:RepoName)-extract"
-
-    $ok = Get-FileFromUrl -Url $script:RepoZipUrl -OutFile $zipPath
-    if (-not $ok) {
-        Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
-        return $false
-    }
+    $zipPath = Join-Path ([IO.Path]::GetTempPath()) "$($script:RepoName)-$([guid]::NewGuid().ToString('N')).zip"
+    $extractDir = $null
+    $previousDir = $null
+    $movedPrevious = $false
 
     try {
-        Write-GuiLog "Extracting to $TargetDir..." -Type Step
+        $TargetDir = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($TargetDir)
+        if ((Test-Path -LiteralPath $TargetDir) -and -not (Test-RepositoryLayout $TargetDir)) {
+            throw 'Refusing to replace an unrelated directory. Select a new installation directory.'
+        }
+        $parentDir = Split-Path $TargetDir -Parent
+        $id = [guid]::NewGuid().ToString('N')
+        $extractDir = Join-Path $parentDir ".$($script:RepoName)-stage-$id"
+        $previousDir = Join-Path $parentDir ".$($script:RepoName)-previous-$id"
+        Enable-Tls12
+        $release = Invoke-RestMethod -Uri $script:RepoZipUrl -ErrorAction Stop
+        if (-not $release.tag_name -or -not $release.zipball_url) {
+            throw 'Latest GitHub release metadata is incomplete.'
+        }
+        $ok = Get-FileFromUrl -Url $release.zipball_url -OutFile $zipPath
+        if (-not $ok) { return $false }
 
-        if (Test-Path $extractDir -ErrorAction SilentlyContinue) {
-            Remove-Item $extractDir -Recurse -Force -ErrorAction SilentlyContinue
-        }
-        if (Test-Path $TargetDir -ErrorAction SilentlyContinue) {
-            Remove-Item $TargetDir -Recurse -Force -ErrorAction SilentlyContinue
-        }
+        Write-GuiLog "Extracting to $TargetDir..." -Type Step
+        if (-not (Test-Path $parentDir)) { New-Item -ItemType Directory -Force -Path $parentDir | Out-Null }
+        New-Item -ItemType Directory -Force -Path $extractDir | Out-Null
 
         Add-Type -AssemblyName System.IO.Compression.FileSystem
         [System.IO.Compression.ZipFile]::ExtractToDirectory($zipPath, $extractDir)
 
         $innerDir = Get-ChildItem $extractDir -Directory -ErrorAction SilentlyContinue | Select-Object -First 1
-        if (-not $innerDir) {
-            Write-GuiLog "Extraction failed: no directory found in archive" -Type Fail
-            return $false
+        if (-not $innerDir -or -not (Test-RepositoryLayout $innerDir.FullName)) {
+            throw 'Downloaded release does not contain a valid profile repository.'
         }
-        Move-Item $innerDir.FullName $TargetDir -Force
-
-        Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
-        Remove-Item $extractDir -Recurse -Force -ErrorAction SilentlyContinue
+        Set-Content -Path (Join-Path $innerDir.FullName '.config-powershell7-version') -Value $release.tag_name -Encoding ASCII
+        if (Test-Path -LiteralPath $TargetDir) {
+            Move-Item -LiteralPath $TargetDir -Destination $previousDir -Force -ErrorAction Stop
+            $movedPrevious = $true
+        }
+        Move-Item -LiteralPath $innerDir.FullName -Destination $TargetDir -Force -ErrorAction Stop
 
         # Unblock downloaded files to avoid ExecutionPolicy errors
         Write-GuiLog "Unblocking script files..." -Type Step
-        Get-ChildItem -Path $TargetDir -Filter '*.ps1' -Recurse -ErrorAction SilentlyContinue |
+        Get-ChildItem -LiteralPath $TargetDir -Filter '*.ps1' -Recurse -ErrorAction SilentlyContinue |
             Unblock-File -ErrorAction SilentlyContinue
         Write-GuiLog "Files unblocked." -Type Ok
 
-        if (Test-Path (Join-Path $TargetDir 'Microsoft.PowerShell_profile.ps1') -ErrorAction SilentlyContinue) {
+        if (Test-RepositoryLayout $TargetDir) {
+            if ($movedPrevious) { Write-GuiLog "Previous repository retained for recovery: $previousDir" -Type Warn }
+            $movedPrevious = $false
             Write-GuiLog "Repository ready at: $TargetDir" -Type Ok
             return $true
         }
-        Write-GuiLog "Extraction succeeded but profile not found at: $TargetDir" -Type Fail
-        return $false
+        throw "Activated repository failed validation: $TargetDir"
     } catch {
         Write-GuiLog "Extraction failed: $($_.Exception.Message)" -Type Fail
+        if ($movedPrevious -and (Test-Path -LiteralPath $previousDir)) {
+            if (Test-Path -LiteralPath $TargetDir) { Remove-Item -LiteralPath $TargetDir -Recurse -Force -ErrorAction Stop }
+            Move-Item -LiteralPath $previousDir -Destination $TargetDir -Force -ErrorAction Stop
+            $movedPrevious = $false
+        }
         return $false
+    } finally {
+        Remove-Item -LiteralPath $zipPath -Force -ErrorAction SilentlyContinue
+        if ($extractDir) { Remove-Item -LiteralPath $extractDir -Recurse -Force -ErrorAction SilentlyContinue }
     }
 }
 
