@@ -82,9 +82,9 @@ tratados como prova de defeito automaticamente.
 ## CI e homologação
 
 `validate.yml` foi ampliado para `windows-2022` e `windows-2025`, com a nova
-suíte em PS7 e PS5.1. A execução remota dessa matriz ainda não foi observada
-nesta auditoria. São runners Windows Server, **não** instalações de Windows 10
-e Windows 11 desktop.
+suíte em PS7 e PS5.1. Acompanhe os resultados remotos no
+[PR #129](https://github.com/AndersonTavares0/config-powershell7/pull/129).
+São runners Windows Server, não instalações de Windows 10 e Windows 11 desktop.
 
 A homologação de instalação real, GUI, UAC, OneDrive, ausência de WinGet e
 políticas corporativas deve seguir [a matriz de VMs](validacao-vm.md) nos dois
@@ -120,6 +120,10 @@ problemas que os testes iniciais não cobriam e os reproduzimos antes de corrigi
   ou rollback global que o código não oferece.
 
 Resultado local da suíte ampliada: **22 passaram em PS7 e 22 em PS5.1**.
+Na última execução local, passaram também 126 testes unitários, 202 de setup,
+81 de integração e 6 de tema. O diagnóstico teve 68 PASS, nenhum FAIL e um
+aviso de boot frio (600 ms). O analisador apontou zero erros e 347 warnings;
+os warnings continuam registrados para revisão, sem correções automáticas em massa.
 Houve uma ocorrência de `Stream was not readable` no PS5.1 durante escrita de
 fixture, não reproduzida nas execuções posteriores; acompanhar na CI.
 
