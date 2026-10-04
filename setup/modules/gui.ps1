@@ -668,12 +668,14 @@ function Show-Gui {
         $txtProgress.Text = ''
         $timer.Start()
 
-        $needDownload = -not (Test-Path (Join-Path $repoPath 'Microsoft.PowerShell_profile.ps1'))
+        $needDownload = -not (Test-Path -LiteralPath (Join-Path $repoPath 'Microsoft.PowerShell_profile.ps1') -PathType Leaf)
 
         $ps = [PowerShell]::Create()
         $ps.AddScript({
             param($SetupDir, $RepoPath, $NeedDownload, $SyncHash, $RepoZipUrl, $RepoName, $Params, $ProfilePath)
 
+            Set-StrictMode -Version Latest
+            $ErrorActionPreference = 'Stop'
             $script:SyncHash = $SyncHash
             $script:RepoZipUrl = $RepoZipUrl
             $script:RepoName = $RepoName
@@ -774,6 +776,8 @@ function Show-Gui {
         $ps.AddScript({
             param($SetupDir, $RepoPath, $SyncHash, $ProfilePath)
 
+            Set-StrictMode -Version Latest
+            $ErrorActionPreference = 'Stop'
             $script:SyncHash = $SyncHash
             $global:PROFILE = $ProfilePath
 
@@ -822,4 +826,5 @@ function Show-Gui {
 
     $window.Add_Closing({ $timer.Stop() })
     $window.ShowDialog() | Out-Null
+    return -not $script:SyncHash.InstallFailed
 }

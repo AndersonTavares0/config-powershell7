@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 # ============================================================
 # UNIT TESTS — Cache module (Phase 1 / 4)
 # Framework + mock helpers shared across phases

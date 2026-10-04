@@ -142,16 +142,27 @@ function Get-FileFromUrl {
     }
 }
 
+function Test-RepositoryLayout {
+    param([string]$Path)
+    foreach ($requiredFile in @('Microsoft.PowerShell_profile.ps1', 'modules/config/config.ps1', 'setup/setup.ps1', 'lib/executable.ps1')) {
+        if (-not (Test-Path -LiteralPath (Join-Path $Path $requiredFile) -PathType Leaf)) { return $false }
+    }
+    return $true
+}
+
 function Download-Repo {
     param([string]$TargetDir)
 
-    $zipPath = Join-Path $env:TEMP "$($script:RepoName)-archive.zip"
+    $zipPath = Join-Path ([IO.Path]::GetTempPath()) "$($script:RepoName)-$([guid]::NewGuid().ToString('N')).zip"
     $extractDir = $null
     $previousDir = $null
     $movedPrevious = $false
 
     try {
-        $TargetDir = [System.IO.Path]::GetFullPath($TargetDir)
+        $TargetDir = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($TargetDir)
+        if ((Test-Path -LiteralPath $TargetDir) -and -not (Test-RepositoryLayout $TargetDir)) {
+            throw 'Refusing to replace an unrelated directory. Select a new installation directory.'
+        }
         $parentDir = Split-Path $TargetDir -Parent
         $id = [guid]::NewGuid().ToString('N')
         $extractDir = Join-Path $parentDir ".$($script:RepoName)-stage-$id"
@@ -172,43 +183,40 @@ function Download-Repo {
         [System.IO.Compression.ZipFile]::ExtractToDirectory($zipPath, $extractDir)
 
         $innerDir = Get-ChildItem $extractDir -Directory -ErrorAction SilentlyContinue | Select-Object -First 1
-        if (-not $innerDir -or -not (Test-Path (Join-Path $innerDir.FullName 'Microsoft.PowerShell_profile.ps1'))) {
+        if (-not $innerDir -or -not (Test-RepositoryLayout $innerDir.FullName)) {
             throw 'Downloaded release does not contain a valid profile repository.'
         }
         Set-Content -Path (Join-Path $innerDir.FullName '.config-powershell7-version') -Value $release.tag_name -Encoding ASCII
-        if (Test-Path $TargetDir) {
-            Move-Item $TargetDir $previousDir -Force
+        if (Test-Path -LiteralPath $TargetDir) {
+            Move-Item -LiteralPath $TargetDir -Destination $previousDir -Force -ErrorAction Stop
             $movedPrevious = $true
         }
-        Move-Item $innerDir.FullName $TargetDir -Force
+        Move-Item -LiteralPath $innerDir.FullName -Destination $TargetDir -Force -ErrorAction Stop
 
         # Unblock downloaded files to avoid ExecutionPolicy errors
         Write-GuiLog "Unblocking script files..." -Type Step
-        Get-ChildItem -Path $TargetDir -Filter '*.ps1' -Recurse -ErrorAction SilentlyContinue |
+        Get-ChildItem -LiteralPath $TargetDir -Filter '*.ps1' -Recurse -ErrorAction SilentlyContinue |
             Unblock-File -ErrorAction SilentlyContinue
         Write-GuiLog "Files unblocked." -Type Ok
 
-        if (Test-Path (Join-Path $TargetDir 'Microsoft.PowerShell_profile.ps1') -ErrorAction SilentlyContinue) {
-            if ($movedPrevious -and (Test-Path $previousDir)) {
-                Remove-Item $previousDir -Recurse -Force
-                $movedPrevious = $false
-            }
+        if (Test-RepositoryLayout $TargetDir) {
+            if ($movedPrevious) { Write-GuiLog "Previous repository retained for recovery: $previousDir" -Type Warn }
+            $movedPrevious = $false
             Write-GuiLog "Repository ready at: $TargetDir" -Type Ok
             return $true
         }
-        Write-GuiLog "Extraction succeeded but profile not found at: $TargetDir" -Type Fail
-        return $false
+        throw "Activated repository failed validation: $TargetDir"
     } catch {
         Write-GuiLog "Extraction failed: $($_.Exception.Message)" -Type Fail
-        if ($movedPrevious -and (Test-Path $previousDir)) {
-            if (Test-Path $TargetDir) { Remove-Item $TargetDir -Recurse -Force -ErrorAction SilentlyContinue }
-            Move-Item $previousDir $TargetDir -Force -ErrorAction SilentlyContinue
+        if ($movedPrevious -and (Test-Path -LiteralPath $previousDir)) {
+            if (Test-Path -LiteralPath $TargetDir) { Remove-Item -LiteralPath $TargetDir -Recurse -Force -ErrorAction Stop }
+            Move-Item -LiteralPath $previousDir -Destination $TargetDir -Force -ErrorAction Stop
             $movedPrevious = $false
         }
         return $false
     } finally {
-        Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
-        if ($extractDir) { Remove-Item $extractDir -Recurse -Force -ErrorAction SilentlyContinue }
+        Remove-Item -LiteralPath $zipPath -Force -ErrorAction SilentlyContinue
+        if ($extractDir) { Remove-Item -LiteralPath $extractDir -Recurse -Force -ErrorAction SilentlyContinue }
     }
 }
 

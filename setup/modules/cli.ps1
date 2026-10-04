@@ -147,6 +147,7 @@ function Start-CliMenu {
             } else {
                 Write-Host "Installation finished with failures. Review the summary above." -ForegroundColor Red
             }
+            return [bool]$installResult
         }
         '2' {
             Write-Host ""
@@ -155,15 +156,18 @@ function Start-CliMenu {
             Write-Host ""
             if ($uninstallResult) { Write-Host "Done!" -ForegroundColor Green }
             else { Write-Host "Uninstall finished with failures." -ForegroundColor Red }
+            return [bool]$uninstallResult
         }
         '3' {
-            Start-AgentCliMenu
+            return Start-AgentCliMenu
         }
         '4' {
             Write-Host "Exiting." -ForegroundColor Gray
+            return $true
         }
         default {
             Write-Host "Invalid option." -ForegroundColor Red
+            return $false
         }
     }
 }
@@ -181,15 +185,17 @@ function Start-AgentCliMenu {
 
     $selection = (Read-Host 'Select tool numbers, separated by commas').Trim()
     $selectionResult = Get-AgentCliSelection -Selection $selection -Specs $specs
-    if ($selectionResult.Cancelled) { return }
+    if ($selectionResult.Cancelled) { return $true }
     if (-not $selectionResult.Valid) {
         Write-Host 'Invalid selection; no tools installed.' -ForegroundColor Red
-        return
+        return $false
     }
 
+    $allInstalled = $true
     foreach ($spec in $selectionResult.Selected) {
-        Install-AgentCli -Name $spec.Name | Out-Null
+        if (-not (Install-AgentCli -Name $spec.Name)) { $allInstalled = $false }
     }
+    return $allInstalled
 }
 
 function Get-AgentCliSelection {

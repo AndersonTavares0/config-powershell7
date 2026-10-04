@@ -78,7 +78,10 @@ $repoDefaultDir = Join-Path $localAppData $repoName
 
 function Test-IsValidRepo {
     param([string]$Path)
-    return (Test-Path -LiteralPath (Join-Path $Path 'Microsoft.PowerShell_profile.ps1') -PathType Leaf)
+    foreach ($requiredFile in @('Microsoft.PowerShell_profile.ps1', 'modules/config/config.ps1', 'setup/setup.ps1', 'lib/executable.ps1')) {
+        if (-not (Test-Path -LiteralPath (Join-Path $Path $requiredFile) -PathType Leaf)) { return $false }
+    }
+    return $true
 }
 
 function Invoke-Launcher {
@@ -142,7 +145,7 @@ function Invoke-Launcher {
                 $scoop = Get-Command scoop -ErrorAction SilentlyContinue
                 if (-not $scoop) { Write-Host 'Scoop command is unavailable after installation.' -ForegroundColor Red; return $false }
                 Write-Host 'Installing PowerShell 7 with Scoop...' -ForegroundColor Cyan
-                & $scoop.Source install pwsh
+                & $scoop.Source install pwsh | Out-Host
                 if ($LASTEXITCODE -ne 0) {
                     Write-Host 'Scoop could not install PowerShell 7.' -ForegroundColor Red
                     return $false
@@ -162,11 +165,11 @@ function Invoke-Launcher {
         if ($ThemeName) { $launcherArgs += @('-ThemeName', $ThemeName) }
         if ($InstallFastfetch) { $launcherArgs += '-InstallFastfetch' }
         if ($InstallTopgrade) { $launcherArgs += '-InstallTopgrade' }
-        & $pwshPath @launcherArgs
+        & $pwshPath @launcherArgs | Out-Host
         return $LASTEXITCODE -eq 0
     }
     . $setupEntryPoint -RepoPath $RepoPath -NonInteractive:$NonInteractive `
-        -ThemeName $ThemeName -Gui:$Gui -InstallFastfetch:$InstallFastfetch -InstallTopgrade:$InstallTopgrade
+        -ThemeName $ThemeName -Gui:$Gui -InstallFastfetch:$InstallFastfetch -InstallTopgrade:$InstallTopgrade | Out-Host
     return $true
 }
 
@@ -184,7 +187,8 @@ function Test-RepoReleaseCurrent {
     param([string]$Path)
     $versionPath = Join-Path $Path '.config-powershell7-version'
     if (-not (Test-Path $versionPath -PathType Leaf)) { return $false }
-    $installedVersion = (Get-Content $versionPath -Raw -ErrorAction SilentlyContinue).Trim()
+    $installedVersion = [string](Get-Content -LiteralPath $versionPath -Raw -ErrorAction Stop)
+    $installedVersion = $installedVersion.Trim()
     $latestRelease = Get-LatestRepoRelease
     return $installedVersion -eq $latestRelease.tag_name
 }
@@ -192,7 +196,7 @@ function Test-RepoReleaseCurrent {
 function Download-Repo {
     param([string]$TargetDir)
 
-    $zipPath    = Join-Path $env:TEMP "$repoName.zip"
+    $zipPath    = Join-Path ([IO.Path]::GetTempPath()) "$repoName-$([guid]::NewGuid().ToString('N')).zip"
     $extractDir = $null
     $previousDir = $null
     $movedPrevious = $false
@@ -201,7 +205,10 @@ function Download-Repo {
     $ProgressPreference = 'SilentlyContinue'
 
     try {
-        $TargetDir = [System.IO.Path]::GetFullPath($TargetDir)
+        $TargetDir = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($TargetDir)
+        if ((Test-Path -LiteralPath $TargetDir) -and -not (Test-IsValidRepo $TargetDir)) {
+            throw 'Refusing to replace an unrelated directory. Select a new installation directory.'
+        }
         $parentDir = Split-Path $TargetDir -Parent
         $id = [guid]::NewGuid().ToString('N')
         $extractDir = Join-Path $parentDir ".$repoName-stage-$id"
@@ -226,37 +233,37 @@ function Download-Repo {
         }
         Set-Content -Path (Join-Path $innerDir.FullName '.config-powershell7-version') -Value $release.tag_name -Encoding ASCII
 
-        if (Test-Path $TargetDir) {
-            Move-Item $TargetDir $previousDir -Force
+        if (Test-Path -LiteralPath $TargetDir) {
+            Move-Item -LiteralPath $TargetDir -Destination $previousDir -Force -ErrorAction Stop
             $movedPrevious = $true
         }
-        Move-Item $innerDir.FullName $TargetDir -Force
+        Move-Item -LiteralPath $innerDir.FullName -Destination $TargetDir -Force -ErrorAction Stop
 
         Write-Host "Unblocking script files..." -ForegroundColor Cyan
-        Get-ChildItem -Path $TargetDir -Filter '*.ps1' -Recurse -ErrorAction SilentlyContinue |
+        Get-ChildItem -LiteralPath $TargetDir -Filter '*.ps1' -Recurse -ErrorAction SilentlyContinue |
             Unblock-File -ErrorAction SilentlyContinue
         Write-Host "Files unblocked." -ForegroundColor Green
 
         if (-not (Test-IsValidRepo $TargetDir)) { throw 'Activated repository failed validation.' }
-        if ($movedPrevious -and (Test-Path $previousDir)) {
-            Remove-Item $previousDir -Recurse -Force
-            $movedPrevious = $false
-        }
+        if ($movedPrevious) { Write-Host "Previous repository retained for recovery: $previousDir" -ForegroundColor Yellow }
+        # Activation is committed. Never destructively clean the backup inside
+        # the transaction: a partially deleted backup cannot be rolled back.
+        $movedPrevious = $false
 
         Write-Host "Repository downloaded to: $TargetDir" -ForegroundColor Green
         return $true
     } catch {
         Write-Host "Failed to download repository: $($_.Exception.Message)" -ForegroundColor Red
-        if ($movedPrevious -and (Test-Path $previousDir)) {
-            if (Test-Path $TargetDir) { Remove-Item $TargetDir -Recurse -Force -ErrorAction SilentlyContinue }
-            Move-Item $previousDir $TargetDir -Force -ErrorAction SilentlyContinue
+        if ($movedPrevious -and (Test-Path -LiteralPath $previousDir)) {
+            if (Test-Path -LiteralPath $TargetDir) { Remove-Item -LiteralPath $TargetDir -Recurse -Force -ErrorAction Stop }
+            Move-Item -LiteralPath $previousDir -Destination $TargetDir -Force -ErrorAction Stop
             $movedPrevious = $false
         }
         return $false
     } finally {
         $ProgressPreference = $previousProgress
-        Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
-        if ($extractDir) { Remove-Item $extractDir -Recurse -Force -ErrorAction SilentlyContinue }
+        Remove-Item -LiteralPath $zipPath -Force -ErrorAction SilentlyContinue
+        if ($extractDir) { Remove-Item -LiteralPath $extractDir -Recurse -Force -ErrorAction SilentlyContinue }
     }
 }
 

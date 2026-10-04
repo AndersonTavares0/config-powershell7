@@ -85,9 +85,11 @@ try {
         $source = Join-Path $testRoot 'bootstrap [local]'
         [IO.Directory]::CreateDirectory((Join-Path $source 'setup')) | Out-Null
         [IO.Directory]::CreateDirectory((Join-Path $source 'lib')) | Out-Null
+        [IO.Directory]::CreateDirectory((Join-Path $source 'modules/config')) | Out-Null
+        [IO.File]::WriteAllText((Join-Path $source 'modules/config/config.ps1'), '# fixture')
         [IO.File]::WriteAllText((Join-Path $source 'Microsoft.PowerShell_profile.ps1'), '# source')
         Copy-Item -LiteralPath (Join-Path $repoRoot 'lib/executable.ps1') -Destination (Join-Path $source 'lib/executable.ps1')
-        [IO.File]::WriteAllText((Join-Path $source 'setup/setup.ps1'), 'param($RepoPath, [switch]$NonInteractive, $ThemeName, [switch]$Gui, [switch]$InstallFastfetch, [switch]$InstallTopgrade) [IO.File]::WriteAllText((Join-Path $RepoPath "launched.txt"), "ok")')
+        [IO.File]::WriteAllText((Join-Path $source 'setup/setup.ps1'), 'param($RepoPath, [switch]$NonInteractive, $ThemeName, [switch]$Gui, [switch]$InstallFastfetch, [switch]$InstallTopgrade) "installer status"; [IO.File]::WriteAllText((Join-Path $RepoPath "launched.txt"), "ok")')
         # Load the real functions via AST, without running the real installer.
         $ast = [Management.Automation.Language.Parser]::ParseFile((Join-Path $repoRoot 'setup.ps1'), [ref]$null, [ref]$null)
         foreach ($name in @('Test-IsValidRepo', 'Invoke-Launcher')) {
@@ -95,7 +97,8 @@ try {
             . ([scriptblock]::Create($definition.Extent.Text))
         }
         Assert-True (Test-IsValidRepo -Path $source) 'Bootstrapper treated the repository path as a wildcard'
-        Assert-True (Invoke-Launcher -RepoPath $source -NonInteractive) 'Bootstrapper launcher failed'
+        $launched = @(Invoke-Launcher -RepoPath $source -NonInteractive)
+        Assert-True ($launched.Count -eq 1 -and $launched[0] -is [bool] -and $launched[0]) 'Bootstrapper output polluted its boolean result'
         Assert-True (Test-Path -LiteralPath (Join-Path $source 'launched.txt')) 'Setup entry point did not run'
     }
 
@@ -184,7 +187,7 @@ try {
         Copy-Item -LiteralPath (Join-Path $repoRoot 'Microsoft.PowerShell_profile.ps1') -Destination $source
         $scriptPath = Join-Path $source 'Microsoft.PowerShell_profile.ps1'
         $executable = if ($PSVersionTable.PSVersion.Major -ge 7) { Join-Path $PSHOME 'pwsh.exe' } else { Join-Path $PSHOME 'powershell.exe' }
-        $command = "`$env:CI='true'; `$env:PATH=''; Set-Variable HOME $(ConvertTo-PowerShellLiteral $source) -Force; . $(ConvertTo-PowerShellLiteral $scriptPath); if (-not (Get-Command docs -ErrorAction SilentlyContinue)) { exit 1 }; exit 0"
+        $command = "`$env:CI='true'; `$env:PATH=''; Set-Variable HOME $(ConvertTo-PowerShellLiteral $source) -Force; . $(ConvertTo-PowerShellLiteral $scriptPath); if (-not (Get-Command docs -ErrorAction SilentlyContinue)) { exit 1 }; if (-not (Test-Path -LiteralPath `$script:Config.CachePath)) { exit 2 }; `$stamp=(Get-Item -LiteralPath `$script:Config.CachePath).LastWriteTimeUtc.Ticks; Remove-Variable __CONFIG_POWERSHELL7_PROFILE_LOADED -Scope Global; . $(ConvertTo-PowerShellLiteral $scriptPath); if ((Get-Item -LiteralPath `$script:Config.CachePath).LastWriteTimeUtc.Ticks -ne `$stamp) { exit 3 }; exit 0"
         & $executable -NoProfile -ExecutionPolicy Bypass -Command $command | Out-Host
         Assert-True ($LASTEXITCODE -eq 0) 'Real profile did not load navigation functions'
     }
@@ -212,7 +215,7 @@ try {
             return $true
         }
         function Update-ProcessPathFromUser { }
-        function Get-AgentCliCommand { return }
+        function Get-AgentCliCommand { return [PSCustomObject]@{ Source = 'existing-claude.exe' } }
         $result = @(Invoke-OfficialPowerShellInstaller -Spec (Get-AgentCliInstallSpec -Name 'ClaudeCode'))
         Assert-True ($result.Count -eq 1 -and $result[0] -is [bool] -and -not $result[0]) 'Vendor failure output polluted the boolean result'
     }
@@ -255,6 +258,70 @@ try {
         Assert-True ($remaining.Contains('# user-owned') -and -not $remaining.Contains('__PROFILE_REPO_ROOT') -and -not $remaining.Contains('POSH_THEME')) 'Legacy host stub remained or user code was lost'
         Assert-True (Uninstall-Profile -RepoPath $source) 'All-hosts uninstall failed'
         Assert-True (-not (Test-Path -LiteralPath $allPath)) 'All-hosts link survived uninstall'
+    }
+
+    Test-Result 'GUI workers fail closed when their module loader is missing' {
+        $ast = [Management.Automation.Language.Parser]::ParseFile((Join-Path $repoRoot 'setup/modules/gui.ps1'), [ref]$null, [ref]$null)
+        $workers = @($ast.FindAll({ param($node) $node -is [Management.Automation.Language.InvokeMemberExpressionAst] -and $node.Member.Value -eq 'AddScript' }, $true))
+        Assert-True ($workers.Count -eq 2) 'Expected install and uninstall workers'
+        foreach ($worker in $workers) {
+            $sync = [hashtable]::Synchronized(@{ LogMessages = [Collections.Generic.List[object]]::new(); InstallFailed = $false; InstallComplete = $false })
+            $ps = [PowerShell]::Create()
+            try {
+                $null = $ps.AddScript($worker.Arguments[0].ScriptBlock.Extent.Text.Trim('{', '}'))
+                $null = $ps.AddParameter('SetupDir', (Join-Path $testRoot 'missing-setup'))
+                $null = $ps.AddParameter('RepoPath', $testRoot)
+                $null = $ps.AddParameter('SyncHash', $sync)
+                $null = $ps.AddParameter('ProfilePath', (Join-Path $testRoot 'gui-profile.ps1'))
+                if ($worker.Arguments[0].Extent.Text -match 'NeedDownload') {
+                    $null = $ps.AddParameter('NeedDownload', $false)
+                    $null = $ps.AddParameter('RepoZipUrl', 'https://example.test/release')
+                    $null = $ps.AddParameter('RepoName', 'config-powershell7')
+                    $null = $ps.AddParameter('Params', @{})
+                }
+                $null = $ps.Invoke()
+                Assert-True ($sync.InstallComplete -and $sync.InstallFailed) 'GUI worker left the UI waiting or silently succeeded'
+                Assert-True ($ps.Streams.Error.Count -eq 0) 'GUI worker leaked uncaught nonterminating errors'
+            } finally { $ps.Dispose() }
+        }
+    }
+
+    foreach ($downloadImplementation in @('bootstrapper', 'core')) {
+        Test-Result "$downloadImplementation download refuses unrelated directories and retains the old repo" {
+            if ($downloadImplementation -eq 'bootstrapper') {
+                $ast = [Management.Automation.Language.Parser]::ParseFile((Join-Path $repoRoot 'setup.ps1'), [ref]$null, [ref]$null)
+                foreach ($name in @('Test-IsValidRepo', 'Download-Repo')) {
+                    $definition = $ast.Find({ param($node) $node -is [Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq $name }, $false)
+                    . ([scriptblock]::Create($definition.Extent.Text))
+                }
+            }
+            $releaseRoot = Join-Path $testRoot "release-$downloadImplementation"
+            $inner = Join-Path $releaseRoot 'repo'
+            foreach ($relative in @('Microsoft.PowerShell_profile.ps1', 'modules/config/config.ps1', 'setup/setup.ps1', 'lib/executable.ps1')) {
+                $path = Join-Path $inner $relative
+                [IO.Directory]::CreateDirectory((Split-Path $path -Parent)) | Out-Null
+                [IO.File]::WriteAllText($path, '# fixture')
+            }
+            Add-Type -AssemblyName System.IO.Compression.FileSystem
+            $fixtureZip = Join-Path $testRoot "release-$downloadImplementation.zip"
+            [IO.Compression.ZipFile]::CreateFromDirectory($releaseRoot, $fixtureZip)
+            function Get-LatestRepoRelease { return [PSCustomObject]@{ tag_name = 'v-test'; zipball_url = 'https://example.test/release.zip' } }
+            function Invoke-RestMethod { return Get-LatestRepoRelease }
+            function Invoke-WebRequest { param($Uri, $OutFile, [switch]$UseBasicParsing, $ErrorAction) Copy-Item -LiteralPath $fixtureZip -Destination $OutFile }
+            $target = Join-Path $testRoot "target-$downloadImplementation"
+            [IO.Directory]::CreateDirectory($target) | Out-Null
+            [IO.File]::WriteAllText((Join-Path $target 'user.txt'), 'keep me')
+            Assert-True (-not (Download-Repo -TargetDir $target)) 'Download replaced an unrelated existing directory'
+            Assert-True ([IO.File]::ReadAllText((Join-Path $target 'user.txt')) -eq 'keep me') 'Unrelated user file was lost'
+            foreach ($relative in @('Microsoft.PowerShell_profile.ps1', 'modules/config/config.ps1', 'setup/setup.ps1', 'lib/executable.ps1')) {
+                $path = Join-Path $target $relative
+                [IO.Directory]::CreateDirectory((Split-Path $path -Parent)) | Out-Null
+                [IO.File]::WriteAllText($path, '# previous')
+            }
+            Assert-True (Download-Repo -TargetDir $target) 'Valid repository update failed'
+            $backups = @(Get-ChildItem -LiteralPath $testRoot -Directory -Force | Where-Object { $_.Name -like '.config-powershell7-previous-*' -and (Test-Path -LiteralPath (Join-Path $_.FullName 'user.txt')) })
+            Assert-True ($backups.Count -gt 0) 'Old repository and user additions were deleted instead of retained'
+        }
     }
 } finally {
     Set-Location -LiteralPath $originalLocation.Path

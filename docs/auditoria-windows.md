@@ -1,8 +1,14 @@
 # Auditoria de compatibilidade Windows
 
-Data: 2026-10-03. Objetivo: melhorar a instalação e o uso em Windows 10/11.
-O instalador continua tendo Windows **x64** como alvo; ARM64 e Windows x86
-não estão homologados e são recusados pelo bootstrapper.
+Revisões em 3 e 4 de outubro de 2026, com foco em Windows 10 e Windows 11.
+
+Os testes confirmam as correções descritas aqui. Ainda falta testar a instalação
+completa e a interface gráfica em máquinas limpas dos dois sistemas. O instalador
+aceita Windows x64 e recusa ARM64 e x86.
+
+Para usar o projeto, é preciso confiar nos fornecedores dos downloads. O
+instalador usa HTTPS, mas não verifica por conta própria as assinaturas ou os
+checksums dos arquivos baixados. Esse limite está descrito em `SECURITY.md`.
 
 ## Problemas corrigidos
 
@@ -25,9 +31,9 @@ de backups agora acompanha o nome real do perfil (`profile.ps1`, por exemplo).
 
 ## Evidência de regressão
 
-Jornadas derivadas da auditoria: instalar/atualizar/remover o perfil em caminhos
-Windows válidos, configurar um Terminal recém-inicializado e reportar falhas de
-dependências sem bloquear uma execução headless.
+Os testes reproduzem tarefas de uso: instalar, atualizar e remover o perfil em
+caminhos Windows válidos, configurar um Terminal recém-inicializado e informar
+falhas de dependências durante uma execução sem interação.
 
 Os nove casos iniciais da nova suíte foram executados **antes** das correções:
 `0 passed, 9 failed`. O caso adicional do bootstrapper em caminho com colchetes
@@ -85,3 +91,49 @@ políticas corporativas deve seguir [a matriz de VMs](validacao-vm.md) nos dois
 sistemas desktop. Não houve instalação real de dependências nem validação
 visual da GUI nesta auditoria. Portanto, os testes aprovados demonstram as
 correções reproduzidas, mas não certificam todas as edições/builds de Windows.
+
+## Segunda auditoria: segurança, funcionamento e documentação
+
+As tabelas acima registram a primeira rodada. Na segunda revisão, encontramos
+problemas que os testes iniciais não cobriam e os reproduzimos antes de corrigir:
+
+- **Retorno falso-positivo:** stdout de Scoop, npm, scripts de fornecedores e
+  launcher poluía o resultado booleano. Logs agora seguem fluxo separado;
+  exit codes são verificados, e a CLI devolve falhas ao dispatcher.
+- **Preservação:** a migração antiga removia dot-sources só pelo nome do arquivo.
+  Agora reconhece apenas o stub contíguo gerado com caminho correspondente ao
+  repositório declarado, preserva código alheio e migra CurrentHost para AllHosts
+  com backup. Um stub cuja autoria não é reconhecida é preservado.
+- **Atualização de repositório:** os dois caminhos de download recusam diretórios
+  alheios, validam arquivos obrigatórios, usam ZIPs temporários únicos e mantêm
+  a árvore anterior em `.config-powershell7-previous-<guid>`. Isso evita rollback
+  usando um backup já parcialmente apagado.
+- **Perfil real:** teste em processo filho expôs curingas no loader/cache e
+  fingerprints incompatíveis com espaços. As operações usam caminhos literais
+  e o cache com espaço não é mais reconstruído em toda inicialização.
+- **PS5.1:** o carregamento real expôs leitura ANSI de fonte Unicode sem BOM;
+  os arquivos afetados receberam BOM e a convenção está em `.editorconfig`.
+- **GUI:** workers inicializam preferências explicitamente e foram exercitados
+  em runspaces reais com loader ausente. Isso não equivale a teste visual WPF.
+- **Docs:** corrigidas instruções de desinstalação, AllHosts, tema no momento
+  do carregamento, contagem de testes, Windows suportado e alegações de garantia
+  ou rollback global que o código não oferece.
+
+Resultado local da suíte ampliada: **22 passaram em PS7 e 22 em PS5.1**.
+Houve uma ocorrência de `Stream was not readable` no PS5.1 durante escrita de
+fixture, não reproduzida nas execuções posteriores; acompanhar na CI.
+
+A documentação oficial consultada confirmou as regras de saída/retorno e
+política de execução. As varreduras de segredos e antipadrões passaram; são
+verificações heurísticas, não uma certificação de segurança.
+
+Referências consultadas:
+- [PowerShell: about_Return](https://learn.microsoft.com/powershell/module/microsoft.powershell.core/about/about_return)
+- [PowerShell: Set-ExecutionPolicy](https://learn.microsoft.com/powershell/module/microsoft.powershell.security/set-executionpolicy)
+- [Claude Code: instalação oficial](https://code.claude.com/docs/en/setup)
+- [Codex CLI: instalação oficial](https://developers.openai.com/codex/cli/)
+
+Antes de publicar uma nova versão, execute `docs/validacao-vm.md` em Windows 10
+e Windows 11 limpos. Registre os resultados de instalação, interface gráfica,
+UAC, OneDrive e políticas corporativas. Esses cenários ainda não passaram por
+essa validação.

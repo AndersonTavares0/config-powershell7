@@ -43,7 +43,7 @@ if ($script:InstallerNonInteractive) {
         -InstallFastfetch ([bool]$InstallFastfetch) -InstallTopgrade ([bool]$InstallTopgrade)
     if (-not $installResult) { throw 'One or more required installation steps failed.' }
 } elseif (-not $Gui -or -not $canShowGui -or ($Host.Name -notmatch 'ConsoleHost' -and $env:CI)) {
-    Start-CliMenu -RepoPath $RepoPath
+    if (-not (Start-CliMenu -RepoPath $RepoPath)) { throw 'Setup finished with failures. Review messages above.' }
 } else {
-    Show-Gui -SetupDir $setupDir -RepoPath $RepoPath
+    if (-not (Show-Gui -SetupDir $setupDir -RepoPath $RepoPath)) { throw 'Graphical setup finished with failures.' }
 }

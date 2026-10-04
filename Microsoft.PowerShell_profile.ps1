@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingWriteHost', '')]
 param()
@@ -86,7 +86,7 @@ try {
 
     # 0. CONFIG — Dependência crítica (sem ela nada funciona)
     $configPath = Join-Path $script:ProfileRoot 'modules/config/config.ps1'
-    if (Test-Path $configPath) {
+    if (Test-Path -LiteralPath $configPath -PathType Leaf) {
         . $configPath
         $global:__CONFIG_POWERSHELL7_PROFILE_LOADED = $true
     } else {
@@ -106,7 +106,7 @@ try {
 
     foreach ($module in $nonCriticalModules) {
         $modulePath = Join-Path $script:ProfileRoot "modules/$module"
-        if (Test-Path $modulePath) {
+        if (Test-Path -LiteralPath $modulePath -PathType Leaf) {
             try {
                 . $modulePath
             } catch {

@@ -61,6 +61,18 @@ All notable changes to this project will be documented in this file.
   `tests/ThemeOverride.Tests.ps1`
 
 ### Fixed
+- Second audit: dependency stdout no longer contaminates boolean results;
+  Scoop/npm/vendor failures propagate, and interactive CLI failures reach the
+  launcher instead of reporting completion.
+- Legacy current-host profiles migrate with backups; only contiguous generated
+  stubs with matching repository paths are removed, preserving unrelated code.
+- Repository updates refuse unrelated directories and retain previous trees for
+  recovery instead of deleting backups inside the activation transaction.
+- Real profile/cache loading supports bracketed paths and cache fingerprints
+  containing spaces. Unicode PowerShell sources use BOM for PS5.1 parsing.
+- GUI workers initialize strict mode/error preferences explicitly.
+- Documentation now distinguishes tested Windows scope, process execution
+  policy, remote bootstrap/release sources, and actual uninstall behavior.
 - Managed profile updates preserve literal dollar signs in repository paths;
   relative repository paths are resolved before linking, and profile operations
   handle bracketed paths without interpreting wildcards.

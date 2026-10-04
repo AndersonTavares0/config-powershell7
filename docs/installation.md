@@ -22,12 +22,12 @@ The main file `Microsoft.PowerShell_profile.ps1` acts as a **Loader**:
 
 ## Compatibility
 
-| Component | Minimum Version |
+| Component | Supported scope |
 |---|---|
-| Windows | 10 or higher |
-| Linux | Fedora (any modern distro with PS 7+) |
-| macOS | Any version with PS 7+ |
-| PowerShell | 5.1+ (full features on PS 7+) |
+| Windows installer | Windows 10/11 x64; ARM64/x86 are not supported |
+| Linux/macOS | Profile contains platform guards; automated installer is Windows-only; not homologated here |
+| PowerShell installer entry | 5.1+; delegates to PowerShell 7 |
+| Managed profile | PowerShell 7; manual 5.1 loading has reduced features |
 | Oh My Posh | Any current version (optional) |
 | Zoxide | Any current version (optional) |
 
@@ -55,7 +55,8 @@ the following:
     and Zoxide. If WinGet is missing, CLI setup offers per-user Scoop instead.
 3.  **Downloads the latest stable release** to
     `[Environment]::GetFolderPath('LocalApplicationData')\config-powershell7`
-4.  **Installs FiraCode Nerd Font** via Shell API
+4.  **Installs FiraCode Nerd Font** per user, registers it under HKCU and
+    publishes it to the session with the Windows font API
 5.  **Offers optional tools** — Fastfetch and Topgrade install independently
 6.  **Prompts for OMP theme selection** — bundled and user themes work offline;
     GUI shows local themes first and stops online lookups after 8 seconds
@@ -72,6 +73,19 @@ the following:
 > Convergent — repeating the same selection does not rewrite managed files.
 > Blocks wrapped in Try-Catch with clear messages.
 
+An existing installation directory must contain the mandatory repository files.
+An unrelated directory is refused, even in headless mode. Updates retain the old
+repository in a sibling `.config-powershell7-previous-<guid>` directory and log
+its location. Review and remove old backups manually after confirming the new
+installation; they can include user-added files. A download activation rollback
+does not undo dependency installations, fonts, or later Terminal/profile changes.
+
+Installation success means the selected file/package steps completed, **not**
+that every future shell can load them. A restrictive execution policy is
+reported without mutation. Verify a new PowerShell 7 session and run the health
+check; Group Policy, missing network access, and upstream installers can still
+prevent a working setup.
+
 ### Download trust model
 
 The remote installer downloads code and assets over HTTPS from official project
@@ -81,7 +95,7 @@ downloaded files.
 
 | Asset | Source | Current validation |
 |---|---|---|
-| Bootstrapper and repository ZIP | This GitHub repository, latest stable release | HTTPS transport; staged repository layout checks before activation |
+| Bootstrapper and repository ZIP | Bootstrap from `main`; ZIP from latest stable release | HTTPS transport; staged repository layout checks before activation |
 | Oh My Posh theme list and selected theme | Official Oh My Posh GitHub repository | HTTPS transport; theme JSON structure validation |
 | Antigravity, Codex, and Claude Code installers | Official vendor URLs | HTTPS download; scripts execute locally; no checksum verification |
 | OpenCode CLI | npm registry | npm package manager trust |
@@ -119,11 +133,15 @@ published checksums or signature verification.
 
 ---
 
-### Step 1: Configure Execution Policy
+### Step 1: Inspect Execution Policy
 
 ```powershell
-Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
+Get-ExecutionPolicy -List
 ```
+
+The installer does not change this policy. If your own machine permits unsigned
+profiles, you may explicitly choose `Set-ExecutionPolicy RemoteSigned -Scope
+CurrentUser`; it does not override administrator-enforced Group Policy.
 
 ### Step 2: Clone the repository
 
@@ -182,9 +200,11 @@ If you prefer not to use the script:
     ```
 
 2.  **Link via Dot-Source:**
-    Add these lines to your `$PROFILE`:
+    Add the dot-source line to `$PROFILE.CurrentUserAllHosts` in PowerShell 7:
     ```powershell
-    . "C:\Path\To\Your\config-powershell7\Microsoft.PowerShell_profile.ps1"
+    # Optional theme assignment must precede loading.
+    $env:CONFIG_PWSH7_THEME = 'atomic'
+    . 'C:\Path\To\Your\config-powershell7\Microsoft.PowerShell_profile.ps1'
     ```
 
 3.  **Set an OMP theme (optional):**
@@ -205,12 +225,16 @@ If you prefer not to use the script:
 > **Windows:** Double-click `uninstall.cmd`.
 
 The uninstaller:
-- Detects whether `$PROFILE` was created by this project (only removes ours)
-- Offers interactive backup restoration (newest first); use `-NonInteractive`
-  to skip prompts
+- Removes the managed block from PowerShell 7 `$PROFILE.CurrentUserAllHosts`,
+  preserving user content outside it
+- Removes attributable legacy current-host stubs with a recoverable backup;
+  uncertain or unrelated profile content is retained
+- Reports existing backups but does not restore them automatically or prompt
+  for restoration; `-NonInteractive` suppresses the final status message
 - Cleans up the plugin cache file (`~\.cache_pwsh_plugins.ps1` or XDG
   equivalent)
-- Provides manual cleanup guidance for optional tools
+- Leaves dependencies, fonts, Terminal settings and repository backups installed;
+  remove them manually if desired
 
 ---
 
@@ -223,11 +247,15 @@ theme directory, or an upstream OMP theme when GitHub is reachable. The
 installer validates the selected file and sets `$env:CONFIG_PWSH7_THEME` in
 your profile stub.
 
-To change themes after installation:
+For a manual profile, place the theme assignment before its dot-source line:
 
 ```powershell
 $env:CONFIG_PWSH7_THEME = 'montys'
 ```
+
+For a managed profile, rerun setup with the selected theme and open a new
+session. Assigning this variable after startup does not reinitialize the prompt;
+the managed stub's assignment also takes precedence over inherited values.
 
 The profile reads this variable at boot. Empty or unset uses `atomic`, which is
 bundled with the repo. Custom themes stay in

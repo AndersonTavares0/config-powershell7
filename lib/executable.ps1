@@ -1,4 +1,4 @@
-# ── EXECUTABLE DETECTION (SHARED) ─────────────────────────────
+﻿# ── EXECUTABLE DETECTION (SHARED) ─────────────────────────────
 # Ponto único de detecção de executáveis com captura de versão.
 # Dot-source este arquivo em scripts standalone (install, uninstall, tests).
 # Módulos do profile devem usar $script:Config em vez deste arquivo.

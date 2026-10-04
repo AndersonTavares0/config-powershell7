@@ -57,7 +57,7 @@ function Install-ScoopFallbackPackage {
     }
 
     $extraPackages = @('fastfetch', 'topgrade')
-    $buckets = if ($packageName -in $extraPackages) { @('extras') } else { @() }
+    $buckets = @(if ($packageName -in $extraPackages) { 'extras' })
     $scoop = Get-Command scoop -ErrorAction SilentlyContinue
     if (-not $scoop) {
         $interactiveConsole = Test-InstallerInteractive
@@ -80,7 +80,11 @@ function Install-ScoopFallbackPackage {
 
     try {
         Write-GuiLog "Installing $DisplayName with Scoop package '$packageName'." -Type Step
-        & $scoop.Source install $packageName
+        & $scoop.Source install $packageName 2>&1 | ForEach-Object { Write-GuiLog "$_" -Type Info }
+        if ($LASTEXITCODE -ne 0) {
+            Write-GuiLog "Scoop failed to install $DisplayName (exit code $LASTEXITCODE)." -Type Warn
+            return $false
+        }
         Update-ProcessPathFromUser
         if (Get-Command $packageName -ErrorAction SilentlyContinue) {
             Write-GuiLog "$DisplayName installed with Scoop." -Type Ok
@@ -577,7 +581,7 @@ function Install-PSModules {
         Write-GuiLog "Installing NuGet package provider..." -Type Step
         try {
             Enable-Tls12
-            Install-PackageProvider -Name NuGet -Force -Scope CurrentUser -ErrorAction Stop
+            Install-PackageProvider -Name NuGet -Force -Scope CurrentUser -ErrorAction Stop | Out-Null
             Write-GuiLog "NuGet installed." -Type Ok
         } catch {
             Write-GuiLog "NuGet install failed: $($_.Exception.Message)" -Type Warn
@@ -713,7 +717,7 @@ function Install-Scoop {
             Write-GuiLog "Downloading Scoop installer to: $scoopInstallPath" -Type Info
             Invoke-WebRequest -Uri $scoopInstallUrl -OutFile $scoopInstallPath -UseBasicParsing -ErrorAction Stop
             Unblock-File -Path $scoopInstallPath -ErrorAction SilentlyContinue
-            & $scoopInstallPath
+            & $scoopInstallPath 2>&1 | ForEach-Object { Write-GuiLog "$_" -Type Info }
 
             $scoopBin = Join-Path $HOME 'scoop\bin'
             if (Test-Path $scoopBin) {

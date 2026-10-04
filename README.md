@@ -1,6 +1,6 @@
 # PowerShell Config (PS7)
 
-> High-performance, modular PowerShell 7+ startup profile optimized for developer ergonomics.
+> A modular PowerShell 7 profile with Git shortcuts, directory navigation and a cached prompt.
 
 ![PowerShell](https://img.shields.io/badge/PowerShell-7%2B-blue?logo=powershell)
 ![Windows](https://img.shields.io/badge/Windows-10%2B-blue?logo=windows)
@@ -23,7 +23,7 @@ agent CLIs are optional. Use `-Gui` to open graphical installer.
 
 ## Key Technical Features
 
-- **Extreme Performance**: Optimized boot sequence with TTL-based plugin cache
+- **Startup Cache**: Boot sequence with TTL-based plugin cache
   (24h). Hot path skips `Get-Command` and `Get-FileHash` entirely (~5ms cache
   validation + ~120ms OMP init + ~30ms zoxide init). Config paths resolved
   inline (no function overhead). Fingerprint uses `LastWriteTime` + file size
@@ -34,19 +34,19 @@ agent CLIs are optional. Use `-Gui` to open graphical installer.
   TTL skips `Get-Command` and fingerprint recalculation entirely.
 - **CLI-first Installer**: Interactive terminal setup by default. Optional WPF
   GUI supports OMP theme selection, Windows Terminal themes, and component logs.
-- **CONFIG_PWSH7_THEME Env Var**: Runtime OMP theme selection via
-  `$env:CONFIG_PWSH7_THEME` — overrides the theme chosen at install time. Set it in
-  `$PROFILE` or per-session to switch themes without reinstalling.
+- **CONFIG_PWSH7_THEME Env Var**: OMP theme selection is read during profile
+  loading. The managed stub sets an installation-selected theme before loading;
+  an inherited value is used only when the stub does not assign one.
 - **Windows Installer**: Per-user WinGet installs, optional Scoop fallback when
   WinGet is missing, dynamic paths via `[Environment]::GetFolderPath`, stable
   GitHub Release downloads, and convergent repeat runs.
 - **Per-User Profile**: Profile linking needs no elevation or symlinks. It
   maintains a marked block in `$PROFILE.CurrentUserAllHosts` without replacing
   user content. Package installs start in user scope.
-- **Strict-Mode Compliant**: Entire codebase passes
-  `Set-StrictMode -Version Latest` — zero uninitialized variables, no hidden
-  scoping. No bare `catch {}`. Profile load guards stay process-local and are
-  not inherited by child shells.
+- **Strict-Mode Loading**: Profile modules load with
+  `Set-StrictMode -Version Latest`; the interactive shell's error preference is
+  restored afterwards. Regression suites exercise failure paths. Profile load
+  guards stay process-local and are not inherited by child shells.
 - **Windows Target**: Installer supports Windows 10/11 x64. Profile modules
   retain graceful platform checks on Linux and macOS.
 - **Dynamic Boot Summary**: Clean boot report with platform info, loaded
@@ -98,7 +98,8 @@ config-powershell7/
 │   └── text_utils/             # Unix-like tools (grep, sed, touch)
 └── tests/
     ├── Unit.Tests.ps1          # Unit tests (cache, system, git, text)
-    ├── ThemeOverride.Tests.ps1 # 5 env-var theme override tests
+    ├── ThemeOverride.Tests.ps1 # 6 env-var theme override tests
+    ├── WindowsCompatibility.Tests.ps1 # Isolated Windows regression tests
     ├── Microsoft.PowerShell_profile.Tests.ps1  # Integration tests
     ├── Test-ProfileInstallation.ps1            # Post-install checks
     ├── Setup.Tests.ps1         # Setup module tests
@@ -144,8 +145,10 @@ cd config-powershell7
 
 ## Requirements
 
-- **PowerShell 7.x** (Core) highly recommended (supports PS 5.1 via graceful
-  degradation)
+- **Windows 10/11 x64** for the automated installer; PowerShell 5.1 can launch
+  setup, which resolves or installs PowerShell 7 and delegates to it.
+- **PowerShell 7.x** for the managed profile. Manual PS5.1 use has reduced
+  features; Linux/macOS platform checks do not constitute installer support.
 - **FiraCode Nerd Font** (for icons/ligatures)
 - **Windows Terminal** (optional; any terminal that supports PowerShell works)
 - **Git** (required for Git aliases)
@@ -153,17 +156,19 @@ cd config-powershell7
 - **Zoxide** (optional — smart directory navigation)
 - **Terminal-Icons** (optional — file icons in listings)
 
-## CONFIG_PWSH7_THEME (Runtime Theme Override)
+## CONFIG_PWSH7_THEME (Theme at Profile Load)
 
-Set `$env:CONFIG_PWSH7_THEME` to switch your Oh My Posh theme at runtime without
-reinstalling:
+Set `$env:CONFIG_PWSH7_THEME` before the initial profile load to choose a theme:
 
 ```powershell
 $env:CONFIG_PWSH7_THEME = 'montys'
 ```
 
-The profile reads this variable each session. Unset or empty falls back to the
-theme selected during installation.
+The profile reads this variable each session. Unset or empty falls back to
+`atomic`. A selected installation theme is assigned by the managed profile
+block; a missing custom file also falls back to `atomic` with a warning.
+Assigning the variable after loading does not reinitialize the current prompt.
+Use setup to change the managed theme persistently, then open a new session.
 
 ## Startup Directory
 

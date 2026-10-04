@@ -58,7 +58,12 @@ function Invoke-OfficialPowerShellInstaller {
         }
 
         Unblock-File -LiteralPath $installerPath -ErrorAction SilentlyContinue
-        & $installerPath
+        $global:LASTEXITCODE = 0
+        & $installerPath 2>&1 | ForEach-Object { Write-GuiLog "$_" -Type Info }
+        if ($LASTEXITCODE -ne 0) {
+            Write-GuiLog "$($Spec.DisplayName) installer failed (exit code $LASTEXITCODE)." -Type Warn
+            return $false
+        }
         Update-ProcessPathFromUser
         $installed = Get-AgentCliCommand -Name $Spec.Command
         if (-not $installed) {
@@ -104,7 +109,7 @@ function Install-AgentCli {
         }
         try {
             Write-GuiLog "Installing $($spec.DisplayName) with npm for the current user." -Type Step
-            & $npm.Source install --global $spec.Package
+            & $npm.Source install --global $spec.Package 2>&1 | ForEach-Object { Write-GuiLog "$_" -Type Info }
             if ($LASTEXITCODE -ne 0) {
                 Write-GuiLog "npm failed to install $($spec.DisplayName) (exit code $LASTEXITCODE)." -Type Warn
                 return $false

@@ -37,8 +37,9 @@ machine without WinGet. This matrix covers those states.
 4. Expected: mapped packages install through Scoop; Fastfetch and Topgrade use
    `extras` bucket.
 5. Restore snapshot. Make both package managers unavailable.
-6. Expected: CLI offers Scoop setup; declining it reports blocked dependencies
-   and preserves profile and user settings.
+6. Expected: CLI offers Scoop setup; declining it reports blocked dependencies.
+   Other selected steps can still run, so record their changes. User code outside
+   managed profile blocks must remain intact; this is not a global rollback.
 
 ## 3. Idempotency and convergence (issue #50)
 
@@ -87,7 +88,9 @@ machine without WinGet. This matrix covers those states.
 ## 8. Failure visibility
 
 1. Run the installer with an unreachable repository path.
-2. Expected: non-zero exit; no partial managed state left active.
+2. Expected: non-zero exit. Failed download activation restores its previous
+   repository, but later package/font/profile steps are not one transaction;
+   record partial changes and recovery paths rather than assuming rollback.
 3. In the GUI, point the repository path at an unreadable location and install.
 4. Expected: window reports failure and re-enables its controls; it never
    stays stuck on `Installing...`.
@@ -102,7 +105,9 @@ machine without WinGet. This matrix covers those states.
    `HKCU:\Software\Microsoft\Windows NT\CurrentVersion\Fonts`), with no UAC prompt
    for the font step.
 4. Expected: execution policy is reported as skipped and left
-   unchanged; the install still reports overall success.
+   unchanged. Package/file setup can report success, but this is not evidence
+   that the unsigned profile loads. Open a fresh PowerShell 7 session without
+   a process policy override and record whether Group Policy/signing blocks it.
 5. Expected: on a machine without Windows Terminal, color and font steps
    are skipped rather than failed.
 

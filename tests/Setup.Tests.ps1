@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 # ============================================================
 # SETUP MODULE TESTS — TDD
 # Tests: core.ps1, deps.ps1, profile.ps1, orchestrator.ps1
@@ -898,16 +898,20 @@ try {
     $isValidRepoFunc = $ast.FindAll({ param($node) $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $node.Name -eq 'Test-IsValidRepo' }, $false) | Select-Object -First 1
 
     if ($isValidRepoFunc) {
-        # Inline the function logic (matches setup.ps1: Test-Path for Microsoft.PowerShell_profile.ps1)
+        # Exercise the real bootstrapper function without executing installation.
+        . ([scriptblock]::Create($isValidRepoFunc.Extent.Text))
         function Test-BootIsValidRepo {
             param([string]$Path)
-            return (Test-Path (Join-Path $Path 'Microsoft.PowerShell_profile.ps1'))
+            return Test-IsValidRepo -Path $Path
         }
 
         # Test with valid repo (has Microsoft.PowerShell_profile.ps1)
         $validRepoDir = Join-Path $bootTestDir "valid-repo"
         New-Item -ItemType Directory -Force -Path $validRepoDir | Out-Null
         New-Item -ItemType File -Path (Join-Path $validRepoDir 'Microsoft.PowerShell_profile.ps1') -Value '# profile' | Out-Null
+        foreach ($requiredFile in @('modules/config/config.ps1', 'setup/setup.ps1', 'lib/executable.ps1')) {
+            New-MockFile -Path (Join-Path $validRepoDir $requiredFile) -Content '# fixture'
+        }
         Assert-True -Condition (Test-BootIsValidRepo $validRepoDir) -TestName "Test-IsValidRepo returns true for valid repo"
 
         # Test with invalid repo (no profile file)

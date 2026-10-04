@@ -17,8 +17,8 @@ $ErrorActionPreference = 'Stop'
 
 # Nomes em inglês + alias, convenção unificada
 function Clear-PluginCache {
-    if (Test-Path $script:Config.CachePath) {
-        Remove-Item $script:Config.CachePath -ErrorAction SilentlyContinue
+    if (Test-Path -LiteralPath $script:Config.CachePath) {
+        Remove-Item -LiteralPath $script:Config.CachePath -ErrorAction SilentlyContinue
     }
 }
 Set-Alias Clear-Cache Clear-PluginCache
@@ -139,7 +139,7 @@ function script:Update-PluginCache {
         }
     }
 
-    try   { Set-Content -Path $script:Config.CachePath -Value $buf.ToString() -Encoding UTF8 -ErrorAction Stop }
+    try   { Set-Content -LiteralPath $script:Config.CachePath -Value $buf.ToString() -Encoding UTF8 -ErrorAction Stop }
     catch { Write-Warning "Update-PluginCache: falha ao salvar cache — cache será regenerado na próxima sessão. $_" }
 }
 
@@ -154,9 +154,9 @@ function script:Initialize-PluginCache {
     $cachedFP = $null
 
     # HOT PATH: cache válido com TTL ok — valida só fingerprint do tema (~0ms)
-    if (Test-Path $script:Config.CachePath) {
-        $firstLine = Get-Content $script:Config.CachePath -TotalCount 1 -ErrorAction SilentlyContinue
-        if ($firstLine -match '^# fp:(\S+)\s+ts:(\d+)$') {
+    if (Test-Path -LiteralPath $script:Config.CachePath) {
+        $firstLine = Get-Content -LiteralPath $script:Config.CachePath -TotalCount 1 -ErrorAction SilentlyContinue
+        if ($firstLine -match '^# fp:(.+) ts:(\d+)$') {
             $cachedTS = [long]$Matches[2]
             $cachedFP = $Matches[1]
             $nowTS    = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
@@ -188,16 +188,16 @@ function script:Initialize-PluginCache {
         $currentFP = script:Get-PluginFingerprint -zcmd $zcmd -ocmd $ocmd
         if ($cachedFP -eq $currentFP) {
             # Fingerprint idêntico — apenas atualizar o timestamp (touch)
-            $content = Get-Content $script:Config.CachePath -Raw -ErrorAction SilentlyContinue
+            $content = Get-Content -LiteralPath $script:Config.CachePath -Raw -ErrorAction SilentlyContinue
             $newTs   = [DateTimeOffset]::UtcNow.ToUnixTimeSeconds()
-            $content = $content -replace '^# fp:(\S+)\s+ts:\d+', "# fp:`$1 ts:${newTs}"
-            Set-Content -Path $script:Config.CachePath -Value $content -Encoding UTF8 -ErrorAction SilentlyContinue
+            $content = $content -replace '^# fp:(.+) ts:\d+', "# fp:`$1 ts:${newTs}"
+            Set-Content -LiteralPath $script:Config.CachePath -Value $content -Encoding UTF8 -ErrorAction SilentlyContinue
             $needRebuild = $false
         }
     }
 
     if ($needRebuild) { script:Update-PluginCache -zcmd $zcmd -ocmd $ocmd }
-    if (Test-Path $script:Config.CachePath) {
+    if (Test-Path -LiteralPath $script:Config.CachePath) {
         script:Initialize-OhMyPoshState
         . $script:Config.CachePath
     }

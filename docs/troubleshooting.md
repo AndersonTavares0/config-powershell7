@@ -10,13 +10,13 @@
 
 ```powershell
 # Check if the profile exists
-Test-Path $PROFILE
+Test-Path -LiteralPath $PROFILE.CurrentUserAllHosts
 
 # Check which file is being loaded
-$PROFILE
+$PROFILE.CurrentUserAllHosts
 
-# Manually reload
-. $PROFILE
+# First load only (the process-local guard prevents repeated initialization)
+. $PROFILE.CurrentUserAllHosts
 ```
 
 ### Execution Policy error
@@ -36,8 +36,11 @@ Set-ExecutionPolicy RemoteSigned -Scope CurrentUser
 **Solution:**
 
 ```powershell
-Get-ChildItem *.ps1 | Unblock-File
+Get-ChildItem -LiteralPath . -Filter '*.ps1' -Recurse | Unblock-File
 ```
+
+Unblocking trusted downloads helps with RemoteSigned; it does not satisfy an
+AllSigned requirement or override Group Policy.
 
 ### Command not recognized after installation
 
@@ -51,8 +54,8 @@ Get-ChildItem *.ps1 | Unblock-File
 # Check if git is available
 Get-Command git -ErrorAction SilentlyContinue
 
-# Reload the profile
-. $PROFILE
+# Open a fresh session after installing Git or correcting PATH
+pwsh
 ```
 
 ### Modules not found
@@ -87,7 +90,7 @@ Clear-Cache
 
 ## Tests
 
-The project includes six test/benchmark suites:
+The project includes seven test/benchmark scripts:
 
 ### 0. Profile Boot Benchmark
 
@@ -153,7 +156,7 @@ utilities. Fastest feedback loop for development.
 
 ### 2. CONFIG_PWSH7_THEME Tests
 
-`tests/ThemeOverride.Tests.ps1` -- 5 assertions verifying the
+`tests/ThemeOverride.Tests.ps1` -- 6 assertions verifying the
 `$env:CONFIG_PWSH7_THEME` override mechanism:
 
 ```powershell
@@ -165,6 +168,7 @@ utilities. Fastest feedback loop for development.
 - POSH-03: empty env var treated as unset
 - POSH-04: missing theme file falls back to atomic
 - POSH-05: warning mentions missing theme name
+- POSH-06: the reported theme matches the fallback actually in use
 
 ### 3. Setup Module Tests (TDD)
 
@@ -200,8 +204,8 @@ module, loading, function, config, and cache categories:
 |---|---|
 | Profile Integrity | Verifies dot-source logic in `$PROFILE` |
 | Module Syntax | Parses all 7 profile modules |
-| Profile Loading | Measures boot time (WARN at 200ms, FAIL at 500ms) |
-| Functions & Aliases | Verifies all 26 functions + 5 aliases |
+| Profile Loading | Measures boot time; slow loading is WARN, not FAIL |
+| Functions & Aliases | Verifies the current core function and alias lists; Git checks are conditional |
 | Config System | Validates `$script:Config` object |
 | Cache System | Validates TTL header (fingerprint + timestamp) |
 
@@ -214,6 +218,18 @@ processing, system functions, Git functions, and structured error handling:
 ```powershell
 .\tests\Microsoft.PowerShell_profile.Tests.ps1 -Verbose
 ```
+
+### 6. Windows Compatibility Regressions
+
+```powershell
+pwsh -NoProfile -File .\tests\WindowsCompatibility.Tests.ps1
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tests\WindowsCompatibility.Tests.ps1
+```
+
+Uses isolated temporary files, mocks, real profile child processes and GUI
+worker runspaces. Covers literal/relative paths, legacy preservation, installer
+failure reporting, minimal Terminal settings, and repository update recovery.
+The process-only Bypass above is for tests and does not change persistent policy.
 
 ---
 
@@ -230,15 +246,18 @@ The repository uses **GitHub Actions** with one pipeline:
 
 The pipeline copies profile + modules to `$PROFILE` path, runs
 PSScriptAnalyzer (errors block CI, warnings are informational), then runs
-the custom test suites on a Windows runner.
+the custom test suites on Windows Server 2022 and 2025 runners. The compatibility
+suite runs in both PS7 and PS5.1. These runners do not replace desktop VM testing.
 
 ### Framework
 
-All test suites use a custom framework (not Pester) with these functions:
+Test suites use a custom framework (not Pester), with helpers such as:
 `Test-Result`, `Test-Skip`, `Assert-True`, `Assert-Equal`, `Assert-NotNull`,
-`Assert-False`. Tests dynamically verify the process-local load guard and
-evaluate the profile in isolation to prevent side-effects, guaranteeing zero
-false-positives under `Set-StrictMode -Version Latest`.
+`Assert-False`. Tests exercise the process-local load guard and strict-mode
+failure paths. The compatibility suite uses temporary HOME/cache paths; other
+suites can load the installed profile and write test fixtures. Run them in a
+disposable environment when isolation is required. Passing tests do not prove
+zero defects or a measured coverage percentage.
 
 ### Platform handling in tests
 
@@ -300,11 +319,11 @@ false-positives under `Set-StrictMode -Version Latest`.
 
 - Expose `-TimeoutSec` as a parameter in `pubip`
 - Support regex in `sed` via `-Regex` parameter
-- Add `-WhatIf` to `sed` to preview changes before applying
+- Add coverage instrumentation (the custom framework does not measure line coverage)
 - Lazy-load OMP on first prompt to save ~150ms boot time
 
 ---
 
-*Revision: 07/2026 (v3 -- GUI installer overhaul, theme selection, terminal
-themes, CONFIG_PWSH7_THEME env var, and custom test suites) -- Compatible with PS 5.1+
-/ PS Core 7+ / Windows 10+ / Linux / macOS*
+*Revision: 10/2026 — CLI-first Windows 10/11 x64 installer, optional WPF,
+PS7/PS5.1 regression verification. See the Windows audit for observed results
+and desktop validation gaps.*

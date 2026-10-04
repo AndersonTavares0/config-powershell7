@@ -59,8 +59,10 @@
 ## Commands
 
 ```powershell
-# Install -- WPF GUI (Windows):   install.cmd  (calls setup.ps1)
-# Install -- headless/CLI:        .\setup.ps1  (auto-detects WPF, falls back to CLI)
+# Install -- CLI (Windows):       install.cmd  (downloads setup.ps1)
+# Install -- local CLI:           .\setup.ps1
+# Install -- WPF GUI (Windows):   .\setup.ps1 -Gui
+# Install -- headless:            .\setup.ps1 -NonInteractive
 # Install -- legacy (CI):         .\install.ps1 -NonInteractive
 # Uninstall:                      .\uninstall.ps1
 # Remote one-liner:               irm https://github.com/AndersonTavares0/config-powershell7/raw/main/setup.ps1 | iex
@@ -86,14 +88,16 @@ Custom framework (not Pester) -- functions: `Test-Result`, `Test-Skip`,
 
 ```powershell
 .\tests\Unit.Tests.ps1                              # unit tests (fastest feedback)
-.\tests\ThemeOverride.Tests.ps1                     # 5 CONFIG_PWSH7_THEME env-var tests
+.\tests\ThemeOverride.Tests.ps1                     # 6 CONFIG_PWSH7_THEME env-var tests
+.\tests\WindowsCompatibility.Tests.ps1              # isolated Windows regressions, PS7 and PS5.1
 .\tests\Test-ProfileInstallation.ps1 -Detailed      # post-install health checks
 .\tests\Microsoft.PowerShell_profile.Tests.ps1 -Verbose  # Behavioral integration
 .\tests\Setup.Tests.ps1 -Verbose                     # setup module tests
 .\tests\benchmark.ps1 -Runs 10                       # profile boot timing; compare cold/warm cache
 ```
 
-CI (`.github/workflows/validate.yml`) roda em push/PR na `main`: setup profile
+CI (`.github/workflows/validate.yml`) roda em push/PR na `main` em Windows Server
+2022/2025 (nao substitui homologacao desktop Windows 10/11): setup profile
 -> PSScriptAnalyzer -> todas as suites. Windows-only runner. PSScriptAnalyzer:
 **erros bloqueiam CI, warnings sao informativos**. O job `installer`
 (instalacao end-to-end em runner descartavel) roda so em `workflow_dispatch`.
