@@ -5,6 +5,8 @@ All notable changes to this project will be documented in this file.
 ## [Unreleased]
 
 ### CI
+- Validation runs on Windows Server 2022 and 2025, including isolated Windows
+  compatibility regressions under both PowerShell 7 and Windows PowerShell 5.1.
 - `validate.yml`: full validation workflow (suites on push/PR, disposable-runner
   end-to-end installer on manual dispatch with idempotency, theme-change,
   child-shell, failure-propagation, and uninstall checks)
@@ -59,6 +61,18 @@ All notable changes to this project will be documented in this file.
   `tests/ThemeOverride.Tests.ps1`
 
 ### Fixed
+- Managed profile updates preserve literal dollar signs in repository paths;
+  relative repository paths are resolved before linking, and profile operations
+  handle bracketed paths without interpreting wildcards.
+- Windows Terminal font and color setup accepts missing optional `defaults`
+  and `schemes` properties and adding a scheme to an existing nonempty list.
+- `-NonInteractive` reaches dependency installers: failures no longer prompt
+  for elevation or Scoop. CI also selects the noninteractive dispatcher.
+- Scoop confirmation no longer reads an undefined `$DisplayName?` variable.
+- Failed PowerShell module installs report failure and restore PSGallery trust
+  in `finally`; downloads enforce the required minimum module versions.
+- Setup uninstall tests use a temporary home/cache instead of deleting the
+  user's real plugin cache.
 - Headless install aborted immediately: an ungrouped `Test-Path $repoPath -and`
   bound `-and` as a `Test-Path` parameter
 - Terminal menu crashed on the theme list (`${$themes.Count}`) and on a

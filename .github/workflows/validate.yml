@@ -12,7 +12,11 @@ permissions:
 
 jobs:
   suites:
-    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-2022, windows-2025]
+    runs-on: ${{ matrix.os }}
     defaults:
       run:
         shell: pwsh
@@ -65,6 +69,15 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           & ./tests/Setup.Tests.ps1 -Verbose
+
+      - name: Windows compatibility regressions (PowerShell 7)
+        run: |
+          & ./tests/WindowsCompatibility.Tests.ps1
+
+      - name: Windows compatibility regressions (Windows PowerShell 5.1)
+        shell: powershell
+        run: |
+          & ./tests/WindowsCompatibility.Tests.ps1
 
       - name: Profile behavioral tests
         run: |

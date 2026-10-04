@@ -57,6 +57,7 @@ agent CLIs are optional. Use `-Gui` to open graphical installer.
 - [Installation & Compatibility](docs/installation.md)
 - [Modules, Features & Technical Reference](docs/modules.md)
 - [Troubleshooting & Tests](docs/troubleshooting.md)
+- [Windows 10/11 compatibility audit](docs/auditoria-windows.md)
 
 ---
 

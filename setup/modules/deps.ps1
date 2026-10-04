@@ -60,12 +60,12 @@ function Install-ScoopFallbackPackage {
     $buckets = if ($packageName -in $extraPackages) { @('extras') } else { @() }
     $scoop = Get-Command scoop -ErrorAction SilentlyContinue
     if (-not $scoop) {
-        $interactiveConsole = $Host.Name -eq 'ConsoleHost' -and -not $env:CI
+        $interactiveConsole = Test-InstallerInteractive
         if (-not $interactiveConsole) {
             Write-GuiLog "WinGet is unavailable. Install Scoop manually to install $DisplayName without WinGet." -Type Warn
             return $false
         }
-        $installScoop = Read-Host "WinGet is unavailable. Install Scoop for $DisplayName? (y/n) [n]"
+        $installScoop = Read-Host "WinGet is unavailable. Install Scoop for ${DisplayName}? (y/n) [n]"
         if ($installScoop -notmatch '^(?i)y(es)?$') { return $false }
         if (-not (Install-Scoop -Buckets $buckets)) { return $false }
     } elseif ($buckets.Count -gt 0) {
@@ -115,7 +115,7 @@ function Install-WingetPackage {
             return $true
         }
 
-        $interactiveConsole = $Host.Name -eq 'ConsoleHost' -and -not $env:CI
+        $interactiveConsole = Test-InstallerInteractive
         if ($interactiveConsole) {
             $retryElevated = Read-Host "$DisplayName failed in user scope (exit $($proc.ExitCode)). Retry with administrator rights? (y/n) [n]"
             if ($retryElevated -match '^(?i)y(es)?$') {
@@ -373,11 +373,13 @@ function Set-WindowsTerminalColorScheme {
             brightCyan = $wtColors.brightCyan; brightWhite = $wtColors.brightWhite
         }
 
-        if (-not $settings.schemes) {
+        $schemesProperty = $settings.PSObject.Properties['schemes']
+        if (-not $schemesProperty -or -not $schemesProperty.Value) {
             $settings | Add-Member -Name 'schemes' -Value @($scheme) -MemberType NoteProperty -Force
         } else {
-            $existing = @($settings.schemes | Where-Object { $_.name -eq $ThemeName })[0]
-            if ($existing) {
+            $existingSchemes = @($settings.schemes | Where-Object { $_.name -eq $ThemeName })
+            if ($existingSchemes.Count -gt 0) {
+                $existing = $existingSchemes[0]
                 $idx = [array]::IndexOf($settings.schemes, $existing)
                 $settings.schemes[$idx] = $scheme
             } else {
@@ -385,11 +387,13 @@ function Set-WindowsTerminalColorScheme {
             }
         }
 
-        if (-not $settings.profiles) {
+        $profilesProperty = $settings.PSObject.Properties['profiles']
+        if (-not $profilesProperty -or -not $profilesProperty.Value) {
             Write-GuiLog "Windows Terminal settings has no profiles section." -Type Warn; return $false
         }
-        if (-not $settings.profiles.defaults) {
-            $settings.profiles | Add-Member -Name 'defaults' -Value @{} -MemberType NoteProperty -Force
+        $defaultsProperty = $settings.profiles.PSObject.Properties['defaults']
+        if (-not $defaultsProperty -or -not $defaultsProperty.Value) {
+            $settings.profiles | Add-Member -Name 'defaults' -Value ([PSCustomObject]@{}) -MemberType NoteProperty -Force
         }
         $settings.profiles.defaults | Add-Member -Name 'colorScheme' -Value $ThemeName -MemberType NoteProperty -Force
 
@@ -593,29 +597,36 @@ function Install-PSModules {
         return $false
     }
 
-    foreach ($mod in @(@{ Name = 'PSReadLine'; MinVersion = '2.3.0' }, @{ Name = 'Terminal-Icons'; MinVersion = '0.11.0' })) {
-        $existing = Get-Module -ListAvailable -Name $mod.Name -ErrorAction SilentlyContinue |
-            Where-Object { $_.Version -ge [version]$mod.MinVersion }
-        if ($existing) {
-            Write-GuiLog "$($mod.Name) $($existing[0].Version) already installed." -Type Ok
-            continue
+    $allInstalled = $true
+    try {
+        foreach ($mod in @(@{ Name = 'PSReadLine'; MinVersion = '2.3.0' }, @{ Name = 'Terminal-Icons'; MinVersion = '0.11.0' })) {
+            $existing = @(Get-Module -ListAvailable -Name $mod.Name -ErrorAction SilentlyContinue |
+                Where-Object { $_.Version -ge [version]$mod.MinVersion })
+            if ($existing.Count -gt 0) {
+                Write-GuiLog "$($mod.Name) $($existing[0].Version) already installed." -Type Ok
+                continue
+            }
+            Write-GuiLog "Installing $($mod.Name)..." -Type Step
+            try {
+                Install-Module -Name $mod.Name -MinimumVersion $mod.MinVersion -Scope CurrentUser -Force -AllowClobber -ErrorAction Stop
+                Write-GuiLog "$($mod.Name) installed." -Type Ok
+            } catch {
+                $allInstalled = $false
+                Write-GuiLog "$($mod.Name) install failed: $($_.Exception.Message)" -Type Warn
+            }
         }
-        Write-GuiLog "Installing $($mod.Name)..." -Type Step
-        try {
-            Install-Module -Name $mod.Name -Scope CurrentUser -Force -AllowClobber -ErrorAction Stop
-            Write-GuiLog "$($mod.Name) installed." -Type Ok
-        } catch {
-            Write-GuiLog "$($mod.Name) install failed: $($_.Exception.Message)" -Type Warn
+    } finally {
+        if ($galleryTrusted) {
+            try {
+                Set-PSRepository -Name PSGallery -InstallationPolicy Untrusted -ErrorAction Stop
+            } catch {
+                $allInstalled = $false
+                Write-GuiLog "Could not restore PSGallery trust: $($_.Exception.Message)" -Type Warn
+            }
         }
     }
 
-    if ($galleryTrusted) {
-        try {
-            Set-PSRepository -Name PSGallery -InstallationPolicy Untrusted -ErrorAction SilentlyContinue
-        } catch { }
-    }
-
-    return $true
+    return $allInstalled
 }
 
 function Set-WindowsTerminalFont {
@@ -633,15 +644,17 @@ function Set-WindowsTerminalFont {
     try {
         $settings = Get-Content $settingsPath -Raw -Encoding UTF8 | ConvertFrom-Json
 
-        if (-not $settings.profiles) {
+        $profilesProperty = $settings.PSObject.Properties['profiles']
+        if (-not $profilesProperty -or -not $profilesProperty.Value) {
             Write-GuiLog "Windows Terminal settings has no profiles section." -Type Warn
             return $false
         }
 
         $changed = $false
 
-        if (-not $settings.profiles.defaults) {
-            $settings.profiles | Add-Member -Name 'defaults' -Value @{} -MemberType NoteProperty -Force
+        $defaultsProperty = $settings.profiles.PSObject.Properties['defaults']
+        if (-not $defaultsProperty -or -not $defaultsProperty.Value) {
+            $settings.profiles | Add-Member -Name 'defaults' -Value ([PSCustomObject]@{}) -MemberType NoteProperty -Force
         }
         $defaultsFontProp = $settings.profiles.defaults.PSObject.Properties['font']
         $defaultsFont = if ($defaultsFontProp) { $defaultsFontProp.Value } else { $null }

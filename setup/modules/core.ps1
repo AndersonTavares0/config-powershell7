@@ -25,6 +25,15 @@ $script:RepoOwner  = 'AndersonTavares0'
 $script:RepoName   = 'config-powershell7'
 $script:RepoZipUrl = "https://api.github.com/repos/$script:RepoOwner/$script:RepoName/releases/latest"
 
+if (-not (Get-Variable -Name InstallerNonInteractive -Scope Script -ErrorAction SilentlyContinue)) {
+    $script:InstallerNonInteractive = $false
+}
+
+function Test-InstallerInteractive {
+    return $Host.Name -eq 'ConsoleHost' -and -not $script:InstallerNonInteractive -and
+        -not $env:CI -and -not [Console]::IsInputRedirected
+}
+
 function Write-GuiLog {
     param(
         [string]$Message,

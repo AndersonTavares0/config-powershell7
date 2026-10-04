@@ -14,6 +14,7 @@ param(
 # inherit the preferences the root setup.ps1 established for the dot-sourced path.
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$script:InstallerNonInteractive = $NonInteractive -or ($env:CI -eq 'true') -or ($env:CI -eq '1')
 
 $setupDir = Join-Path $RepoPath 'setup'
 $modulesDir = Join-Path $setupDir 'modules'
@@ -37,7 +38,7 @@ if ($Gui) {
     }
 }
 
-if ($NonInteractive) {
+if ($script:InstallerNonInteractive) {
     $installResult = Start-ProfileInstall -RepoPath $RepoPath -ThemeName $ThemeName `
         -InstallFastfetch ([bool]$InstallFastfetch) -InstallTopgrade ([bool]$InstallTopgrade)
     if (-not $installResult) { throw 'One or more required installation steps failed.' }

@@ -365,8 +365,14 @@ Write-Host "`nTesting Uninstall-Profile..." -ForegroundColor Yellow
 $testRepoDir2 = Join-Path $env:TEMP "test-setup-repo2-$(Get-Random)"
 $testProfileDir2 = Join-Path $env:TEMP "test-setup-profile2-$(Get-Random)"
 $testProfilePath2 = Join-Path $testProfileDir2 "Microsoft.PowerShell_profile.ps1"
+$uninstallTestHome = Join-Path $testRepoDir2 'home'
+$originalHome = $HOME
+$originalXdgCache = $env:XDG_CACHE_HOME
 
 try {
+    New-MockDir $uninstallTestHome
+    Set-Variable -Name HOME -Value $uninstallTestHome -Force
+    $env:XDG_CACHE_HOME = Join-Path $uninstallTestHome '.cache'
     New-MockDir $testRepoDir2
     New-MockDir (Join-Path $testRepoDir2 'modules')
     New-MockFile (Join-Path $testRepoDir2 'Microsoft.PowerShell_profile.ps1') '# profile'
@@ -383,6 +389,8 @@ try {
     Assert-False -Condition (Test-Path $testProfilePath2) -TestName "Uninstall-Profile removes profile file"
 
 } finally {
+    Set-Variable -Name HOME -Value $originalHome -Force
+    $env:XDG_CACHE_HOME = $originalXdgCache
     Remove-MockDir $testRepoDir2
     Remove-MockDir $testProfileDir2
     $global:PROFILE = $originalProfile

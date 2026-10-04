@@ -78,7 +78,7 @@ $repoDefaultDir = Join-Path $localAppData $repoName
 
 function Test-IsValidRepo {
     param([string]$Path)
-    return (Test-Path (Join-Path $Path 'Microsoft.PowerShell_profile.ps1'))
+    return (Test-Path -LiteralPath (Join-Path $Path 'Microsoft.PowerShell_profile.ps1') -PathType Leaf)
 }
 
 function Invoke-Launcher {
@@ -91,7 +91,7 @@ function Invoke-Launcher {
         [switch]$InstallTopgrade
     )
     $setupEntryPoint = Join-Path $RepoPath 'setup\setup.ps1'
-    if (-not (Test-Path $setupEntryPoint)) {
+    if (-not (Test-Path -LiteralPath $setupEntryPoint -PathType Leaf)) {
         Write-Host "Setup directory not found. The repository may be outdated." -ForegroundColor Red
         return $false
     }
@@ -271,7 +271,7 @@ if ($PSScriptRoot -and (Test-IsValidRepo $PSScriptRoot)) {
 
 if ($localRepoPath) {
     # Unblock files in existing repo (covers git clone or manual copy)
-    Get-ChildItem -Path $localRepoPath -Filter '*.ps1' -Recurse -ErrorAction SilentlyContinue |
+    Get-ChildItem -LiteralPath $localRepoPath -Filter '*.ps1' -Recurse -ErrorAction SilentlyContinue |
         Unblock-File -ErrorAction SilentlyContinue
     $launcherOk = Invoke-Launcher -RepoPath $localRepoPath -NonInteractive:$NonInteractive `
         -ThemeName $ThemeName -Gui:$Gui -InstallFastfetch:$InstallFastfetch -InstallTopgrade:$InstallTopgrade
